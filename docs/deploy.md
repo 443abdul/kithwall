@@ -5,6 +5,9 @@ first. Everything here is configuration; no secrets belong in the repository.
 
 ## 1. Supabase project
 
+> **Status (2026-10-17):** project **kithwall** (ref `uvuojqziktbwxkjzeiar`, ap-south-1) exists and every migration in
+> `supabase/migrations` is applied (`supabase db push --linked`). Steps 1–2 are done; do the Auth settings below.
+
 1. Create the project (region close to your users). Note the **project URL**, the **publishable key**
    and a **secret key** (Project Settings → API Keys).
 2. Apply migrations from the repo root:
@@ -43,7 +46,7 @@ Authentication → Emails → SMTP Settings:
 
 | Field | Value |
 |---|---|
-| Host | `mail.spacemail.com` |
+| Host | `mail.spacemail.com` (confirm in Spacemail → mail client settings) |
 | Port | `465` (SSL/TLS) |
 | Username | the full mailbox address, e.g. `no-reply@<your-domain>` |
 | Password | the mailbox password (store it only in Supabase and Vercel) |
@@ -79,8 +82,8 @@ Import the GitHub repo, **Root Directory `apps/web`**, framework Next.js. Enviro
 
 | Variable | Where | Value |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | all | `https://<ref>.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | all | publishable key |
+| `NEXT_PUBLIC_SUPABASE_URL` | all | `https://uvuojqziktbwxkjzeiar.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | all | `sb_publishable_pGgH8XOXbF-G1r5ABWCuwg_4MZpKg_B` (public by design) |
 | `NEXT_PUBLIC_SITE_URL` | all | `https://<your-domain>` (used in notice emails) |
 | `SUPABASE_SECRET_KEY` | server only | secret key — used only by `/api/account/*`, `/api/hooks/*`, `/api/recovery/notify`, `/api/cron/*`, `/api/altcha/challenge` |
 | `ALTCHA_HMAC_KEY` | server only | 32+ random characters (`openssl rand -base64 48`) |
@@ -121,7 +124,7 @@ Admins should turn on two-step verification.
 
 - Visit `/`, sign up a test account, confirm the email, save the recovery key, log in on a second browser
   with two-step verification, and delete the test account from Account Settings.
-- Check response headers on `/`: CSP with a nonce and `require-trusted-types-for 'script'`, HSTS,
+- Check response headers on `/`: CSP with a per-request nonce + `strict-dynamic` (Trusted Types is deferred, spec §12), HSTS,
   `Referrer-Policy: no-referrer`, COOP `same-origin`.
 - Check `/manifest.webmanifest` and `/icon.svg` load (installable PWA; no service worker in v1).
 - Check `select * from cron.job_run_details order by start_time desc limit 5;` after an hour.
