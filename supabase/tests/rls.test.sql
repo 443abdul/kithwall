@@ -16,9 +16,9 @@ insert into ids values
 grant select on ids to authenticated;
 
 insert into auth.users (id, email, aud, role)
-  select id, name || '@test.local', 'authenticated', 'authenticated' from ids;
+  select id, name || '@rls-fixture.invalid', 'authenticated', 'authenticated' from ids;
 insert into public.profiles (id, username, sign_pub, kx_pub)
-  select id, name || 'x', repeat('A', 43), repeat('B', 43) from ids;
+  select id, 'rlsfix.' || name, repeat('A', 43), repeat('B', 43) from ids;
 insert into public.staff_roles (user_id, role) select id, 'moderator' from ids where name = 'mod';
 insert into public.staff_roles (user_id, role) select id, 'admin' from ids where name = 'root';
 insert into public.friendships (user_a, user_b, status, requested_by, accepted_at)
@@ -206,7 +206,7 @@ select pg_temp.login('bob');
 select lives_ok($$ insert into public.reports (reporter_id, target_kind, target_id, reason, disclosed)
   values (pg_temp.uid('bob'), 'post', '10000000-0000-0000-0000-000000000001', 'spam', '{"text":"x"}') $$, 'friend reports a post');
 select pg_temp.login('mod');
-select ok((select stored_envelope is not null and target_owner_id = pg_temp.uid('alice') from public.reports limit 1),
+select ok((select stored_envelope is not null and target_owner_id = pg_temp.uid('alice') from public.reports where reporter_id = pg_temp.uid('bob') limit 1),
   'report snapshots ciphertext and owner for moderators');
 select is((select count(*)::int from public.posts), 0, 'moderators do not get blanket read access to posts');
 select throws_ok($$ select public.grant_staff_role(pg_temp.uid('carol'), 'moderator') $$, '42501', null, 'moderators cannot appoint staff');

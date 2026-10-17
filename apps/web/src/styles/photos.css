@@ -1,0 +1,116 @@
+/* Photos area (albums, viewer, publisher attachment, profile strip). 2010 look; class names
+   from reference/theassbook-2010.html (.ph, .thumb, .pstrip, .bigph, .att, .dlg) are reused. */
+
+/* Lazy, decrypted image tile ------------------------------------------------------------ */
+.kp-img { display: block; position: relative; overflow: hidden; background: #e9ebee; line-height: 0; }
+.kp-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.kp-img.ld::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #eceff5 0, #f7f7f7 50%, #eceff5 100%); background-size: 200% 100%; animation: kp-sh 1.2s linear infinite; }
+.kp-img.fail::after { content: '!'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #999; font: bold 14px/1 tahoma, sans-serif; }
+@keyframes kp-sh { from { background-position: 200% 0; } to { background-position: 0 0; } }
+.thumb .kp-img { width: 120px; height: 90px; }
+
+/* Story attachment (PhotoGrid) -------------------------------------------------------- */
+.kp-grid { margin: 7px 0 2px; display: grid; gap: 4px; max-width: 398px; }
+.kp-grid.n1 { display: block; }
+.kp-grid.n1 a { display: inline-block; max-width: 398px; border: 1px solid #ccc; padding: 3px; background: #fff; line-height: 0; }
+.kp-grid.n1 .kp-img { max-width: 390px; }
+.kp-grid.n2 { grid-template-columns: repeat(2, 1fr); }
+.kp-grid.n3, .kp-grid.n4 { grid-template-columns: repeat(2, 1fr); }
+.kp-grid.n3 a:first-child { grid-column: 1 / -1; }
+.kp-grid.n3 a:first-child .kp-img { aspect-ratio: 2 / 1; }
+.kp-grid > a { position: relative; display: block; line-height: 0; }
+.kp-grid:not(.n1) .kp-img { width: 100%; aspect-ratio: 4 / 3; }
+.kp-more { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); color: #fff; font: bold 20px/1 tahoma, sans-serif; display: flex; align-items: center; justify-content: center; }
+.kp-wait { color: #737373; font-style: italic; margin: 6px 0; }
+
+/* Profile strip ------------------------------------------------------------------------ */
+.pstrip .kp-img { width: 97px; height: 68px; }
+
+/* Album grid ----------------------------------------------------------------------------- */
+.kp-cnt { color: #737373; font-size: 10px; display: inline-flex; gap: 6px; align-items: center; margin-top: 2px; }
+.kp-cnt .i16 { width: 11px; height: 11px; margin-right: 2px; vertical-align: -1px; }
+.kp-card .nm { font-weight: bold; display: block; margin-top: 4px; word-break: break-word; }
+.kp-tile { position: relative; }
+.kp-tile.drag { opacity: .4; }
+.kp-tile.over .thumb { border-color: #3b5998; box-shadow: 0 0 0 2px #6d84b4; }
+.kp-tile .tools { display: flex; justify-content: center; gap: 2px; margin-top: 3px; flex-wrap: wrap; }
+.kp-tile .tools button { font-size: 10px; padding: 1px 4px; }
+.kp-tile .cov { position: absolute; top: 4px; left: 4px; background: #3b5998; color: #fff; font-size: 9px; padding: 1px 4px; line-height: 12px; }
+.kp-meta { color: #737373; margin-bottom: 12px; line-height: 15px; }
+.kp-meta .i16 { vertical-align: -3px; margin-right: 2px; }
+.kp-review { background: #fff9d7; border: 1px solid #e2c822; padding: 8px 10px; margin-bottom: 12px; line-height: 15px; }
+.kp-review .row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.kp-review .row .kp-img { width: 50px; height: 38px; flex: none; }
+
+/* Picker (publisher tab, new album, add photos) ----------------------------------------- */
+.kp-drop { border: 1px dashed #bdc7d8; background: #f7f7f7; padding: 10px; text-align: center; color: #737373; }
+.kp-drop.on { background: #eceff5; border-color: #3b5998; }
+.kp-drop input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.kp-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-top: 8px; }
+.kp-pick { border: 1px solid #ccc; background: #fff; padding: 3px; position: relative; }
+.kp-pick img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
+.kp-pick textarea { width: 100%; height: 34px; margin-top: 3px; border: 1px solid #bdc7d8; resize: vertical; font-size: 11px; }
+.kp-pick .x { position: absolute; top: 5px; right: 5px; width: 18px; height: 18px; line-height: 14px; border: 1px solid #999; background: #fff; color: #333; font-weight: bold; cursor: pointer; padding: 0; }
+.kp-pick .x:hover { background: #3b5998; color: #fff; }
+.kp-pick label.cv { display: flex; gap: 4px; align-items: center; color: #737373; font-size: 10px; margin-top: 2px; }
+.kp-bar { height: 10px; background: #eceff5; border: 1px solid #bdc7d8; margin: 6px 0 4px; }
+.kp-bar i { display: block; height: 100%; background: #6d84b4; transition: width .2s; }
+.kp-errs { color: #dd3c10; margin-top: 6px; }
+
+/* Viewer --------------------------------------------------------------------------------- */
+.kp-view { display: flex; gap: 20px; margin-top: 10px; }
+.kp-view .main { flex: 1; min-width: 0; }
+.kp-view .side { width: 180px; flex: none; line-height: 16px; }
+.kp-view .side .act { margin-top: 8px; display: block; text-align: left; }
+.kp-stagewrap { background: #f2f2f2; border: 1px solid #e2e2e2; padding: 10px 0; text-align: center; line-height: 0; position: relative; }
+.kp-stage { position: relative; display: inline-block; max-width: 100%; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.kp-stage img { max-width: 100%; max-height: 520px; display: block; }
+.kp-stage .ph0 { background: #e9ebee; }
+.kp-stage.tagging { cursor: crosshair; }
+.kp-stage.nav { cursor: pointer; }
+.kp-tag { position: absolute; width: 80px; height: 80px; transform: translate(-50%, -50%); border: 3px solid #fff; box-shadow: 0 0 0 1px #3b5998, inset 0 0 0 1px #3b5998; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.kp-tag span { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 4px; background: #fff; color: #333; border: 1px solid #3b5998; padding: 2px 5px; white-space: nowrap; font: 11px/14px 'lucida grande', tahoma, verdana, arial, sans-serif; }
+.kp-stage:hover .kp-tag, .kp-tag.hl, .kp-tag.new { opacity: 1; }
+.kp-tagbox { position: absolute; z-index: 5; background: #fff; border: 1px solid #3b5998; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); width: 190px; text-align: left; line-height: 14px; padding: 5px; transform: translateX(-50%); }
+.kp-tagbox input { width: 100%; }
+.kp-tagbox ul { list-style: none; margin: 4px 0 0; padding: 0; max-height: 160px; overflow: auto; }
+.kp-tagbox li { padding: 3px 4px; cursor: pointer; display: flex; gap: 6px; align-items: center; }
+.kp-tagbox li.on, .kp-tagbox li:hover { background: #3b5998; color: #fff; }
+.kp-tagbox .b { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; }
+.kp-hint { color: #737373; margin-top: 6px; line-height: 14px; }
+.kp-cap { font-size: 12px; margin: 8px 0 6px; word-wrap: break-word; overflow-wrap: anywhere; white-space: pre-wrap; }
+.kp-cap textarea { width: 100%; height: 50px; font-size: 12px; }
+.kp-inph { margin-bottom: 6px; line-height: 15px; }
+.kp-pending { background: #fff9d7; border: 1px solid #e2c822; padding: 6px 8px; margin: 6px 0; }
+.kp-navbtn { display: none; }
+
+/* Dialog extras ---------------------------------------------------------------------------- */
+.kp-dlg .c { max-height: min(70vh, 520px); }
+.kp-crop { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.kp-crop canvas { border: 1px solid #ccc; cursor: grab; touch-action: none; background: #eee; width: 240px; height: 240px; }
+.kp-crop canvas:active { cursor: grabbing; }
+.kp-crop canvas:focus-visible { outline: 2px solid #3b5998; }
+.kp-crop .z { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.kp-cpp-opts { display: grid; gap: 10px; }
+.kp-cpp-opts > div { border: 1px solid #e2e2e2; padding: 8px; }
+.kp-cpp-opts h5 { font-size: 12px; margin: 0 0 6px; color: #333; }
+.kp-pickgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 6px; }
+.kp-pickgrid button { padding: 0; border: 1px solid #ccc; background: #fff; cursor: pointer; text-align: center; line-height: 13px; font-size: 10px; }
+.kp-pickgrid button .kp-img { width: 100%; aspect-ratio: 1 / 1; }
+.kp-pickgrid button:hover, .kp-pickgrid button:focus-visible { border-color: #3b5998; }
+
+@media (max-width: 767px) {
+  .kp-view { flex-direction: column; gap: 10px; }
+  .kp-view .side { width: auto; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  .kp-view .side .act { margin-top: 0; }
+  .kp-stagewrap { background: #000; border: 0; margin: 0 -10px; padding: 0; min-height: 50vh; display: flex; align-items: center; justify-content: center; }
+  .kp-stage img { max-height: 75vh; }
+  .kp-navbtn { display: flex; position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; align-items: center; justify-content: center; background: rgba(0, 0, 0, .35); color: #fff; border: 0; font-size: 22px; z-index: 3; }
+  .kp-navbtn.p { left: 0; } .kp-navbtn.n { right: 0; }
+  .kp-grid { max-width: 100%; }
+  .kp-grid.n1 a, .kp-grid.n1 .kp-img { max-width: 100%; }
+  .thumb .kp-img { width: 100%; height: auto; aspect-ratio: 4 / 3; }
+  .kp-picks { grid-template-columns: repeat(2, 1fr); }
+  .kp-crop canvas { width: 200px; height: 200px; }
+  .kp-tile .tools button { min-height: 32px; min-width: 32px; }
+}

@@ -1,0 +1,115 @@
+/* Social area (feed, profiles, friends, notes, questions, places) — additions on top of kw2010.css. */
+
+/* states */
+.kw-wait{display:flex;gap:5px;align-items:center;color:#737373;background:#f7f7f7;border:1px solid #e2e2e2;padding:6px 8px;margin:6px 0 2px;line-height:14px}
+.kw-bad{background:#fff9d7;border-color:#e2c822;color:#333}
+.kw-pad{padding:12px 0}
+.kw-hidden{color:#737373;padding:8px 0}
+.kw-older{text-align:center;padding:10px;background:#edeff4;border-bottom:1px solid #d8dfea}
+.kw-link{background:none;border:0;padding:0;color:#3b5998;cursor:pointer;font:inherit}
+.kw-link:hover{text-decoration:underline}
+.kw-link:disabled{color:#737373;cursor:default;text-decoration:none}
+.kw-x{background:none;border:0;padding:0 2px;color:#999;font-size:13px;line-height:13px;cursor:pointer;font-family:inherit}
+.kw-x:hover{background:#6d84b4;color:#fff}
+.rr .kw-x{margin-left:auto}
+.aud-pub{color:#737373}
+.aud-l{margin-left:2px}
+.kw-sort{color:#999}
+.kw-sort b{color:#333}
+
+/* story options menu */
+.story .kw-sx{border:0;background:none;cursor:pointer;font-family:inherit}
+.story .kw-sx:focus-visible{display:block}
+.kw-menu{position:absolute;right:0;top:24px;z-index:15;background:#fff;border:1px solid #333;border-color:rgba(0,0,0,.45);box-shadow:0 3px 8px rgba(0,0,0,.3);padding:4px 0;min-width:150px}
+.kw-menu button{display:block;width:100%;text-align:left;background:none;border:0;padding:4px 12px;color:#3b5998;cursor:pointer;font:inherit}
+.kw-menu button:hover,.kw-menu button:focus-visible{background:#6d84b4;color:#fff}
+
+/* attachments */
+.kw-bigic .i16{width:40px;height:40px}
+.kw-lthumb{border:1px solid #ccc}
+.kw-ph{display:block;background:#eceff5}
+.kw-photos{display:block}
+.kw-preview{background:#f7f7f7;border:1px solid #e2e2e2;padding:5px;margin:4px 0}
+.kw-poll{margin:6px 0 2px;max-width:430px}
+.kw-poll .opt .bx{font:inherit;padding:0;text-align:left;width:auto;min-height:20px}
+.kw-poll .opt .bx:disabled{cursor:wait}
+.kw-poll .opt .bx:focus-visible{outline:2px solid #f0a50b}
+.kw-addopt{width:220px;max-width:100%}
+
+/* publisher */
+.kw-aud{display:inline-flex;align-items:center;gap:4px;margin-right:auto}
+.kw-pubwarn{color:#8a6d00;font-weight:bold;font-size:10px}
+.kw-linkrow{display:flex;gap:4px;margin-bottom:4px}
+.kw-linkrow input{flex:1;margin:0 !important}
+.pub .box label.row{display:flex;gap:4px;align-items:center}
+.kw-sharebox{width:100%;height:60px;margin-bottom:6px}
+
+/* friend picker */
+.fpick input[type=text]{width:100%;margin-bottom:4px}
+.fpick-l{max-height:160px;overflow:auto;display:flex;flex-wrap:wrap;gap:2px 12px;border:1px solid #e2e2e2;padding:4px 6px;background:#fff}
+.fpick-l label{display:flex;gap:3px;align-items:center;min-width:140px}
+
+/* lists, rows */
+.kw-filter{background:#f2f2f2;border:1px solid #ccc;padding:6px 8px;display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap}
+.kw-filter input{margin-left:auto;width:200px}
+.kw-intro{background:#fff9d7;border:1px solid #e2c822;padding:4px 6px;margin-top:4px;color:#333}
+.kw-chip{display:inline-flex;gap:4px;align-items:center;background:#eceff5;border:1px solid #d8dfea;padding:1px 5px;margin:2px 4px 2px 0;border-radius:2px}
+.kw-chip button{background:none;border:0;padding:0;color:#737373;cursor:pointer;font:inherit}
+.kw-listbox{border:1px solid #e2e2e2;padding:8px;margin-bottom:10px}
+.kw-listbox h4{font-size:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px}
+
+/* profile */
+.kw-nonfriend{background:#f7f7f7;border:1px solid #ccc;padding:12px;margin-bottom:12px;line-height:15px}
+.ptop .bs{flex-wrap:wrap;justify-content:flex-end;position:relative}
+.ptop .bs .btn{display:inline-flex;align-items:center;gap:3px}
+.kw-gear{position:relative}
+.ppic .chp:focus-visible{display:block}
+.kw-gear .kw-menu{top:22px}
+.kw-sub-h{font-size:10px;color:#737373}
+
+/* notes */
+.kw-notebody{font-size:12px;line-height:1.55;margin-bottom:12px;overflow-wrap:anywhere}
+.kw-notelist .it .d .gray{display:block;margin-top:2px}
+
+/* places */
+.kw-checkin{border:1px solid #b4bbcd;padding:8px;margin-bottom:12px;background:#f7f7f7}
+.kw-checkin input[type=text]{width:100%;margin-bottom:6px}
+.kw-checkin .kw-locrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+
+/* questions */
+.kw-ask{border:1px solid #b4bbcd;padding:6px;margin-bottom:12px}
+.kw-ask input[type=text]{width:49%;margin-bottom:4px}
+.kw-ask input.q{width:100%;font-size:12px;padding:5px}
+
+/* notifications */
+.kw-notif{display:flex;gap:10px;padding:8px;border-bottom:1px solid #e9e9e9;align-items:flex-start;color:#333}
+.kw-notif:hover{background:#eff2f7;text-decoration:none}
+.kw-notif.un{background:#eceff5}
+.kw-notif .t{flex:1;min-width:0;overflow-wrap:anywhere}
+
+/* edit profile */
+.kw-edit{display:flex;gap:20px}
+.kw-edit .form select{max-width:270px}
+.kw-edit .ok,.kw-edit .err{margin-bottom:8px}
+
+/* ---------------- mobile ---------------- */
+@media (max-width: 767px) {
+  .kw-menu{right:0;top:30px}
+  .kw-menu button{padding:10px 14px}
+  .kw-filter input{width:100%;margin-left:0}
+  .kw-linkrow{flex-wrap:wrap}
+  .kw-aud select{max-width:150px}
+  .pub .bar{flex-wrap:wrap}
+  .kw-ask input[type=text]{width:100%}
+  .kw-edit{flex-direction:column;gap:8px}
+  .kw-edit .enav{width:auto;display:flex;overflow-x:auto;gap:2px}
+  .kw-edit .enav a{white-space:nowrap;padding:8px 10px}
+  .ptop .bs{justify-content:flex-start}
+  .kw-poll{max-width:none}
+  .fpick-l label{min-width:45%}
+  .list .it{flex-wrap:wrap}
+  .list .it .x{width:100%;text-align:left;padding-left:60px}
+  .kw-notif{padding:10px 8px}
+  .ppic .chp{display:block;position:static;padding:6px 0;background:none}
+  .strip .s{white-space:normal}
+}

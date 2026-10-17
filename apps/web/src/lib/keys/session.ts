@@ -28,7 +28,6 @@ export interface SessionState {
 
 let state: SessionState = { status: 'loading', userId: null, email: null, profile: null, error: null };
 let unlocked: Unlocked | null = null;
-let pendingKEK: Uint8Array | null = null; // only between first login and key setup
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<SessionState>) {
@@ -70,16 +69,25 @@ async function loadProfile(userId: string): Promise<ProfileRow | null> {
 
 async function becomeReady(userId: string, email: string | null, u: Unlocked, remember: boolean) {
   unlocked = u;
-  pendingKEK = null;
+
   if (remember) await deviceStore.save(userId, u.amk).catch(() => undefined);
   const profile = await loadProfile(userId);
   if (!profile) { set({ status: 'setup', userId, email, error: null }); return; }
   set({ status: 'ready', userId, email, profile, error: null });
+  await keyring.stop(); // restart cleanly (password change / recovery re-enter here while running)
   await keyring.start(userId, u);
 }
 
 /** Restore on page load. */
-export async function initSession(): Promise<void> {
+// Concurrent calls (e.g. React StrictMode running the effect twice) share one run, so the keyring
+// is never started twice at once.
+let initRun: Promise<void> | null = null;
+export function initSession(): Promise<void> {
+  initRun ??= doInitSession().finally(() => { initRun = null; });
+  return initRun;
+}
+
+async function doInitSession(): Promise<void> {
   const { data } = await sb().auth.getSession();
   const s = data.session;
   if (!s) { set({ status: 'signed_out' }); return; }
@@ -131,7 +139,7 @@ export async function signIn(email: string, password: string, remember: boolean)
     ? 'The email or password you entered is incorrect.' : (res.error?.message ?? 'Login failed'));
   const userId = res.data.user.id;
   const bundle = await fetchBundle(userId);
-  if (!bundle) { pendingKEK = passwordKEK; set({ status: 'setup', userId, email }); return 'setup'; }
+  if (!bundle) { set({ status: 'setup', userId, email }); return 'setup'; }
   const u = unlockWithPassword(userId, bundle, passwordKEK);
   await becomeReady(userId, email, u, remember);
   return state.status;
@@ -232,7 +240,7 @@ export async function lock(): Promise<void> {
 
 export async function signOut(): Promise<void> {
   await keyring.stop();
-  unlocked = null; pendingKEK = null;
+  unlocked = null;
   await deviceStore.clear();
   await sb().auth.signOut({ scope: 'local' });
   set({ status: 'signed_out', userId: null, email: null, profile: null });

@@ -1,0 +1,20 @@
+{
+  "name": "Kithwall",
+  "short_name": "Kithwall",
+  "description": "Your 2010 social network, sealed. End-to-end encrypted. No ads. No tracking.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#3b5998",
+  "lang": "en-US",
+  "dir": "ltr",
+  "categories": ["social"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

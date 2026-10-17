@@ -1,0 +1,122 @@
+/* Messages & chat — additions on top of kw2010.css (.thr, .msgi, #chatdock, .cw, .blist …). */
+
+/* shared bits */
+.kwm-link{background:none;border:0;padding:0;color:#3b5998;cursor:pointer;font:inherit;display:inline-flex;align-items:center;gap:3px}
+.kwm-link:hover{text-decoration:underline}
+.kwm-link:disabled{color:#737373;cursor:default;text-decoration:none}
+.kwm-x{background:none;border:0;padding:0 3px;color:#999;font-size:13px;line-height:15px;cursor:pointer;font-family:inherit;flex:none}
+.kwm-x:hover,.kwm-x:focus-visible{background:#6d84b4;color:#fff}
+.kwm-err{color:#c00}
+.kwm-err:empty{display:none}
+.kwm-pad{padding:12px 0}
+.kwm-p{margin:8px 0}
+.kwm-lbl{display:block;font-weight:bold;color:#666;margin-bottom:4px}
+.kwm-more{text-align:center;padding:8px;background:#edeff4;border-bottom:1px solid #d8dfea;margin-bottom:4px}
+.kwm-state{display:flex;gap:5px;align-items:center;color:#737373;background:#f7f7f7;border:1px solid #e2e2e2;padding:6px 8px;margin:4px 0;line-height:14px}
+
+/* inbox */
+.kwm-tools{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;border-bottom:1px solid #ccc;margin-bottom:0}
+.kwm-tools .tabs2{border-bottom:0;margin-bottom:-1px}
+.kwm-search{width:180px;margin-bottom:4px}
+.kwm-row{padding:0;align-items:center}
+.kwm-rowlink{display:flex;gap:10px;flex:1;min-width:0;padding:8px;color:#333;align-items:flex-start}
+.kwm-rowlink:hover{text-decoration:none}
+.kwm-row .kwm-x{margin-right:6px;visibility:hidden}
+.kwm-row:hover .kwm-x,.kwm-row .kwm-x:focus-visible{visibility:visible}
+.kwm-tbody{flex:1;min-width:0}
+.kwm-tname{color:#3b5998;display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.kwm-snip{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-top:2px}
+.kwm-when{flex:none;white-space:nowrap}
+.kwm-gav{display:inline-flex;flex-wrap:wrap;flex:none;overflow:hidden;line-height:0;background:#e9ebee}
+.kwm-gav .av{flex:none}
+.kwm-about{line-height:15px;padding:2px 0}
+
+/* thread */
+.kwm-title{overflow-wrap:anywhere}
+.kwm-secure{margin:-4px 0 6px;display:flex;align-items:center;gap:4px}
+.kwm-day{text-align:center;margin:12px 0 2px;border-top:1px solid #e9e9e9;line-height:0}
+.kwm-day span{background:#fff;padding:0 8px;color:#737373;font-weight:bold;position:relative;top:0;line-height:14px;display:inline-block;transform:translateY(-50%)}
+.kwm-msg .kwm-body{flex:1;min-width:0}
+.kwm-head{display:flex;justify-content:space-between;gap:8px}
+.kwm-tx{margin-top:3px;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;line-height:15px}
+.kwm-text a{word-break:break-all}
+.kwm-acts{margin-top:4px;min-height:14px}
+.kwm-acts .kwm-link{color:#737373;visibility:hidden}
+.kwm-msg:hover .kwm-acts .kwm-link,.kwm-acts .kwm-link:focus-visible{visibility:visible;color:#3b5998}
+.kwm-ev{color:#737373;padding:6px 0 6px 60px;border-bottom:1px solid #e9e9e9}
+.kwm-atts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.kwm-att{display:inline-block;line-height:0;border:1px solid #ccc;padding:2px;background:#fff;max-width:100%}
+.kwm-att img{display:block;max-width:100%;height:auto}
+.kwm-att-wait{background:#f2f2f2 linear-gradient(90deg,#f2f2f2,#e7e7e7,#f2f2f2);min-height:40px}
+.kwm-att-x{display:inline-flex;align-items:center;justify-content:center;color:#737373;line-height:14px;background:#f7f7f7}
+.kwm-typing{min-height:18px;padding:4px 0 0 60px;font-style:italic}
+
+/* reply box */
+.kwm-reply{display:flex;gap:10px;margin-top:6px;padding-top:8px;border-top:1px solid #e9e9e9}
+.kwm-reply-main{flex:1;min-width:0}
+.kwm-reply textarea,.kwm-new textarea{width:100%;height:64px;display:block}
+.kwm-reply-bar{display:flex;align-items:center;gap:10px;margin-top:5px}
+.kwm-reply-bar .btn{margin-left:auto}
+.kwm-hint{display:inline-flex;align-items:center;gap:3px;font-size:10px}
+.kwm-files{list-style:none;margin:5px 0 0;padding:0}
+.kwm-files li{display:flex;gap:4px;align-items:center;padding:1px 0}
+
+/* new message */
+.kwm-form{width:100%}
+.kwm-form td.l{width:80px}
+.kwm-new .kwm-form textarea{width:100%;height:110px}
+.kwm-form input[type=text]{width:100%}
+
+/* recipient picker */
+.kwm-to{position:relative}
+.kwm-toks{display:flex;flex-wrap:wrap;gap:3px;align-items:center;border:1px solid #bdc7d8;padding:2px;background:#fff;min-height:22px;cursor:text}
+.kwm-toks input[type=text]{border:0;outline:0;flex:1;min-width:120px;width:auto;padding:2px}
+.kwm-tok{display:inline-flex;align-items:center;gap:3px;background:#e2e8f6;border:1px solid #9dacce;padding:0 3px;line-height:16px;border-radius:2px}
+.kwm-tok button{background:none;border:0;cursor:pointer;color:#6d84b4;padding:0 2px;font:bold 12px/1 inherit}
+.kwm-tok button:hover{color:#3b5998}
+.kwm-ta{position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid #333;border-top:0;list-style:none;margin:0;padding:0;box-shadow:0 3px 6px rgba(0,0,0,.2)}
+.kwm-ta li{display:flex;gap:6px;align-items:center;padding:4px 6px;cursor:pointer}
+.kwm-ta li.on{background:#6d84b4;color:#fff}
+.kwm-ta li.on .gray{color:#e9edf5}
+.kwm-hintline{padding:3px 0}
+
+/* right column */
+.kwm-people{list-style:none;margin:0;padding:0}
+.kwm-people li{display:flex;align-items:center;gap:6px;padding:3px 0}
+.kwm-pname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kwm-opts{list-style:none;margin:8px 0 0;padding:6px 0 0;border-top:1px solid #e9e9e9}
+.kwm-opts li{padding:2px 0}
+
+/* chat dock */
+#chatdock .ctab .kwc-off{background:#bbb}
+.blist .bh .kwc-bh{display:flex;gap:8px;font-weight:normal}
+.blist .bh a{cursor:pointer}
+.kwc-pad{padding:8px}
+.kwc-bname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kwc-foot{border-top:1px solid #e9e9e9;padding:4px 8px;text-align:right}
+.blist a.bu{cursor:pointer}
+.cw .ch .kwc-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cw .ch a{cursor:pointer}
+.cw .ch:focus-visible,.ctab:focus-visible{outline:2px solid #fff;outline-offset:-3px}
+.cw .cmi .kwm-text{white-space:pre-wrap}
+.cw .kwc-ev{display:block;font-style:italic}
+.cw .kwm-state{padding:3px 5px;font-size:10px}
+.kwc-typing{font-style:italic}
+
+@media (max-width: 767px) {
+  .kwm-tools{flex-direction:column;align-items:stretch}
+  .kwm-search{width:100%;margin:6px 0}
+  .kwm-row .kwm-x{visibility:visible;padding:10px}
+  .kwm-acts .kwm-link{visibility:visible}
+  .kwm-acts .kwm-link{padding:6px 0}
+  .kwm-ev{padding-left:0}
+  .kwm-typing{padding-left:0}
+  .kwm-reply > .av{display:none}
+  .kwm-reply textarea{height:80px}
+  .kwm-hint{display:none}
+  .kwm-msg .av{width:36px;height:36px}
+  .kwm-opts li{padding:8px 0}
+  .kwm-people li{padding:6px 0}
+  .kwm-form td.l{width:auto}
+  .kwm-ta li{padding:10px 8px}
+}

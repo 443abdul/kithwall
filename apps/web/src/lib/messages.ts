@@ -1,69 +1,245 @@
 'use client';
 // Messages & chat (spec §3.10): one system. A conversation = an audience of kind 'conversation'
 // whose epoch key is sealed to each member. Messages are envelopes under that key.
-import { b64u, openEnvelope, sealEnvelope, type EnvelopeHeader } from '@kithwall/crypto';
+//
+// Key authority: only the conversation OWNER's device mints keys (on creation and on rotation).
+// Membership changes set `conversations.rekey_needed` in the database; the owner's device then
+// advances the epoch with a compare-and-swap and seals the new key to the remaining members, so
+// people who left can't read anything sent afterwards. If the owner leaves, the database hands
+// ownership to a remaining member (leave_conversation RPC), whose device rotates.
+import { b64u, extractContentKey, decryptBlob, encryptBlob, openEnvelope, sealEnvelope, type EnvelopeHeader } from '@kithwall/crypto';
 import { sb, must } from './supabase';
 import { identity, me } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
 import { people } from './people';
-import type { MessagePayload, MessageRow } from './types';
+import type { AudienceRow, FileRef, MessagePayload, MessageRow } from './types';
 import type { Decrypted } from './content';
 
-export interface ConversationRow { id: string; audience_id: string; created_by: string; dm_key: string | null; last_message_at: string; created_at: string }
-export interface ConversationSummary extends ConversationRow { members: string[]; lastReadAt: string | null; unread: boolean }
+export interface ConversationRow {
+  id: string; audience_id: string; created_by: string; dm_key: string | null; last_message_at: string; created_at: string;
+  rekey_needed?: boolean;
+}
+export interface ConversationSummary extends ConversationRow {
+  /** Everyone in the conversation (owner + active members), including me. */
+  members: string[];
+  lastReadAt: string | null;
+  unread: boolean;
+  ownerId: string | null;
+  admins: string[];
+  epoch: number;
+  nameEnc: unknown;
+  isDm: boolean;
+  /** Newest message (ciphertext), if any. */
+  last: MessageRow | null;
+  /** When I joined (null for the owner / unknown). */
+  joinedAt: string | null;
+}
 
+/** Things that happen in a conversation, shown inline ("Alice added Bob."). */
+export type ConversationEvent =
+  | { kind: 'rename'; name: string }
+  | { kind: 'added'; ids: string[] }
+  | { kind: 'removed'; ids: string[] }
+  | { kind: 'left' };
+export interface ChatPayload extends MessagePayload { event?: ConversationEvent }
+
+export const MAX_MESSAGE_CHARS = 20_000;
 export const dmKey = (a: string, b: string) => (a < b ? `${a}:${b}` : `${b}:${a}`);
 
 export function messageHeader(m: Pick<MessageRow, 'id' | 'conversation_id' | 'sender_id' | 'epoch'>, audienceId: string): EnvelopeHeader {
   return { v: 1, type: 'message', id: m.id, author: m.sender_id, wall: m.conversation_id, audience: { id: audienceId, epoch: m.epoch } };
 }
 
-/** Find or create the one-to-one conversation with a friend. */
-export async function openDm(friendId: string): Promise<ConversationRow> {
-  const key = dmKey(me(), friendId);
-  const existing = (await sb().from('conversations').select('*').eq('dm_key', key).maybeSingle()).data as ConversationRow | null;
-  if (existing) return existing;
-  return createConversation([friendId], key);
+// ---------------------------------------------------------------------------------------------
+// Creating conversations
+
+/** The existing one-to-one conversation with someone, without creating one. */
+export async function findDm(userId: string): Promise<ConversationRow | null> {
+  return (await sb().from('conversations').select('*').eq('dm_key', dmKey(me(), userId)).maybeSingle()).data as ConversationRow | null;
 }
 
-export async function createConversation(memberIds: string[], dm: string | null = null): Promise<ConversationRow> {
+/** Find or create the one-to-one conversation with someone (friends, or anyone by username). */
+export async function openDm(friendId: string): Promise<ConversationRow> {
+  if (friendId === me()) throw new Error('You can\'t message yourself.');
+  const existing = await findDm(friendId);
+  if (existing) return existing;
+  return createConversation([friendId], dmKey(me(), friendId));
+}
+
+export async function createConversation(memberIds: string[], dm: string | null = null, name?: string): Promise<ConversationRow> {
+  const ids = [...new Set(memberIds)].filter((m) => m !== me());
+  if (!ids.length) throw new Error('Choose at least one person.');
   const aud = await keyring.createAudience('conversation');
-  for (const m of memberIds) {
-    must(await sb().from('audience_members').insert({ audience_id: aud.id, member_id: m, role: 'member', status: 'active', invited_by: me() }));
+  try {
+    // My own membership row (admin) keeps my read marker on the server, across devices.
+    must(await sb().from('audience_members').insert({ audience_id: aud.id, member_id: me(), role: 'admin', status: 'active', invited_by: me() }));
+    must(await sb().from('audience_members').insert(ids.map((m) => ({ audience_id: aud.id, member_id: m, role: 'member', status: 'active', invited_by: me() }))));
+    if (name?.trim() && !dm) await writeName(aud, name.trim());
+  } catch (e) {
+    await sb().from('audiences').delete().eq('id', aud.id);
+    throw e;
   }
   const conv = await sb().from('conversations').insert({ audience_id: aud.id, created_by: me(), dm_key: dm }).select().single();
   if (conv.error) {
+    await sb().from('audiences').delete().eq('id', aud.id);
     // Lost a race creating the same DM: use the other one.
-    if (dm && conv.error.code === '23505') {
-      await sb().from('audiences').delete().eq('id', aud.id);
-      return must(await sb().from('conversations').select('*').eq('dm_key', dm).single()) as ConversationRow;
-    }
-    throw new Error(conv.error.message);
+    if (dm && conv.error.code === '23505') return must(await sb().from('conversations').select('*').eq('dm_key', dm).single()) as ConversationRow;
+    throw new Error(conv.error.code === 'P0429' ? 'You\'ve started too many conversations today. Try again tomorrow.' : conv.error.message);
   }
   await keyring.deliverPending();
   return conv.data as ConversationRow;
 }
 
-export async function addMembers(conv: ConversationRow, memberIds: string[]) {
-  for (const m of memberIds) {
-    must(await sb().from('audience_members').insert({ audience_id: conv.audience_id, member_id: m, status: 'active', role: 'member', invited_by: me() }));
+// ---------------------------------------------------------------------------------------------
+// Keys
+
+async function audienceRow(aud: string): Promise<AudienceRow> {
+  return must(await sb().from('audiences').select('*').eq('id', aud).single()) as AudienceRow;
+}
+
+/** Current conversation key. Never mints a key except through rotation (see header comment). */
+export async function conversationKey(conv: Pick<ConversationRow, 'audience_id'>): Promise<{ key: Uint8Array; epoch: number }> {
+  let row = await audienceRow(conv.audience_id);
+  let key = keyring.get(row.id, row.current_epoch);
+  if (!key) { await keyring.load(); key = keyring.get(row.id, row.current_epoch); }
+  if (!key && row.owner_id === me()) {
+    // The owner is the only key authority: if even the owner has no key for this epoch, nobody
+    // does (e.g. an interrupted rotation), so it's safe to move to a fresh epoch.
+    if (await rotateConversation(conv)) {
+      row = await audienceRow(conv.audience_id);
+      key = keyring.get(row.id, row.current_epoch);
+    }
   }
-  await keyring.deliverPending();
+  if (!key) throw new KeyWaitingError(conv.audience_id);
+  return { key, epoch: row.current_epoch };
 }
 
-/** Leave a group conversation; the remaining members rotate the key when they next open it. */
+const rotating = new Map<string, Promise<boolean>>();
+
+/**
+ * Advance the conversation to a new epoch (owner only). Compare-and-swap on the epoch so two of
+ * my tabs can't both mint a key; the name is re-encrypted under the new key. Returns true if
+ * this call rotated.
+ */
+export function rotateConversation(conv: Pick<ConversationRow, 'audience_id'>): Promise<boolean> {
+  const aud = conv.audience_id;
+  const inflight = rotating.get(aud);
+  if (inflight) return inflight;
+  const p = (async () => {
+    const row = await audienceRow(aud);
+    if (row.owner_id !== me()) return false;
+    const name = readName(row);
+    const res = await sb().from('audiences').update({ current_epoch: row.current_epoch + 1 })
+      .eq('id', aud).eq('current_epoch', row.current_epoch).select().maybeSingle();
+    if (res.error) throw new Error(res.error.message);
+    if (!res.data) return false; // another device of mine got there first
+    const next = res.data as AudienceRow;
+    await keyring.ensureOwn(next);
+    if (name.ok && name.value) await writeName(next, name.value).catch((e) => console.warn('conversation name re-encryption', e));
+    await keyring.deliverPending();
+    return true;
+  })();
+  rotating.set(aud, p);
+  void p.finally(() => rotating.delete(aud)).catch(() => undefined);
+  return p;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Conversation name: stored in audiences.name_enc, encrypted under the current epoch key.
+
+interface NameEnc { v: 1; epoch: number; blob: string }
+const nameAad = (aud: string, epoch: number) => `conversation-name/${aud}/${epoch}`;
+
+async function writeName(aud: AudienceRow, name: string) {
+  const key = keyring.get(aud.id, aud.current_epoch);
+  if (!key) throw new KeyWaitingError(aud.id);
+  const nameEnc: NameEnc | null = name
+    ? { v: 1, epoch: aud.current_epoch, blob: encryptBlob(key, new TextEncoder().encode(name.slice(0, 120)), nameAad(aud.id, aud.current_epoch)) }
+    : null;
+  must(await sb().from('audiences').update({ name_enc: nameEnc }).eq('id', aud.id));
+}
+
+/** Decrypt a conversation name (ok with '' when it has none). */
+export function readName(a: { id: string; name_enc: unknown } | { audience_id: string; nameEnc: unknown }): Decrypted<string> {
+  const id = 'audience_id' in a ? a.audience_id : a.id;
+  const enc = ('nameEnc' in a ? a.nameEnc : a.name_enc) as NameEnc | null;
+  if (!enc) return { ok: true, value: '' };
+  const key = keyring.get(id, enc.epoch);
+  if (!key) return { ok: false, reason: 'waiting' };
+  try {
+    return { ok: true, value: new TextDecoder().decode(decryptBlob(key, enc.blob, nameAad(id, enc.epoch))) };
+  } catch {
+    return { ok: false, reason: 'unverified' };
+  }
+}
+
+/** Rename a group conversation (owner/admins; the database enforces it). */
+export async function renameConversation(conv: ConversationSummary, name: string) {
+  const clean = name.replace(/\s+/g, ' ').trim().slice(0, 120);
+  await conversationKey(conv); // make sure we hold the current key
+  await writeName(await audienceRow(conv.audience_id), clean);
+  await sendMessage(conv, { text: '', event: { kind: 'rename', name: clean } });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Membership
+
+export async function addMembers(conv: ConversationRow, memberIds: string[]) {
+  const ids = [...new Set(memberIds)].filter((m) => m !== me());
+  if (!ids.length) return;
+  for (const m of ids) {
+    const r = await sb().from('audience_members').insert({ audience_id: conv.audience_id, member_id: m, status: 'active', role: 'member', invited_by: me() });
+    if (r.error && r.error.code !== '23505') {
+      throw new Error(r.error.code === '42501' ? 'You can only add your friends to this conversation.' : r.error.message);
+    }
+  }
+  // Owner: new epoch so newcomers don't receive the earlier key. Others: hand over the current
+  // key now; the owner's device rotates when it next sees the change.
+  if (!(await rotateConversation(conv).catch(() => false))) await keyring.deliverPending();
+  await sendMessage(conv, { text: '', event: { kind: 'added', ids } }).catch(() => undefined);
+}
+
+/** Owner removes someone; their access ends and the key is rotated. */
+export async function removeMember(conv: ConversationSummary, memberId: string) {
+  await sendMessage(conv, { text: '', event: { kind: 'removed', ids: [memberId] } }).catch(() => undefined);
+  must(await sb().from('audience_members').delete().match({ audience_id: conv.audience_id, member_id: memberId }));
+  await rotateConversation(conv);
+}
+
+/** Leave a group conversation. The database hands ownership over if needed. */
 export async function leaveConversation(conv: ConversationRow) {
-  must(await sb().from('audience_members').delete().match({ audience_id: conv.audience_id, member_id: me() }));
+  await sendMessage(conv, { text: '', event: { kind: 'left' } }).catch(() => undefined);
+  must(await sb().rpc('leave_conversation', { conv: conv.id }));
 }
 
-export async function sendMessage(conv: ConversationRow, payload: MessagePayload, id = crypto.randomUUID()): Promise<MessageRow> {
-  const { key, epoch } = await keyring.current(conv.audience_id);
+// ---------------------------------------------------------------------------------------------
+// Messages
+
+export async function sendMessage(conv: ConversationRow, payload: ChatPayload, id = crypto.randomUUID()): Promise<MessageRow> {
+  if ((payload.text ?? '').length > MAX_MESSAGE_CHARS) throw new Error('That message is too long.');
+  const { key, epoch } = await conversationKey(conv);
   const base = { id, conversation_id: conv.id, sender_id: me(), epoch };
   const envelope = sealEnvelope({ header: messageHeader(base, conv.audience_id), payload, audienceKey: key, signPriv: identity().signPriv });
-  return must(await sb().from('messages').insert({ ...base, envelope }).select().single()) as MessageRow;
+  const res = await sb().from('messages').insert({ ...base, envelope }).select().single();
+  if (res.error) {
+    if (res.error.code === 'P0429') throw new Error('You\'ve sent a lot of messages today. Try again later.');
+    if (res.error.code === '42501') throw new Error('You can\'t send messages in this conversation.');
+    throw new Error(res.error.message);
+  }
+  return res.data as MessageRow;
 }
 
-export async function fetchMessages(conv: ConversationRow, before?: string, pageSize = 50): Promise<MessageRow[]> {
+export async function deleteMessage(row: MessageRow, attachments: FileRef[] = []) {
+  if (row.sender_id !== me()) throw new Error('You can only delete your own messages.');
+  const mine = attachments.map((a) => a.path).filter((p) => p.startsWith(`${me()}/`));
+  if (mine.length) {
+    await sb().storage.from('media').remove(mine);
+  }
+  must(await sb().from('messages').delete().eq('id', row.id));
+  cache.delete(row.id);
+}
+
+export async function fetchMessages(conv: Pick<ConversationRow, 'id'>, before?: string, pageSize = 50): Promise<MessageRow[]> {
   let q = sb().from('messages').select('*').eq('conversation_id', conv.id).order('created_at', { ascending: false }).limit(pageSize);
   if (before) q = q.lt('created_at', before);
   const rows = (must(await q) as MessageRow[]).reverse();
@@ -71,41 +247,78 @@ export async function fetchMessages(conv: ConversationRow, before?: string, page
   return rows;
 }
 
-export function readMessage(conv: ConversationRow, row: MessageRow): Decrypted<MessagePayload> {
+const cache = new Map<string, Decrypted<ChatPayload>>();
+
+export function readMessage(conv: Pick<ConversationRow, 'audience_id'>, row: MessageRow): Decrypted<ChatPayload> {
+  const hit = cache.get(row.id);
+  if (hit) return hit;
   const sender = people.get(row.sender_id);
   const key = keyring.get(conv.audience_id, row.epoch);
   if (!sender || !key) return { ok: false, reason: 'waiting' };
+  let out: Decrypted<ChatPayload>;
   try {
-    return { ok: true, value: openEnvelope<MessagePayload>({ header: messageHeader(row, conv.audience_id), envelope: row.envelope, audienceKey: key, signPub: b64u.decode(sender.sign_pub) }) };
+    const value = openEnvelope<ChatPayload>({ header: messageHeader(row, conv.audience_id), envelope: row.envelope, audienceKey: key, signPub: b64u.decode(sender.sign_pub) });
+    out = value && typeof value === 'object' && typeof (value.text ?? '') === 'string' ? { ok: true, value } : { ok: false, reason: 'unverified' };
   } catch {
-    return { ok: false, reason: 'unverified' };
+    out = { ok: false, reason: 'unverified' };
   }
-}
-
-/** My conversations, newest first, with members and unread state. */
-export async function listConversations(limit = 30): Promise<ConversationSummary[]> {
-  const convs = must(await sb().from('conversations').select('*').order('last_message_at', { ascending: false }).limit(limit)) as ConversationRow[];
-  if (!convs.length) return [];
-  const auds = convs.map((c) => c.audience_id);
-  const members = must(await sb().from('audience_members').select('audience_id, member_id, last_read_at').in('audience_id', auds)) as
-    { audience_id: string; member_id: string; last_read_at: string | null }[];
-  const owners = must(await sb().from('audiences').select('id, owner_id').in('id', auds)) as { id: string; owner_id: string }[];
-  const out = convs.map((c) => {
-    const ms = members.filter((m) => m.audience_id === c.audience_id);
-    const ids = new Set(ms.map((m) => m.member_id));
-    const owner = owners.find((o) => o.id === c.audience_id)?.owner_id;
-    if (owner) ids.add(owner);
-    const mine = ms.find((m) => m.member_id === me());
-    // Owners have no membership row; keep their read marker in localStorage.
-    const lastReadAt = mine?.last_read_at ?? ownerReadAt(c.id);
-    return { ...c, members: [...ids], lastReadAt, unread: !lastReadAt || lastReadAt < c.last_message_at };
-  });
-  await people.ensure(out.flatMap((c) => c.members));
+  if (cache.size > 5000) cache.clear();
+  cache.set(row.id, out);
   return out;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Listing
+
+interface MemberRow { audience_id: string; member_id: string; role: string; status: string; last_read_at: string | null; created_at: string }
+
+async function summarize(convs: ConversationRow[]): Promise<ConversationSummary[]> {
+  if (!convs.length) return [];
+  const auds = convs.map((c) => c.audience_id);
+  const [members, audRows, previews] = await Promise.all([
+    sb().from('audience_members').select('audience_id, member_id, role, status, last_read_at, created_at').in('audience_id', auds).eq('status', 'active'),
+    sb().from('audiences').select('id, owner_id, current_epoch, name_enc').in('id', auds),
+    sb().rpc('conversation_previews', { conv_ids: convs.map((c) => c.id) }),
+  ]);
+  const ms = must(members) as MemberRow[];
+  const as = must(audRows) as Pick<AudienceRow, 'id' | 'owner_id' | 'current_epoch' | 'name_enc'>[];
+  const last = new Map((must(previews) as MessageRow[]).map((m) => [m.conversation_id, m]));
+  const self = me();
+  const out = convs.map((c): ConversationSummary => {
+    const mine = ms.filter((m) => m.audience_id === c.audience_id);
+    const a = as.find((x) => x.id === c.audience_id);
+    const ids = new Set(mine.map((m) => m.member_id));
+    if (a) ids.add(a.owner_id);
+    const myRow = mine.find((m) => m.member_id === self);
+    // Older conversations have no owner membership row; keep that read marker on this device.
+    const lastReadAt = myRow?.last_read_at ?? localReadAt(c.id);
+    const lm = last.get(c.id) ?? null;
+    const unread = !!lm && lm.sender_id !== self && (!lastReadAt || lastReadAt < lm.created_at);
+    return {
+      ...c, members: [...ids], lastReadAt, unread, last: lm,
+      ownerId: a?.owner_id ?? null, epoch: a?.current_epoch ?? 1, nameEnc: a?.name_enc ?? null, isDm: !!c.dm_key,
+      admins: [...new Set([...(a ? [a.owner_id] : []), ...mine.filter((m) => m.role === 'admin').map((m) => m.member_id)])],
+      joinedAt: a?.owner_id === self ? null : myRow?.created_at ?? null,
+    };
+  });
+  await people.ensure(out.flatMap((c) => [...c.members, ...(c.last ? [c.last.sender_id] : [])]));
+  return out;
+}
+
+/** My conversations, newest first, with members, unread state and the newest message. */
+export async function listConversations(limit = 30): Promise<ConversationSummary[]> {
+  const convs = must(await sb().from('conversations').select('*').order('last_message_at', { ascending: false }).limit(limit)) as ConversationRow[];
+  return summarize(convs);
+}
+
+export async function getConversation(id: string): Promise<ConversationSummary | null> {
+  const c = (await sb().from('conversations').select('*').eq('id', id).maybeSingle()).data as ConversationRow | null;
+  if (!c) return null;
+  return (await summarize([c]))[0] ?? null;
+}
+
 const READ_KEY = 'kw.read.';
-function ownerReadAt(convId: string): string | null {
+function localReadAt(convId: string): string | null {
   try { return localStorage.getItem(READ_KEY + convId); } catch { return null; }
 }
 
@@ -115,4 +328,27 @@ export async function markRead(conv: ConversationRow) {
   if (!r.data?.length) { try { localStorage.setItem(READ_KEY + conv.id, now); } catch { /* ignore */ } }
 }
 
+/** Display title: the conversation's name, or the other people's names. */
+export function conversationTitle(c: ConversationSummary, nameOf: (id: string) => string): string {
+  const n = readName(c);
+  if (n.ok && n.value) return n.value;
+  const others = c.members.filter((m) => m !== me());
+  if (!others.length) return 'Only you';
+  const names = others.map(nameOf);
+  return names.length <= 3 ? names.join(', ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} others`;
+}
+
 export { KeyWaitingError };
+
+/**
+ * Per-message content key for abuse reports: discloses only this message, not the whole
+ * conversation epoch. Returns null if we don't hold the key or the message fails verification.
+ */
+export function messageContentKey(conv: { id: string; audience_id: string }, row: MessageRow): Uint8Array | null {
+  const sender = people.get(row.sender_id);
+  const key = keyring.get(conv.audience_id, row.epoch);
+  if (!sender || !key) return null;
+  try {
+    return extractContentKey({ header: messageHeader(row, conv.audience_id), envelope: row.envelope, audienceKey: key, signPub: b64u.decode(sender.sign_pub) });
+  } catch { return null; }
+}

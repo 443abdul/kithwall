@@ -277,9 +277,15 @@ max_frequency = "5s"
 # inactivity_timeout = "8h"
 
 # This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
-# [auth.hook.before_user_created]
-# enabled = true
-# uri = "pg-functions://postgres/auth/before-user-created-hook"
+# Kithwall: sign-up anti-abuse (ALTCHA proof-of-work) + the operator's signups_enabled switch, checked by the
+# Next.js route apps/web/src/app/api/hooks/before-user-created. Docker reaches the host's dev server through
+# host.docker.internal; `npm run dev` listens on :3000. Takes effect after `supabase stop && supabase start`.
+# The secret is a LOCAL-ONLY dev value: it is base64("local-dev-hook-secret-...") so apps/web/.env.local's
+# AUTH_HOOK_SECRET (raw form) matches it. Production uses a fresh "v1,whsec_..." secret (see docs/deploy.md).
+[auth.hook.before_user_created]
+enabled = true
+uri = "http://host.docker.internal:3000/api/hooks/before-user-created"
+secrets = "v1,whsec_bG9jYWwtZGV2LWhvb2stc2VjcmV0LTAxMjM0NTY3ODlhYmNkZWY="
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
 # [auth.hook.custom_access_token]

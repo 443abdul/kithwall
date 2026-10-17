@@ -62,5 +62,6 @@ export function notifHref(n: NotificationRow, actorUsername?: string): string {
   }
   if (n.type === 'friend_request') return '/requests';
   if (n.type === 'poke') return '/pokes';
+  if (n.type === 'game') return '/games/kithville';
   return actorUsername ? `/${actorUsername}` : '/notifications';
 }

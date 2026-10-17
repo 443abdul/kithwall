@@ -98,6 +98,7 @@ export async function saveProfileInfo(info: ProfileInfo) {
   // Keep my friend list in sync (friends can see who my friends are unless I hide it).
   const friends = info.hideFriends ? undefined : await myFriendIds();
   const payload: ProfileInfo = { ...info, friends };
+  if (!payload.friends) delete payload.friends; // canonicalJson rejects undefined values
   const envelope = sealEnvelope({ header: profileHeader(me(), aud, epoch), payload, audienceKey: key, signPriv: identity().signPriv });
   must(await sb().from('profile_info').upsert({ user_id: me(), audience_id: aud, epoch, envelope, updated_at: new Date().toISOString() }));
   await people.refreshInfo(me());
