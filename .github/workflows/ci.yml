@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Typecheck, lint, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Crypto tests
+        run: npx vitest run
+        working-directory: packages/crypto
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm -w @kithwall/web run lint
+      - name: Build
+        run: npm -w @kithwall/web run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+  database:
+    name: Migrations and RLS tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Use default ports in CI
+        run: sed -i -E 's/= 643(2[0-9])/= 543\1/' supabase/config.toml
+      # storage-api and realtime stay on: migrations create the media bucket and realtime publication.
+      - run: supabase start -x studio,imgproxy,vector,logflare,edge-runtime,supavisor,mailpit
+      - run: supabase test db

@@ -103,8 +103,11 @@ export function readPost(row: PostRow): Decrypted<PostPayload> {
 export function postContentKey(row: PostRow): Uint8Array | null {
   if (row.is_public) return null;
   const key = keyring.get(row.audience_id!, row.epoch!);
-  if (!key) return null;
-  return extractContentKey({ header: postHeader(row), envelope: row.envelope, audienceKey: key });
+  const author = people.get(row.author_id);
+  if (!key || !author) return null;
+  try {
+    return extractContentKey({ header: postHeader(row), envelope: row.envelope, audienceKey: key, signPub: b64u.decode(author.sign_pub) });
+  } catch { return null; }
 }
 
 // ---------------------------------------------------------------------------------------

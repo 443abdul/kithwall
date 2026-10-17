@@ -401,3 +401,23 @@ plaintext canary finds nothing; Lighthouse accessibility ≥ 95 on Home, Profile
 5. **Auth email sender:** a transactional email provider for custom SMTP (e.g. Resend or Postmark).
 6. **Legal:** a lawyer should review the privacy policy and terms before public launch. I'll draft
    plain-language versions.
+
+---
+
+## 12. Implementation notes (decisions made during the build)
+
+| Topic | Decision |
+|---|---|
+| Launch audience | **Friends-only.** `app_settings.public_audience_enabled = false`; admins can switch Public on later from `/mod`. Pages, Open groups and public events only work while it is on. |
+| Moderators | Accounts listed in `staff_roles`. The owner bootstraps the first `admin` in SQL; admins appoint moderators from `/mod`. Moderators see only reported items (plus the disclosed key), never a blanket view. |
+| Signatures | Computed over canonical JSON with a domain string (not the raw `SHA-256(header‖wk‖n‖ct)` in §3.8, which lacked length separation). See `packages/crypto/README.md`. |
+| Identity key wrap | Private identity keys are encrypted under `HKDF(AMK, "kithwall/v1/identity-key")`, not the AMK directly. |
+| Argon2 floor | Clients refuse Argon2 parameters weaker than m = 64 MiB, t = 3, so a malicious server can't downgrade password stretching. |
+| Envelope storage | Envelopes are stored as `jsonb` (base64url fields), not `bytea`. |
+| Comments | Header binds the comment id, author and parent id; key = `HKDF(contentKey, comment, commentId)`. |
+| Friend lists for friends | Your friend list is published inside your encrypted profile info (unless hidden), so friends can see mutual friends and People You May Know is computed on device. |
+| Tag notices | Readable by anyone who can read the photo (they already see the tags inside the photo payload). |
+| Web Worker | Crypto runs on the main thread in v1; Argon2 runs once per login. Moving it to a Worker is a performance task, not a security boundary. |
+| Email change | Not supported in v1: the password salt is derived from the email. A pre-login salt lookup (with fake salts for unknown emails) will lift this. |
+| Minimum age | 16 (client-side check at sign-up; birthday stays encrypted). India's DPDP Act treats under-18s as children — the owner should decide on 18 for India. |
+| Lost-everything deletion | Users without keys can request deletion via email; it executes after a 72-hour delay (proof-of-key impossible). |

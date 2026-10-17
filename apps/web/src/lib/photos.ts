@@ -94,7 +94,11 @@ export function readPhoto(row: PhotoRow): Decrypted<PhotoPayload> {
 export function photoContentKey(row: PhotoRow): Uint8Array | null {
   if (row.is_public) return null;
   const key = keyring.get(row.audience_id!, row.epoch!);
-  return key ? extractContentKey({ header: photoHeader(row), envelope: row.envelope, audienceKey: key }) : null;
+  const owner = people.get(row.owner_id);
+  if (!key || !owner) return null;
+  try {
+    return extractContentKey({ header: photoHeader(row), envelope: row.envelope, audienceKey: key, signPub: b64u.decode(owner.sign_pub) });
+  } catch { return null; }
 }
 
 /** Owner re-signs the photo with updated caption/tags. Tagged friends get a tag notice + notification. */
