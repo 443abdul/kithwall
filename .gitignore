@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.env*
+!.env.example
+.vercel/
+coverage/
+playwright-report/
+supabase/.temp/
+
