@@ -1,0 +1,13 @@
+{
+  "name": "kithwall",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "npm -w @kithwall/web run dev",
+    "build": "npm -w @kithwall/web run build",
+    "lint": "npm -ws --if-present run lint",
+    "typecheck": "npm -ws --if-present run typecheck",
+    "test": "npm -ws --if-present run test"
+  }
+}
