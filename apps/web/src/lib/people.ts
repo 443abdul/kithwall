@@ -79,8 +79,34 @@ class People {
     this.bump();
   }
 
-  /** Call when new keys arrive so cached "can't read" results are retried. */
-  invalidateInfos() { this.infos.clear(); this.bump(); }
+  /**
+   * Call when new keys arrive (e.g. a friendship was just accepted): cached "can't read" results are
+   * retried, and profile info we couldn't fetch or decrypt before is re-fetched — before the
+   * friendship existed, RLS hid the row, and the owner may since have re-encrypted it to a new epoch.
+   */
+  invalidateInfos() {
+    this.infos.clear();
+    this.bump();
+    if (this.refetchTimer) clearTimeout(this.refetchTimer);
+    this.refetchTimer = setTimeout(() => { void this.refetchUnreadable(); }, 300);
+  }
+  private refetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private async refetchUnreadable() {
+    const ids = [...this.rows.keys()].filter((id) => {
+      const r = this.infoRows.get(id);
+      return !r || !this.keyLookup(r.audience_id, r.epoch);
+    });
+    if (!ids.length) return;
+    try {
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const infos = must(await sb().from('profile_info').select('*').in('user_id', chunk)) as ProfileInfoRow[];
+        infos.forEach((r) => { this.infoRows.set(r.user_id, r); this.infos.delete(r.user_id); });
+      }
+    } catch { /* offline or signed out: retried on the next key change */ }
+    this.bump();
+  }
 
   private decryptInfo(id: string): ProfileInfo | null {
     if (this.infos.has(id)) return this.infos.get(id) ?? null;

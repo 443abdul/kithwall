@@ -45,7 +45,7 @@ Read with [01-foundation](01-foundation.md) and [02-scope](02-scope.md).
 | Server swapping or replaying ciphertexts | Every envelope is bound to its row (author, object id, type) with authenticated data and signed by the author |
 | Server substituting someone's public key (man-in-the-middle) | Key changes are signed by the previous key and announced in-app; optional safety-number verification (R3) |
 | Credential stuffing, spam sign-ups | Argon2id-stretched passwords, Supabase auth rate limits, proof-of-work captcha, per-action rate limits, MFA |
-| Cross-site scripting / injection | Strict Content-Security-Policy with Trusted Types, React escaping, no inline HTML from users, parameterised queries |
+| Cross-site scripting / injection | Strict nonce-based Content-Security-Policy (Trusted Types deferred, §12), React escaping, no inline HTML from users, parameterised queries |
 
 ### We do **not** fully protect against (stated in-product)
 - **Metadata.** The server can see who is friends with whom, who messages whom, when, and roughly
@@ -330,7 +330,7 @@ meet contrast (`#737373` minimum).
 
 | Area | Control |
 |---|---|
-| Headers | CSP: `default-src 'self'; script-src 'self' 'nonce-…' 'strict-dynamic' 'wasm-unsafe-eval'; connect-src 'self' https://<ref>.supabase.co wss://<ref>.supabase.co; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'nonce-…'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'`; HSTS (preload); COOP `same-origin`; CORP `same-site`; `Referrer-Policy: no-referrer`; Permissions-Policy denying everything except `camera=(self)` and `geolocation=(self)` |
+| Headers | CSP: `default-src 'self'; script-src 'self' 'nonce-…' 'strict-dynamic' 'wasm-unsafe-eval'; connect-src 'self' https://<ref>.supabase.co wss://<ref>.supabase.co; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'nonce-…'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'` (Trusted Types: see §12); HSTS (preload); COOP `same-origin`; CORP `same-site`; `Referrer-Policy: no-referrer`; Permissions-Policy denying everything except `camera=(self)` and `geolocation=(self)` |
 | App code | React escaping only; user links limited to `http(s)` and opened with `rel="noopener noreferrer"`; no `dangerouslySetInnerHTML` for user data; all crypto in one package with 100% branch coverage |
 | Auth | Email confirmation on; leaked-password protection; MFA (TOTP); 1-hour JWTs with refresh-token rotation; session list with "log out other sessions" |
 | Sign-up abuse | Self-hosted proof-of-work captcha (ALTCHA, no third party) checked by a Supabase "before user created" auth hook calling a Vercel route |
@@ -421,3 +421,5 @@ plaintext canary finds nothing; Lighthouse accessibility ≥ 95 on Home, Profile
 | Email change | Not supported in v1: the password salt is derived from the email. A pre-login salt lookup (with fake salts for unknown emails) will lift this. |
 | Minimum age | 16 (client-side check at sign-up; birthday stays encrypted). India's DPDP Act treats under-18s as children — the owner should decide on 18 for India. |
 | Lost-everything deletion | Users without keys can request deletion via email; it executes after a 72-hour delay (proof-of-key impossible). |
+| Trusted Types | **Deferred.** With `require-trusted-types-for 'script'`, Next 16's Turbopack chunk loader stalls client-side navigation even with a strict default policy. XSS defence today: per-request nonce + `strict-dynamic`, no user HTML anywhere (`react/no-danger` is a lint error), React escaping. Re-enable when Next supports it (tracked as a follow-up). |
+| Realtime transport | `upgrade-insecure-requests` is only sent when Supabase is served over HTTPS (always in production). |

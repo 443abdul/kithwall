@@ -24,7 +24,10 @@ export function proxy(request: NextRequest) {
     `form-action 'self'`,
     `frame-ancestors 'none'`,
     `manifest-src 'self'`,
-    ...(isDev ? [] : [`require-trusted-types-for 'script'`, `trusted-types nextjs nextjs#bundler react-dom default`, `upgrade-insecure-requests`]),
+    // Trusted Types is not enforced yet: Next 16's Turbopack chunk loader stalls client navigation under
+    // require-trusted-types-for (see docs/03-spec.md §12). XSS defence = nonce + strict-dynamic, no inline
+    // HTML from users (lint: react/no-danger), React escaping.
+    ...(supabase.startsWith('https://') ? [`upgrade-insecure-requests`] : []),
   ].join('; ');
 
   const requestHeaders = new Headers(request.headers);
