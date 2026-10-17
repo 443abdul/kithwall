@@ -290,9 +290,10 @@ create table public.tag_notices (
 );
 create index tag_notices_tagged on public.tag_notices (tagged_id, created_at desc);
 alter table public.tag_notices enable row level security;
-create policy "parties see tag notices" on public.tag_notices for select to authenticated
-  using (auth.uid() in (tagged_id, tagger_id)
-         or exists (select 1 from public.photos p where p.id = photo_id and p.owner_id = auth.uid()));
+-- Anyone who can read the photo already sees its tags inside the encrypted payload,
+-- so they may also see the tag notices (needed for "Photos of <name>").
+create policy "photo readers see tag notices" on public.tag_notices for select to authenticated
+  using (auth.uid() in (tagged_id, tagger_id) or kw.can_read_photo(photo_id));
 create policy "tag a friend in a photo you can see" on public.tag_notices for insert to authenticated
   with check (tagger_id = auth.uid() and kw.can_read_photo(photo_id)
               and (tagged_id = auth.uid() or kw.is_friend(auth.uid(), tagged_id)) and status = 'pending');

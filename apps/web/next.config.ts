@@ -17,6 +17,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Lets several dev servers run from one checkout: NEXT_DIST_DIR=.next-a next dev -p 3001
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   poweredByHeader: false,
   transpilePackages: ['@kithwall/crypto'],
   async headers() {

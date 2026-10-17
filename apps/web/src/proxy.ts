@@ -11,7 +11,8 @@ export function proxy(request: NextRequest) {
   const csp = [
     `default-src 'self'`,
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${isDev ? ` 'unsafe-eval'` : ''}`,
-    `style-src 'self' 'nonce-${nonce}'`,
+    // Dev tooling injects un-nonced <style> tags (a nonce would make 'unsafe-inline' ignored).
+    isDev ? `style-src 'self' 'unsafe-inline'` : `style-src 'self' 'nonce-${nonce}'`,
     `style-src-attr 'unsafe-inline'`,
     `img-src 'self' blob: data:`,
     `media-src 'self' blob:`,
