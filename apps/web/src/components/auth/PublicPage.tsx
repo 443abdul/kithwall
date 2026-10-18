@@ -5,12 +5,13 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useSession } from '@/lib/keys/session';
 import { Footer, Header } from '@/components/Shell';
+import { MobileChrome } from '@/components/MobileChrome';
 import { LoggedOutHeader } from '@/components/auth/Splash';
 import '@/styles/auth.css';
 
 export function PublicPage({ children, plainHeader = false }: { children: ReactNode; plainHeader?: boolean }) {
   const { status } = useSession();
-  const header = status === 'ready' ? <Header />
+  const header = status === 'ready' ? <><Header /><MobileChrome /></>
     : plainHeader || status === 'loading' ? <div id="sblue"><div className="in"><Link className="lg" href="/">kithwall</Link></div></div>
     : <LoggedOutHeader />;
   return (

@@ -137,6 +137,22 @@ function PhotoBody({ row, payload, albumName, albumPayload, prevId, nextId, go }
   const touch = useRef<{ x: number; y: number; t: number } | null>(null);
   const swiped = useRef(false);
   const stage = useRef<HTMLDivElement>(null);
+  const axis = useRef<'x' | 'y' | null>(null);
+  // Move the photo with the finger (style writes, no re-render per frame).
+  const dragTo = (x: number, y: number, opacity: number, animate = false) => {
+    const img = stage.current?.querySelector<HTMLElement>('img, .kp-img');
+    if (!img) return;
+    img.style.transition = animate ? 'transform .16s ease-out, opacity .16s ease-out' : 'none';
+    img.style.transform = x || y ? `translate3d(${x}px, ${y}px, 0)` : '';
+    img.style.opacity = opacity < 1 ? String(opacity) : '';
+  };
+  // A new photo (or its decrypted URL) arrives in place: clear any swipe offset.
+  useEffect(() => { dragTo(0, 0, 1); }, [row.id, url]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Swipe down (phones) closes the viewer: back to where you came from, else the album.
+  const close = () => {
+    if (window.history.length > 1) window.history.back();
+    else window.location.assign(`/photos/album/${row.album_id}`);
+  };
 
   const onStageClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (swiped.current) { swiped.current = false; return; }
@@ -159,16 +175,39 @@ function PhotoBody({ row, payload, albumName, albumPayload, prevId, nextId, go }
         {prevId ? <button className="kp-navbtn p" aria-label="Previous photo" onClick={() => go(prevId)}>&lsaquo;</button> : null}
         <div ref={stage} className={`kp-stage${tagMode ? ' tagging' : nextId ? ' nav' : ''}`}
           onClick={onStageClick}
-          onTouchStart={(e) => { const t = e.touches[0]!; touch.current = { x: t.clientX, y: t.clientY, t: Date.now() }; }}
+          onTouchStart={(e) => {
+            if (e.touches.length > 1) { touch.current = null; return; } // pinch-zoom: leave it to the browser
+            const t = e.touches[0]!; touch.current = { x: t.clientX, y: t.clientY, t: Date.now() }; axis.current = null;
+          }}
+          onTouchMove={(e) => {
+            const s = touch.current;
+            if (!s || tagMode || e.touches.length > 1) return;
+            const t = e.touches[0]!;
+            const dx = t.clientX - s.x, dy = t.clientY - s.y;
+            if (!axis.current && Math.hypot(dx, dy) > 8) axis.current = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+            // The photo follows the finger: sideways for prev/next, downwards to close.
+            if (axis.current === 'x') dragTo(dx, 0, 1);
+            else if (axis.current === 'y' && dy > 0) dragTo(0, dy, Math.max(0.35, 1 - dy / 400));
+          }}
           onTouchEnd={(e) => {
             const s = touch.current; touch.current = null;
-            if (!s || tagMode) return;
+            if (!s || tagMode) { dragTo(0, 0, 1, true); return; }
             const t = e.changedTouches[0]!;
             const dx = t.clientX - s.x, dy = t.clientY - s.y;
-            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - s.t < 800) {
+            const fast = Date.now() - s.t < 300;
+            if (axis.current === 'x' && (Math.abs(dx) > 80 || (fast && Math.abs(dx) > 40)) && (dx < 0 ? nextId : prevId)) {
               swiped.current = true;
-              go(dx < 0 ? nextId : prevId);
+              dragTo(dx < 0 ? -window.innerWidth : window.innerWidth, 0, 1, true);
+              setTimeout(() => go(dx < 0 ? nextId : prevId), 160);
+            } else if (axis.current === 'y' && (dy > 120 || (fast && dy > 60))) {
+              swiped.current = true;
+              dragTo(0, window.innerHeight, 0, true);
+              setTimeout(close, 160);
+            } else {
+              if (axis.current) swiped.current = true;
+              dragTo(0, 0, 1, true);
             }
+            axis.current = null;
           }}>
           {url
             // eslint-disable-next-line @next/next/no-img-element

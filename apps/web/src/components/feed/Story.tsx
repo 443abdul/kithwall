@@ -17,6 +17,7 @@ import { AudienceIcon, Linkify, Unverified, Waiting } from '@/components/social/
 import { ConfirmDialog } from '@/components/social/Dialog';
 import { CheckinAtt, LIFE_VERBS, LifeEventAtt, LinkCard, NoteAtt, SharedAtt, WithFriends, placeHref } from './Attachments';
 import { Poll } from './Poll';
+import { VideoAtt } from './MediaAtt';
 import { Ufi, useLikes, type UfiHandle } from './Ufi';
 import { ShareDialog, canShare } from './ShareDialog';
 import { useMyLists } from './AudienceSelect';
@@ -194,7 +195,10 @@ function renderBody(row: PostRow, p: PostPayload, arrow: ReactNode, contentKey: 
     case 'link':
       return { head: <>{a}{arrow} {text ?? 'posted a link.'}</>, att: p.link ? <LinkCard link={p.link} /> : null };
     case 'video':
-      return { head: <>{a}{arrow} {text ?? 'posted a video.'}</>, att: <div className="att gray">Video playback is coming soon.</div> };
+      return {
+        head: <>{a}{arrow} {text ?? 'posted a video.'}</>,
+        att: p.video?.file ? <VideoAtt video={p.video} /> : <div className="att gray">This video is no longer available.</div>,
+      };
     case 'question':
       return {
         head: <>{a}{arrow} asked: <b>{p.question?.text}</b></>,

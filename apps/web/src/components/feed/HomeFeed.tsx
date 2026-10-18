@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { AppPage, Title } from '@/components/Shell';
 import { Publisher } from './Publisher';
+import { PushPromptCard } from '@/components/push/PushPromptCard';
 import { Stream, pageOf, type StreamPage } from './Stream';
 import { SocialRightColumn } from './RightColumn';
 import { fetchFeed } from '@/lib/content';
@@ -69,6 +70,7 @@ function Feed() {
         {' · '}
         {mode === 'recent' ? <b>Most Recent</b> : <a role="button" tabIndex={0} onClick={() => setMode('recent')} onKeyDown={(e) => { if (e.key === 'Enter') setMode('recent'); }}>Most Recent</a>}
       </span>}>News Feed</Title>
+      <PushPromptCard />
       <Publisher />
       <Stream key={mode} queryKey={['feed', mode]} load={mode === 'top' ? loadTop : loadRecent}
         arrange={mode === 'top' ? arrangeTop : undefined}

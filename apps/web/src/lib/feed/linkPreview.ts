@@ -5,12 +5,30 @@
 // encrypted file, like a photo.
 import { sb } from '../supabase';
 import { uploadEncrypted } from '../media';
+import { validEmbed, type Embed } from '../embeds';
 import type { FileRef, PostPayload } from '../types';
 
 export interface LinkPreviewResult {
   url: string; title?: string; description?: string; site?: string;
   image?: { mime: string; data: string } | null;
+  embed?: Embed | null;
 }
+
+/** A preview that is ready to attach: image already downscaled + re-encoded on this device. */
+export interface LinkDraft {
+  preview: LinkPreviewResult;
+  image?: PreparedImage;
+  embed?: Embed;
+}
+
+export interface PreparedImage { blob: Blob; w: number; h: number }
+
+/** Largest side of an attached preview image (wide cards); square thumbnails are kept smaller. */
+export const PREVIEW_MAX = 1200;
+const THUMB_MAX = 400;
+/** A preview image is shown as a wide card when it is landscape and at least this wide. */
+export const WIDE_MIN = 400;
+export const isWide = (w?: number, h?: number) => !!w && !!h && w >= WIDE_MIN && w > h * 1.15;
 
 export function normalizeUrl(raw: string): string | null {
   let s = raw.trim();
@@ -38,15 +56,17 @@ export async function fetchLinkPreview(url: string, signal?: AbortSignal): Promi
   return body;
 }
 
-const THUMB = 240;
-
-/** Re-encode the preview image on device (drops metadata, bounds size), encrypt and upload it. */
-export async function uploadPreviewImage(img: { mime: string; data: string }): Promise<FileRef | undefined> {
+/**
+ * Decode the proxy's image on this device, downscale it (≤ 1200 px for wide cards, ≤ 400 px for
+ * thumbnails) and re-encode it as JPEG through a canvas, which drops all metadata.
+ */
+export async function prepareImage(img: { mime: string; data: string }, forceWide = false): Promise<PreparedImage | undefined> {
   if (!/^image\/(jpeg|png|gif|webp)$/.test(img.mime)) return undefined;
   const bin = Uint8Array.from(atob(img.data), (c) => c.charCodeAt(0));
   const bitmap = await createImageBitmap(new Blob([bin], { type: img.mime }));
   try {
-    const scale = Math.min(1, THUMB / Math.max(bitmap.width, bitmap.height));
+    const max = forceWide || isWide(bitmap.width, bitmap.height) ? PREVIEW_MAX : THUMB_MAX;
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
     const w = Math.max(1, Math.round(bitmap.width * scale));
     const h = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = new OffscreenCanvas(w, h);
@@ -54,21 +74,43 @@ export async function uploadPreviewImage(img: { mime: string; data: string }): P
     if (!ctx) return undefined;
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, w, h);
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bitmap, 0, 0, w, h);
-    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
-    const ref = await uploadEncrypted(new Uint8Array(await blob.arrayBuffer()), 'image/jpeg');
-    return { ...ref, w, h };
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.84 });
+    return { blob, w, h };
   } finally {
     bitmap.close();
   }
 }
 
-export function toPayloadLink(p: LinkPreviewResult, image?: FileRef): NonNullable<PostPayload['link']> {
+/** Encrypt and upload a prepared preview image (unlinked until the post exists). */
+export async function uploadPreparedImage(p: PreparedImage): Promise<FileRef> {
+  const ref = await uploadEncrypted(new Uint8Array(await p.blob.arrayBuffer()), 'image/jpeg');
+  return { ...ref, w: p.w, h: p.h };
+}
+
+/** Re-encode the preview image on device (drops metadata, bounds size), encrypt and upload it. */
+export async function uploadPreviewImage(img: { mime: string; data: string }): Promise<FileRef | undefined> {
+  const p = await prepareImage(img);
+  return p ? uploadPreparedImage(p) : undefined;
+}
+
+/** Fetch a preview and prepare it for attaching (image re-encoded, embed validated). */
+export async function loadLinkDraft(url: string, signal?: AbortSignal): Promise<LinkDraft> {
+  const preview = await fetchLinkPreview(url, signal);
+  const embed = validEmbed(preview.embed) ?? undefined;
+  const image = preview.image ? await prepareImage(preview.image, !!embed).catch(() => undefined) : undefined;
+  return { preview: { ...preview, image: null, embed }, image, embed };
+}
+
+export function toPayloadLink(p: LinkPreviewResult, image?: FileRef, embed?: Embed | null): NonNullable<PostPayload['link']> {
+  const e = validEmbed(embed ?? p.embed);
   return {
     url: p.url,
     title: p.title?.slice(0, 200) || undefined,
     description: p.description?.slice(0, 400) || undefined,
     site: p.site?.slice(0, 100) || undefined,
     image,
+    ...(e ? { embed: e } : {}),
   };
 }

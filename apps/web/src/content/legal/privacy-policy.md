@@ -164,6 +164,35 @@ this, **the link address passes through our server in readable form for a moment
 does not log or store it. [OWNER: confirm the hosting provider's request logs do not capture the URL,
 e.g. by sending it in the request body.] The finished preview is encrypted with your post.
 
+### 4.9 Push notifications (optional)
+
+If you turn on **push notifications** for a device (Settings → Account), we store, for that device:
+
+| Data | Why |
+|---|---|
+| The push **endpoint** your browser gives us (a web address at your browser maker's push service) and two encryption keys for it | To deliver notifications to that browser |
+| A coarse device label such as "Chrome on Android" (not your full browser identifier) | So you can recognise your devices |
+| When it was added and when a notification was last delivered | To clean up devices that stopped working |
+| Which kinds of activity you want pushed (messages, comments, friend requests, …) | Your choices; they apply to all your devices |
+
+**What a push says.** Only *who* did *what*: "dan sent you a message", "jessica commented on your
+post", "dan sent a message to a group conversation". The name is the person's username (or the
+directory name they chose to publish). **A push never contains the text of a message, post or
+comment** — our servers can't read those, so they have nothing to put in it.
+
+**Who carries it.** Web browsers deliver push notifications through their maker's push service:
+**Google Firebase Cloud Messaging** (Chrome, Edge on Android, Samsung Internet, most Android
+browsers), **Apple Push Notification service** (Safari, all iPhone/iPad browsers), **Mozilla
+autopush** (Firefox) or **Microsoft Windows Push Notification Services** (Edge on Windows). Your
+browser chooses the service, not us. Every push is **encrypted for your browser** (the Web Push
+encryption standard, RFC 8291), so the push service can't read it; it does learn that *a*
+notification was sent to your browser, when, and roughly how big it is, and it sees our server's
+address.
+
+**Turning it off.** Switch it off in Settings → Account (removes the device's record immediately),
+log out on that device (the browser stops accepting our pushes and we delete the record the next time
+the push service tells us so), or block notifications for Kithwall in your browser settings.
+
 ---
 
 ## 5. Why we use your data and our legal bases
@@ -174,6 +203,7 @@ e.g. by sending it in the request body.] The finished preview is encrypted with 
 | Store and deliver your encrypted content to the audiences you choose | Encrypted content, metadata | Contract | Consent |
 | Send service emails: sign-up confirmation, password reset, security alerts, recovery-request alerts | Email address | Contract; legitimate interests in account security (Art. 6(1)(f)) | Consent |
 | Send content-free notification emails ("You have a new notification") | Email address, notification records | Contract — you can turn these off in settings | Consent (withdrawable) |
+| Send push notifications to devices where you turned them on ("dan sent you a message") | Push subscription, push preferences, notification and message metadata, the actor's username | Consent (Art. 6(1)(a)) — you turn it on per device and can turn it off at any time | Consent (withdrawable) |
 | People search and friend suggestions | Username, display name, discoverable setting | Contract — only if you opt into the directory | Consent |
 | Account recovery with trusted friends | Trusted-friend list, recovery requests | Contract — only if you set it up | Consent |
 | Security, preventing spam and abuse (rate limits, captcha, auth logs, MFA) | Technical data, metadata | Legitimate interests in keeping the service and its users safe | Legitimate use (s. 7) / consent |
@@ -240,6 +270,11 @@ We do not sell, rent or trade personal data. We share it only as follows.
 Each provider acts on our instructions under a data processing agreement: [Supabase DPA — date
 signed], [Vercel DPA — date signed], [Spaceship DPA — date signed / CONFIRM ONE IS AVAILABLE].
 Their own sub-processors are listed at [LINKS TO SUB-PROCESSOR LISTS].
+
+**Browser push services.** If you turn on push notifications, each notification passes through the
+push service your browser uses (Google FCM, Apple APNs, Mozilla autopush or Microsoft WNS — see
+section 4.9). It is encrypted for your browser, so the service can't read it. These services are
+part of your browser, operated by its maker under their own terms; we don't send them anything else.
 
 We use **no** analytics, advertising, social-media, font, or captcha services from third parties.
 Our captcha (ALTCHA) runs on our own servers.
@@ -314,6 +349,8 @@ unreadable to us and our providers. Metadata and account data are readable.
 | Metadata rows (friendships, memberships, likes, pokes, tags, votes, etc.) | Until you or the other person removes them, or until account deletion; backups age out within 7 days |
 | Your whole account, when you delete it | Removed immediately. Your keys are destroyed, so encrypted copies left in backups can never be read. Unencrypted account data and metadata in backups age out within 7 days |
 | Notifications | 90 days |
+| Push subscriptions (per device) | Until you turn push off on that device, or the push service tells us the subscription has ended (e.g. after you log out or clear site data), or you delete your account |
+| Push preferences | Until you delete your account |
 | Recovery requests | 7 days after they close |
 | Trusted-friend recovery shares | Until you change your trusted friends or delete your account |
 | Reports and moderation decisions | 1 year after resolution (longer if legally required, e.g. child safety preservation) |
@@ -344,7 +381,7 @@ Depending on where you live, you have some or all of these rights:
 | **Correction** | Edit your profile and content in the app. Change your email in settings. For anything else, contact us |
 | **Deletion** | Delete items in the app, or delete your account in **Settings → Account** (immediate). If you can no longer unlock your account (lost all keys), contact us: after confirming you control the email address, we will delete it for you. [OWNER: confirm this manual process exists before launch] |
 | **Restriction / objection** | Contact us. You can object to processing based on legitimate interests; we will stop unless we have compelling grounds (e.g. security) |
-| **Withdraw consent** | Turn off optional features (directory, trusted friends, email notifications, online status) in settings, or delete your account. Withdrawal doesn't affect earlier processing |
+| **Withdraw consent** | Turn off optional features (directory, trusted friends, email notifications, push notifications, online status) in settings, or delete your account. Withdrawal doesn't affect earlier processing |
 | **Nominate someone (India)** | You may nominate a person to exercise your rights if you die or become incapable. Email the Grievance Officer with the nominee's name and email. Note: a nominee **cannot** read your encrypted content unless you have given them your recovery key |
 | **Grievance redressal (India)** | See section 15 |
 | **Complain to a regulator** | See 11.3 |
@@ -398,7 +435,8 @@ e-privacy rules, strictly necessary storage does not need consent, so **we show 
 | Sign-in session token (and refresh token) | Your browser (local storage and/or a first-party cookie) | Keeps you signed in | Until you log out; access tokens expire after 1 hour and are refreshed |
 | Wrapped account key ("Keep me logged in" only) | IndexedDB | Lets the app unlock without re-typing your password. It is locked with a device key that the browser will not let be exported | Until you log out |
 | Encrypted local cache | IndexedDB | Makes the app fast; content is encrypted with a key from your account | Until you log out |
-| App shell cache | Service worker cache | Lets the app load quickly and install as an app. Caches only the app's code and design, **never** your data | Until updated or cleared |
+| Service worker | Your browser | Receives push notifications (if you turn them on) and shows them. It **caches nothing** — no pages, no data | Until you clear site data |
+| Push settings flags | Local storage | Whether you turned push on for this device, and when you dismissed the "turn on notifications" card | Until you clear site data |
 
 The app also locks itself after 30 minutes of inactivity (you can change this), which wipes keys
 from memory.

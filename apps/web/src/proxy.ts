@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { EMBED_FRAME_ORIGINS } from '@/lib/embeds';
 
 // Per-request nonce + strict Content-Security-Policy (spec §7). No third-party origins
 // except the project's own Supabase API/Realtime endpoints.
@@ -19,6 +20,9 @@ export function proxy(request: NextRequest) {
     `font-src 'self'`,
     `connect-src 'self' ${supabase} ${supabaseWs}`,
     `worker-src 'self' blob:`,
+    // Click-to-play video embeds (lib/embeds.ts EMBED_FRAME_ORIGINS): only these players, and only
+    // after the viewer presses play. No other site can be framed.
+    `frame-src ${EMBED_FRAME_ORIGINS.join(' ')}`,
     `object-src 'none'`,
     `base-uri 'none'`,
     `form-action 'self'`,

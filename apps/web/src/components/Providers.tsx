@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { initSession, useSession } from '@/lib/keys/session';
 import { sb } from '@/lib/supabase';
 import { keyring } from '@/lib/keys/keyring';
+import { PushManager } from '@/components/push/PushManager';
 
 export function Providers({ children }: { children: ReactNode; nonce?: string }) {
   const [qc] = useState(() => new QueryClient({
@@ -13,6 +14,7 @@ export function Providers({ children }: { children: ReactNode; nonce?: string })
   return (
     <QueryClientProvider client={qc}>
       <RealtimeBridge />
+      <PushManager />
       {children}
     </QueryClientProvider>
   );

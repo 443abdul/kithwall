@@ -1,6 +1,7 @@
 // Link-preview proxy (spec §1, §7). Fetches a page server-side so that the poster's and readers'
-// IP addresses are never sent to the linked site, extracts title/description/og:image, and
-// returns the image inline so the client can encrypt and upload it with the post.
+// IP addresses are never sent to the linked site, extracts title/description/og:image (or, for the
+// video providers in lib/embeds.ts, their oEmbed title + thumbnail), and returns the image inline so
+// the client can downscale, re-encode, encrypt and upload it with the post.
 //
 // Security:
 //  - Requires a valid Supabase access token (verified with auth.getUser) and is rate limited per
@@ -9,14 +10,19 @@
 //    resolved by our own lookup, and the connection is refused if ANY resolved address is
 //    private, loopback, link-local, multicast, carrier-grade NAT, documentation, cloud metadata
 //    or otherwise non-global (IPv4 and IPv6). The check runs at connect time for every hop, so
-//    DNS rebinding and redirects to internal addresses are blocked. At most 3 redirects, 5 s total,
-//    1 MB of HTML, 300 KB of image, no compressed bodies.
+//    DNS rebinding and redirects to internal addresses are blocked. At most 4 redirects, 8 s total.
+//  - Size caps apply to the DECOMPRESSED body (gzip/br/deflate are accepted and inflated as a
+//    stream that is cut off at the cap): 1 MB of HTML (truncated), 256 KB of oEmbed JSON, 3 MB of
+//    image. Images are identified by magic bytes; only JPEG/PNG/GIF/WebP are returned.
 //  - Nothing is logged, nothing is cached (Cache-Control: no-store).
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
 import http, { type IncomingMessage } from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
+import zlib from 'node:zlib';
 import { createClient } from '@supabase/supabase-js';
+import { EMBED_PROVIDERS, needsResolve, oembedUrl, parseEmbed, type Embed } from '@/lib/embeds';
+import { decodeHtml, parseHtmlMeta, parseOEmbed, sniffImage, type OEmbedInfo, type PageMeta } from '@/lib/feed/linkMeta';
 
 export const runtime = 'nodejs';
 export const maxDuration = 15;
@@ -24,13 +30,15 @@ export const maxDuration = 15;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
 
-const TOTAL_TIMEOUT_MS = 5_000;
-const MAX_REDIRECTS = 3;
+const TOTAL_TIMEOUT_MS = 8_000;
+const MAX_REDIRECTS = 4;
 const MAX_HTML = 1024 * 1024;
-const MAX_IMAGE = 300 * 1024;
+const MAX_JSON = 256 * 1024;
+const MAX_IMAGE = 3 * 1024 * 1024;
 const MAX_URL = 2048;
-const UA = 'Mozilla/5.0 (compatible; KithwallLinkPreview/1.0)';
-const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const UA = 'Mozilla/5.0 (compatible; KithwallLinkPreview/1.1; +https://kithwall.com)';
+const ACCEPT_HTML = 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1';
+const ACCEPT_IMAGE = 'image/webp,image/jpeg,image/png,image/gif;q=0.9,*/*;q=0.1';
 
 // ---------------------------------------------------------------------------------------
 // Address filtering
@@ -108,10 +116,11 @@ function requestOnce(u: URL, accept: string, deadline: number, maxBytes: number,
     const lib = u.protocol === 'https:' ? https : http;
     const host = u.hostname.replace(/^\[|\]$/g, '');
     let settled = false;
+    let abort = () => { req.destroy(); };
     const done = (fn: () => void) => { if (!settled) { settled = true; clearTimeout(timer); fn(); } };
     const req = lib.request({
       method: 'GET', hostname: host, port: u.port || undefined, path: `${u.pathname}${u.search}`,
-      headers: { 'user-agent': UA, accept, 'accept-encoding': 'identity', 'accept-language': 'en' },
+      headers: { 'user-agent': UA, accept, 'accept-encoding': 'gzip, deflate, br', 'accept-language': 'en' },
       lookup: safeLookup as unknown as typeof dnsLookup, agent: false,
       ...(u.protocol === 'https:' ? { servername: net.isIP(host) ? undefined : host } : {}),
     }, (res: IncomingMessage) => {
@@ -121,34 +130,51 @@ function requestOnce(u: URL, accept: string, deadline: number, maxBytes: number,
         return done(() => resolve({ redirect: res.headers.location }));
       }
       if (status < 200 || status >= 300) { res.resume(); return done(() => reject(new Error('status'))); }
-      const enc = String(res.headers['content-encoding'] ?? 'identity').toLowerCase();
-      if (enc !== 'identity' && enc !== '') { res.destroy(); return done(() => reject(new Error('encoding'))); }
       const ctype = String(res.headers['content-type'] ?? '').toLowerCase();
       const type = ctype.split(';')[0]!.trim();
       const charset = /charset=([^;]+)/.exec(ctype)?.[1]?.trim().replace(/"/g, '');
       const len = Number(res.headers['content-length'] ?? 0);
       if (!truncateOk && len > maxBytes) { res.destroy(); return done(() => reject(new Error('too large'))); }
+      // Inflate compressed bodies as a stream; the size cap counts DECOMPRESSED bytes, so a small
+      // compression bomb is cut off as soon as it expands past the cap.
+      const enc = String(res.headers['content-encoding'] ?? '').toLowerCase().trim();
+      let body: NodeJS.ReadableStream & { destroy(): void } = res;
+      let inflater: zlib.Gunzip | zlib.BrotliDecompress | zlib.Inflate | null = null;
+      if (enc === 'gzip' || enc === 'x-gzip') inflater = zlib.createGunzip({ finishFlush: zlib.constants.Z_SYNC_FLUSH });
+      else if (enc === 'deflate') inflater = zlib.createInflate({ finishFlush: zlib.constants.Z_SYNC_FLUSH });
+      else if (enc === 'br') inflater = zlib.createBrotliDecompress({ finishFlush: zlib.constants.BROTLI_OPERATION_FLUSH });
+      else if (enc !== '' && enc !== 'identity') { res.destroy(); return done(() => reject(new Error('encoding'))); }
+      if (inflater) {
+        res.on('error', () => { inflater!.destroy(); done(() => reject(new Error('read failed'))); });
+        body = res.pipe(inflater);
+      }
+      const stop = () => { res.destroy(); inflater?.destroy(); };
+      abort = () => { req.destroy(); stop(); };
       const parts: Buffer[] = [];
       let size = 0;
-      res.on('data', (c: Buffer) => {
+      const finish = () => done(() => resolve({ fetched: { url: u, type, charset, body: Buffer.concat(parts) } }));
+      body.on('data', (c: Buffer) => {
+        if (settled) return;
         size += c.length;
         if (size > maxBytes) {
+          stop();
           if (truncateOk) {
             parts.push(c.subarray(0, c.length - (size - maxBytes)));
-            res.destroy();
-            done(() => resolve({ fetched: { url: u, type, charset, body: Buffer.concat(parts) } }));
+            finish();
           } else {
-            res.destroy();
             done(() => reject(new Error('too large')));
           }
           return;
         }
         parts.push(c);
       });
-      res.on('end', () => done(() => resolve({ fetched: { url: u, type, charset, body: Buffer.concat(parts) } })));
-      res.on('error', () => done(() => reject(new Error('read failed'))));
+      body.on('end', finish);
+      body.on('error', () => {
+        // A truncated compressed stream still yields a usable HTML prefix.
+        if (truncateOk && size > 0) finish(); else done(() => reject(new Error('read failed')));
+      });
     });
-    const timer = setTimeout(() => { req.destroy(); done(() => reject(new Error('timeout'))); }, remaining);
+    const timer = setTimeout(() => { abort(); done(() => reject(new Error('timeout'))); }, remaining);
     req.on('error', (e) => done(() => reject(e instanceof BlockedError ? e : new Error('connect failed'))));
     req.end();
   });
@@ -163,51 +189,6 @@ async function safeFetch(start: URL, accept: string, deadline: number, maxBytes:
     u = checkUrl(r.redirect!, u);
   }
   throw new Error('too many redirects');
-}
-
-// ---------------------------------------------------------------------------------------
-// HTML parsing (head metadata only; nothing is executed or rendered server-side)
-
-const ENT: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ', '#39': '\'' };
-function decodeEntities(s: string): string {
-  return s.replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{2,8}|#39);/gi, (m, e: string) => {
-    const k = e.toLowerCase();
-    if (k.startsWith('#x')) { const n = parseInt(k.slice(2), 16); return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : ''; }
-    if (k.startsWith('#')) { const n = parseInt(k.slice(1), 10); return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : ''; }
-    return ENT[k] ?? m;
-  });
-}
-const clean = (s: string | undefined, n: number) => {
-  if (!s) return undefined;
-  const t = decodeEntities(s).replace(/<[^>]*>/g, ' ').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
-  return t ? (t.length > n ? `${t.slice(0, n - 1)}…` : t) : undefined;
-};
-
-function parseHtml(html: string) {
-  const headEnd = html.search(/<\/head\s*>/i);
-  const head = headEnd > 0 ? html.slice(0, headEnd) : html.slice(0, 200_000);
-  const meta = new Map<string, string>();
-  for (const tag of head.match(/<meta\s[^>]*>/gi) ?? []) {
-    const attrs = new Map<string, string>();
-    for (const m of tag.matchAll(/([a-zA-Z:_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g)) {
-      attrs.set(m[1]!.toLowerCase(), m[2] ?? m[3] ?? m[4] ?? '');
-    }
-    const key = (attrs.get('property') ?? attrs.get('name') ?? '').toLowerCase();
-    const content = attrs.get('content');
-    if (key && content !== undefined && !meta.has(key)) meta.set(key, content);
-  }
-  const title = /<title[^>]*>([\s\S]{0,2000}?)<\/title>/i.exec(head)?.[1];
-  return {
-    title: clean(meta.get('og:title') ?? meta.get('twitter:title') ?? title, 200),
-    description: clean(meta.get('og:description') ?? meta.get('twitter:description') ?? meta.get('description'), 400),
-    site: clean(meta.get('og:site_name'), 100),
-    image: meta.get('og:image:secure_url') ?? meta.get('og:image') ?? meta.get('og:image:url') ?? meta.get('twitter:image'),
-  };
-}
-
-function decodeBody(f: Fetched): string {
-  try { return new TextDecoder(f.charset || 'utf-8', { fatal: false }).decode(f.body); }
-  catch { return new TextDecoder('utf-8').decode(f.body); }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -266,28 +247,86 @@ export async function POST(request: Request) {
   try { start = checkUrl(raw); } catch { return json({ error: 'That link can\'t be previewed.' }, 400); }
 
   const deadline = Date.now() + TOTAL_TIMEOUT_MS;
-  let page: Fetched;
-  try {
-    page = await safeFetch(start, 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1', deadline, MAX_HTML, true);
-  } catch (e) {
-    return json({ error: e instanceof BlockedError ? 'That link can\'t be previewed.' : 'Couldn\'t load that page.' }, 422);
-  }
-  if (page.type !== 'text/html' && page.type !== 'application/xhtml+xml') {
-    return json({ error: 'That link isn\'t a web page.' }, 422);
-  }
-  const meta = parseHtml(decodeBody(page));
+  let embed: Embed | null = parseEmbed(start);
+  let meta: PageMeta = {};
+  let pageUrl = start;
+  let oembed: OEmbedInfo | null = null;
 
-  let image: { mime: string; data: string } | null = null;
-  if (meta.image && meta.image.length <= MAX_URL) {
+  // Known video providers: their oEmbed endpoint gives a reliable title + thumbnail without
+  // downloading a megabyte of player HTML (or hitting a cookie wall).
+  if (embed) oembed = await fetchOEmbed(embed, start.toString(), deadline);
+
+  if (!embed || !oembed?.title) {
+    // Ordinary page, a short link that needs resolving (vm.tiktok.com, dai.ly …), or an oEmbed miss.
+    let page: Fetched | null = null;
     try {
-      const imgUrl = checkUrl(decodeEntities(meta.image.trim()), page.url);
-      const img = await safeFetch(imgUrl, 'image/jpeg,image/png,image/gif,image/webp', deadline, MAX_IMAGE, false);
-      if (IMAGE_TYPES.has(img.type) && img.body.length > 0) image = { mime: img.type, data: img.body.toString('base64') };
-    } catch { /* preview without an image */ }
+      page = await safeFetch(start, ACCEPT_HTML, deadline, MAX_HTML, true);
+    } catch (e) {
+      if (!embed) return json({ error: e instanceof BlockedError ? 'That link can\'t be previewed.' : 'Couldn\'t load that page.' }, 422);
+    }
+    if (page) {
+      if (page.type !== 'text/html' && page.type !== 'application/xhtml+xml') {
+        if (!embed) return json({ error: 'That link isn\'t a web page.' }, 422);
+      } else {
+        pageUrl = page.url;
+        meta = parseHtmlMeta(decodeHtml(page.body, page.charset));
+        if (!embed) {
+          // Redirect target (vm.tiktok.com → tiktok.com/@user/video/…), og:url or og:video.
+          embed = parseEmbed(page.url) ?? parseEmbed(meta.canonical) ?? parseEmbed(meta.video);
+          if (embed) oembed = await fetchOEmbed(embed, page.url.toString(), deadline);
+        }
+      }
+    }
   }
 
-  const site = meta.site ?? start.hostname.replace(/^www\./, '');
-  return json({ url: start.toString(), title: meta.title ?? site, description: meta.description, site, image });
+  // A provider can report a portrait video (Vimeo/Dailymotion/Streamable verticals).
+  if (embed && oembed?.width && oembed.height && embed.provider !== 'tiktok' && embed.provider !== 'youtube') {
+    embed = { ...embed, aspect: oembed.height > oembed.width ? '9:16' : '16:9' };
+  }
+
+  // Image: provider thumbnail (YouTube: try the 1280-px one first), else og:image / twitter:image.
+  const candidates: string[] = [];
+  if (embed?.provider === 'youtube') candidates.push(`https://i.ytimg.com/vi/${embed.id}/maxresdefault.jpg`);
+  if (oembed?.thumbnail) {
+    if (embed?.provider === 'vimeo') candidates.push(oembed.thumbnail.replace(/-d_\d+(x\d+)?$/, '-d_1280'));
+    candidates.push(oembed.thumbnail);
+  }
+  if (meta.image) candidates.push(meta.image);
+  let image: { mime: string; data: string } | null = null;
+  for (const c of [...new Set(candidates)]) {
+    if (c.length > MAX_URL || Date.now() > deadline - 200) break;
+    image = await fetchImage(c, embed && c !== meta.image ? new URL(oembedUrl(embed)) : pageUrl, deadline);
+    if (image) break;
+  }
+
+  const host = start.hostname.replace(/^www\./, '');
+  const site = embed ? EMBED_PROVIDERS[embed.provider].name : (meta.site ?? host);
+  const title = oembed?.title ?? meta.title;
+  const description = embed
+    ? (meta.description && !oembed?.title ? meta.description : oembed?.author)
+    : meta.description;
+  return json({
+    url: start.toString(), title: title ?? site, description, site, image,
+    ...(embed ? { embed } : {}),
+  });
+}
+
+async function fetchOEmbed(embed: Embed, pageUrl: string, deadline: number): Promise<OEmbedInfo | null> {
+  try {
+    const r = await safeFetch(checkUrl(oembedUrl(embed, pageUrl)), 'application/json', deadline, MAX_JSON, false);
+    if (!/json|javascript|text\/plain|text\/html/.test(r.type)) return null;
+    return parseOEmbed(r.body.toString('utf8'));
+  } catch { return null; }
+}
+
+async function fetchImage(raw: string, base: URL, deadline: number): Promise<{ mime: string; data: string } | null> {
+  try {
+    const img = await safeFetch(checkUrl(raw.trim(), base), ACCEPT_IMAGE, deadline, MAX_IMAGE, false);
+    const mime = sniffImage(img.body);
+    // YouTube answers a missing maxresdefault with a 120×90 placeholder (~1 KB): skip it.
+    if (!mime || img.body.length < 2000) return null;
+    return { mime, data: img.body.toString('base64') };
+  } catch { return null; }
 }
 
 export function GET() {

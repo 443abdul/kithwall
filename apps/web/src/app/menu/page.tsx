@@ -7,6 +7,7 @@ import { Icon } from '@/components/Icon';
 import { signOut, useSession } from '@/lib/keys/session';
 import { usePerson } from '@/lib/people';
 import { useIsStaff, usePokes } from '@/lib/hooks';
+import { setThemePref, useThemePref, type ThemePref } from '@/lib/theme';
 
 const SHORTCUTS: [string, string, string][] = [
   ['/photos', 'Photos', 'photo'], ['/events', 'Events', 'event'], ['/groups', 'Groups', 'group'],
@@ -20,6 +21,7 @@ export default function MenuPage() {
   const me = usePerson(userId);
   const staff = useIsStaff();
   const pokes = usePokes();
+  const theme = useThemePref();
   return (
     <AppPage bare>
       <div className="m-menu">
@@ -36,6 +38,12 @@ export default function MenuPage() {
               <Icon name={icon} />
               <span>{label}{href === '/pokes' && pokes.data?.length ? <span className="m-pill">{pokes.data.length}</span> : null}</span>
             </Link>
+          ))}
+        </div>
+        <div className="m-section">Appearance</div>
+        <div className="m-card m-seg" role="radiogroup" aria-label="Appearance">
+          {([['system', 'System'], ['light', 'Light'], ['dark', 'Dark']] as [ThemePref, string][]).map(([v, label]) => (
+            <button key={v} type="button" role="radio" aria-checked={theme === v} className={theme === v ? 'on' : ''} onClick={() => setThemePref(v)}>{label}</button>
           ))}
         </div>
         <div className="m-section">Settings &amp; privacy</div>

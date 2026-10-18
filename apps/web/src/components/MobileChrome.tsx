@@ -7,6 +7,8 @@ import { useEffect } from 'react';
 import { useSession } from '@/lib/keys/session';
 import { useConversations, useNotifications, useRequests } from '@/lib/hooks';
 import { Avatar } from './Avatar';
+import { PullToRefresh } from './PullToRefresh';
+import { watchSystemTheme } from '@/lib/theme';
 
 const I = {
   home: (on: boolean) => <svg viewBox="0 0 24 24" aria-hidden><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1z" fill={on ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" /></svg>,
@@ -36,6 +38,9 @@ export function MobileChrome() {
   const notifs = useNotifications(20);
   const tab = activeTab(path);
   const inThread = /^\/messages\/(?!new)[^/]+/.test(path);
+
+  // Follow the OS light/dark setting while the app is open (when the preference is System).
+  useEffect(() => watchSystemTheme(), []);
 
   // Thread screens use the whole height for the conversation + composer (like messaging apps).
   useEffect(() => {
@@ -69,6 +74,7 @@ export function MobileChrome() {
 
   return (
     <>
+      <PullToRefresh />
       <header className="m-top">
         <Link href="/" className="m-logo">kithwall</Link>
         <div className="m-top-actions">

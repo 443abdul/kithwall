@@ -85,12 +85,16 @@ Import the GitHub repo, **Root Directory `apps/web`**, framework Next.js. Enviro
 | `NEXT_PUBLIC_SUPABASE_URL` | all | `https://uvuojqziktbwxkjzeiar.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | all | `sb_publishable_pGgH8XOXbF-G1r5ABWCuwg_4MZpKg_B` (public by design) |
 | `NEXT_PUBLIC_SITE_URL` | all | `https://<your-domain>` (used in notice emails) |
-| `SUPABASE_SECRET_KEY` | server only | secret key — used only by `/api/account/*`, `/api/hooks/*`, `/api/recovery/notify`, `/api/cron/*`, `/api/altcha/challenge` |
+| `SUPABASE_SECRET_KEY` | server only | secret key — used only by `/api/account/*`, `/api/hooks/*`, `/api/recovery/notify`, `/api/cron/*`, `/api/altcha/challenge`, `/api/push/*` |
 | `ALTCHA_HMAC_KEY` | server only | 32+ random characters (`openssl rand -base64 48`) |
 | `AUTH_HOOK_SECRET` | server only | the hook secret from Supabase (`v1,whsec_…`) |
 | `CRON_SECRET` | server only | 32+ random characters; Vercel Cron sends it as `Authorization: Bearer …` |
 | `SMTP_URL` | server only | `smtps://no-reply%40<your-domain>:<url-encoded password>@mail.spacemail.com:465` — content-free notices (recovery started, deletion scheduled) |
 | `MAIL_FROM` | server only | `Kithwall <no-reply@<your-domain>>` |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | all | Web Push public key (public by design) — see "Push notifications" below |
+| `VAPID_PRIVATE_KEY` | server only | Web Push private key |
+| `VAPID_SUBJECT` | server only | `mailto:security@kithwall.com` |
+| `PUSH_DISPATCH_SECRET` | server only | 32+ random characters; must equal `kw.push_config.secret` in the database |
 
 Turn **off** Vercel Web Analytics and Speed Insights (spec §7). Keep the shortest log retention.
 
@@ -106,6 +110,36 @@ Scheduled deletions ("I've lost everything", 72-hour wait) are carried out by
 
 If the web cron never runs, the database job deletes overdue accounts after one extra day (rows and keys
 are gone; the encrypted blobs left in storage are unreadable but should be swept — rerun the cron).
+
+### Push notifications (Web Push)
+
+1. Generate the keys once (keep them; rotating the VAPID pair silently breaks every existing
+   subscription until each person reopens Kithwall):
+   ```sh
+   node apps/web/scripts/gen-vapid.mjs
+   ```
+   It prints `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and a random
+   `PUSH_DISPATCH_SECRET`. Add all four to Vercel (Production and Preview) and redeploy — the public key is
+   baked into the client bundle at build time.
+2. After `supabase db push` has applied `20261020000100_push.sql` (it enables **pg_net**), tell the database
+   where to send push jobs (SQL editor; production only — never commit the secret):
+   ```sql
+   insert into kw.push_config (dispatch_url, secret)
+   values ('https://www.kithwall.com/api/push/dispatch', '<PUSH_DISPATCH_SECRET>')
+   on conflict (id) do update set dispatch_url = excluded.dispatch_url, secret = excluded.secret, updated_at = now();
+   ```
+   Use the canonical host (the one that doesn't redirect) — pg_net does not follow redirects. Without this
+   row the triggers do nothing (inserts are never affected). Preview deployments get no pushes unless you
+   point a separate database at them.
+3. Check: Settings → Account → Push Notifications → turn on → **Send a test notification**. Then have a
+   friend message you with Kithwall closed. Recent dispatch calls:
+   `select id, status_code, left(content, 120), error_msg from net._http_response order by id desc limit 10;`
+   (`{"ok":true,"sent":1,...}` is success; 403 = secret mismatch; 503 = VAPID env vars missing.)
+
+**Local development:** `apps/web/.env.local` has a dev key pair. The local `kw.push_config` points at
+`http://host.docker.internal:3000/api/push/dispatch` (the DB container reaches the host that way). Real
+pushes need a browser with notification permission (Chrome/Edge/Firefox on `localhost`); embedded
+browsers usually can't register service workers.
 
 ## 3. First admin
 
@@ -126,7 +160,8 @@ Admins should turn on two-step verification.
   with two-step verification, and delete the test account from Account Settings.
 - Check response headers on `/`: CSP with a per-request nonce + `strict-dynamic` (Trusted Types is deferred, spec §12), HSTS,
   `Referrer-Policy: no-referrer`, COOP `same-origin`.
-- Check `/manifest.webmanifest` and `/icon.svg` load (installable PWA; no service worker in v1).
+- Check `/manifest.webmanifest`, `/icons/icon-192.png` and `/sw.js` load (installable PWA; the service worker
+  only handles push and caches nothing). Chrome DevTools → Application → Manifest should show no errors.
 - Check `select * from cron.job_run_details order by start_time desc limit 5;` after an hour.
 
 ## 5. Operational notes

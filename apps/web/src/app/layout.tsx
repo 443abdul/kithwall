@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import './kw2010.css';
 import './responsive.css';
+import '../styles/mobile-dark.css'; // generated (scripts/gen-dark.mjs); before mobile.css so hand-written rules win
 import '../styles/mobile.css';
 import { Providers } from '@/components/Providers';
 
@@ -12,7 +13,8 @@ export const metadata: Metadata = {
   referrer: 'no-referrer',
   robots: { index: false, follow: false },
   manifest: '/manifest.webmanifest',
-  icons: { icon: '/icon.svg' },
+  icons: { icon: '/icon.svg', apple: '/icons/apple-touch-icon.png' },
+  appleWebApp: { capable: true, title: 'Kithwall', statusBarStyle: 'default' },
 };
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#3b5998' };
@@ -21,7 +23,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Reading the nonce makes every page dynamic so each response gets a fresh CSP nonce.
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Applies the saved appearance before first paint (public/theme.js). */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="/theme.js" nonce={nonce} />
+      </head>
       <body>
         <Providers nonce={nonce}>{children}</Providers>
       </body>

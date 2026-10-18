@@ -1,0 +1,158 @@
+/* Link previews, click-to-play embeds and encrypted videos (components/feed/MediaAtt.tsx).
+   Desktop: the 2010 attachment look (.att .th .ad .at, .vid). Phones (< 768 px, signed-in chrome):
+   modern full-bleed media inside story cards, coloured only with the --m-* variables so dark mode
+   can restyle it. */
+
+/* ---------------- link card (desktop / 2010) ---------------- */
+.att.kw-lc { display: block; position: relative; }
+.kw-lc .kw-lc-a { display: flex; gap: 10px; color: inherit; text-decoration: none; min-width: 0; }
+.kw-lc .kw-lc-a:hover .kw-lc-t { text-decoration: underline; }
+.kw-lc.wide .kw-lc-a { flex-direction: column; gap: 5px; max-width: 398px; }
+.kw-lc-img { overflow: hidden; background: #eceff5; }
+.kw-lc-img img { display: block; }
+.kw-lc-img.sq { width: 90px; height: 90px; border: 1px solid #ccc; box-sizing: border-box; }
+.kw-lc-img.sq img { width: 100%; height: 100%; object-fit: cover; }
+.kw-lc.wide .kw-lc-img { width: 100%; border: 1px solid #d8dfea; box-sizing: border-box; max-height: 300px; }
+.kw-lc.wide .kw-lc-img img { width: 100%; height: 100%; object-fit: cover; }
+.kw-lc-img .kw-ph, .kw-emb-face .kw-ph, .kw-vposter .kw-ph { display: block; width: 100%; height: 100%; min-height: 60px; background: #eceff5; }
+.kw-lc-txt { display: flex; flex-direction: column; min-width: 0; }
+.kw-lc-t {
+  color: #3b5998; font-weight: bold; margin-bottom: 2px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+}
+.kw-lc-site { color: #999; font-variant: small-caps; text-transform: lowercase; letter-spacing: .02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw-lc-d {
+  color: #777; margin-top: 1px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+}
+
+/* publisher draft (2010 .kw-preview box) */
+.kw-lc-draft { background: #f7f7f7; border: 1px solid #e2e2e2; padding: 5px 24px 5px 5px; margin: 4px 0 6px; position: relative; }
+.kw-lc-x {
+  position: absolute; top: 2px; right: 3px; width: 18px; height: 18px; padding: 0; border: 0; background: none;
+  color: #999; font: bold 15px/18px "lucida grande", tahoma, verdana, arial, sans-serif; cursor: pointer;
+}
+.kw-lc-x:hover, .kw-lc-x:focus-visible { color: #333; background: #e2e2e2; }
+.kw-pub-note { color: #999; font-size: 11px; margin: 2px 0 4px; }
+
+/* ---------------- click-to-play embeds ---------------- */
+.att.kw-emb { display: block; position: relative; }
+.kw-emb-box { position: relative; width: 100%; max-width: 398px; aspect-ratio: 16 / 9; background: #000; overflow: hidden; }
+.kw-emb.tall .kw-emb-box { max-width: 236px; aspect-ratio: 9 / 16; }
+.kw-emb-face, .kw-vposter {
+  appearance: none; border: 0; margin: 0; padding: 0; font: inherit; color: #fff; text-align: left;
+  position: relative; display: block; width: 100%; height: 100%; background: #000; cursor: pointer; overflow: hidden;
+}
+.kw-emb-face:disabled { cursor: default; }
+.kw-emb-face img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.kw-emb-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.kw-play {
+  position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;
+  background: rgba(0, 0, 0, .65); border: 2px solid #fff; color: #fff; display: flex; align-items: center; justify-content: center;
+  box-sizing: border-box; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); transition: background-color .12s;
+}
+.kw-play .kw-pi { width: 24px; height: 24px; margin-left: 2px; }
+.kw-emb-face:hover .kw-play, .kw-emb-face:focus-visible .kw-play { background: #3b5998; }
+.kw-emb-face:focus-visible, .kw-vposter:focus-visible { outline: 2px solid #3b5998; outline-offset: 2px; }
+.kw-emb-prov {
+  position: absolute; left: 6px; bottom: 6px; background: rgba(0, 0, 0, .72); color: #fff; font-size: 11px; line-height: 14px;
+  padding: 2px 6px; border-radius: 2px; font-weight: bold;
+}
+.kw-emb-txt, .kw-video-txt { display: flex; flex-direction: column; margin-top: 5px; max-width: 398px; }
+.kw-emb.kw-lc-draft .kw-emb-box { max-width: 240px; }
+.kw-emb.kw-lc-draft.tall .kw-emb-box { max-width: 120px; }
+
+/* ---------------- uploaded videos ---------------- */
+.att.kw-video { display: block; position: relative; }
+.kw-vposter { max-width: 398px; height: auto; max-height: 450px; }
+.kw-video.tall .kw-vposter, .kw-video.tall .kw-video-el { max-width: 236px; }
+.kw-vposter img { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* 2010: .vid draws the small round play button; the big icon is for phones. */
+.kw-vposter .kw-play { display: none; }
+.kw-vposter:disabled { cursor: progress; }
+.kw-vposter:disabled::after { display: none; }
+.kw-dur {
+  position: absolute; right: 5px; bottom: 5px; background: rgba(0, 0, 0, .75); color: #fff; font-size: 11px; line-height: 14px;
+  padding: 1px 4px; border-radius: 2px;
+}
+.kw-vprog {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+  background: rgba(0, 0, 0, .5); color: #fff; font-size: 11px; line-height: 14px; text-align: center;
+}
+.kw-vprog-bar { display: block; width: 60%; height: 6px; background: rgba(255, 255, 255, .3); border-radius: 3px; overflow: hidden; }
+.kw-vprog-bar > span { display: block; height: 100%; background: #fff; transition: width .15s linear; }
+.kw-video-el { display: block; width: 100%; max-width: 398px; max-height: 450px; background: #000; }
+.kw-video-note { margin-top: 4px; color: #777; }
+.kw-video-note.err { color: #333; background: #fff9d7; border: 1px solid #e2c822; padding: 4px 6px; max-width: 386px; }
+
+/* publisher: video picker */
+.kw-vpick { display: flex; gap: 10px; align-items: flex-start; margin: 2px 0 6px; position: relative; }
+.kw-vpick-th { position: relative; flex: none; width: 160px; aspect-ratio: 16 / 9; background: #000; overflow: hidden; line-height: 0; }
+.kw-vpick-th img { width: 100%; height: 100%; object-fit: contain; }
+.kw-vpick-info { flex: 1; min-width: 0; color: #777; line-height: 15px; }
+.kw-vpick-info b { color: #333; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw-vpick-info input[type="text"] { width: 100%; box-sizing: border-box; margin: 5px 0 0; }
+.kw-vchoose { display: flex; align-items: center; gap: 8px; padding: 6px 0; color: #777; }
+.kw-upbar { height: 6px; background: #e2e2e2; margin: 4px 0; overflow: hidden; }
+.kw-upbar > span { display: block; height: 100%; background: #6d84b4; transition: width .15s linear; }
+.kw-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------------- phones ---------------- */
+@media (max-width: 767px) {
+  /* link card in a story: full-bleed image, text panel underneath */
+  body:has(.m-top) .kw-lc .kw-lc-a { gap: 0; }
+  body:has(.m-top) .kw-lc.wide .kw-lc-a { max-width: none; }
+  body:has(.m-top) .kw-lc.wide .kw-lc-img { border: 0; max-height: none; background: var(--m-bg); }
+  body:has(.m-top) .kw-lc-txt, body:has(.m-top) .kw-emb-txt, body:has(.m-top) .kw-video-txt {
+    flex: 1; background: var(--m-bg); padding: 10px 14px; margin: 0; max-width: none; line-height: 1.3; justify-content: center;
+  }
+  body:has(.m-top) .kw-lc-site { order: -1; font-variant: normal; text-transform: uppercase; font-size: 12px; letter-spacing: .03em; color: var(--m-sub); margin-bottom: 2px; }
+  body:has(.m-top) .kw-lc-t { color: var(--m-text); font-size: 16px; font-weight: 600; margin: 0; }
+  body:has(.m-top) .kw-lc-d { color: var(--m-sub); font-size: 14px; margin-top: 2px; }
+  body:has(.m-top) .kw-lc-img .kw-ph, body:has(.m-top) .kw-emb-face .kw-ph, body:has(.m-top) .kw-vposter .kw-ph { background: var(--m-chip); }
+  body:has(.m-top) .kw-lc.side .kw-lc-a { align-items: stretch; }
+  body:has(.m-top) .kw-lc-img.sq { width: 104px; height: auto; min-height: 104px; border: 0; background: var(--m-chip); }
+  body:has(.m-top) .att .kw-lc-img.sq img { width: 104px; height: 100%; min-height: 104px; object-fit: cover; }
+  body:has(.m-top) .kw-lc.side .kw-lc-txt { border-left: 1px solid var(--m-line); }
+  body:has(.m-top) .kw-lc.side { border-top: 1px solid var(--m-line); }
+
+  /* embeds: black stage, full width; tall (TikTok / Shorts) centred and height-capped */
+  body:has(.m-top) .kw-emb-stage { background: #000; }
+  body:has(.m-top) .kw-emb-box { max-width: none; }
+  body:has(.m-top) .kw-emb.tall .kw-emb-box { width: min(100%, calc(62vh * 9 / 16)); max-width: none; margin: 0 auto; }
+  body:has(.m-top) .att .kw-emb-face img { width: 100%; height: 100%; object-fit: cover; }
+  body:has(.m-top) .att .kw-play .kw-pi { width: 30px; height: 30px; }
+  body:has(.m-top) .kw-play { width: 60px; height: 60px; margin: -30px 0 0 -30px; border-width: 0; background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }
+  body:has(.m-top) .kw-emb-face:active .kw-play { background: var(--m-blue); }
+  body:has(.m-top) .kw-emb-prov { left: 10px; bottom: 10px; border-radius: 4px; padding: 3px 8px; font-size: 12px; }
+
+  /* uploaded videos */
+  body:has(.m-top) .kw-vposter, body:has(.m-top) .kw-video-el { max-width: none; max-height: 75vh; width: 100%; }
+  body:has(.m-top) .kw-video.tall .kw-vposter, body:has(.m-top) .kw-video.tall .kw-video-el { max-width: none; }
+  body:has(.m-top) .kw-vposter::after { display: none; }
+  body:has(.m-top) .kw-vposter .kw-play { display: flex; }
+  body:has(.m-top) .att .kw-vposter img { width: 100%; height: 100%; object-fit: contain; }
+  body:has(.m-top) .kw-dur { right: 10px; bottom: 10px; border-radius: 4px; font-size: 12px; padding: 2px 6px; }
+  body:has(.m-top) .kw-vprog { font-size: 14px; }
+  body:has(.m-top) .kw-video-note { padding: 8px 14px; margin: 0; color: var(--m-sub); }
+  body:has(.m-top) .kw-video-note.err { background: var(--m-bg); border: 0; color: var(--m-text); max-width: none; }
+
+  /* publisher drafts: rounded cards, not full-bleed */
+  body:has(.m-top) .kw-lc-draft { background: var(--m-card); border: 1px solid var(--m-line); border-radius: var(--m-radius, 12px); padding: 0; overflow: hidden; margin: 8px 0; }
+  body:has(.m-top) .kw-lc-draft .kw-lc-txt, body:has(.m-top) .kw-lc-draft .kw-emb-txt { padding-right: 40px; }
+  body:has(.m-top) .kw-lc-draft.wide .kw-lc-txt, body:has(.m-top) .kw-lc-draft.kw-emb .kw-emb-txt { padding-right: 14px; }
+  body:has(.m-top) .kw-lc-draft.kw-emb .kw-emb-box { max-width: none; }
+  body:has(.m-top) .kw-lc-draft.kw-emb.tall .kw-emb-box { width: min(100%, 200px); }
+  body:has(.m-top) .kw-lc-x {
+    top: 8px; right: 8px; width: 30px; height: 30px; border-radius: 50%; font-size: 20px; line-height: 30px;
+    background: var(--m-card); color: var(--m-text); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); z-index: 2;
+  }
+  body:has(.m-top) .kw-pub-note { color: var(--m-sub); font-size: 12px; }
+  body:has(.m-top) .kw-vpick { flex-direction: column; }
+  body:has(.m-top) .kw-vpick-th { width: 100%; border-radius: var(--m-radius, 12px); }
+  body:has(.m-top) .kw-vpick-info { color: var(--m-sub); }
+  body:has(.m-top) .kw-vpick-info b { color: var(--m-text); }
+  body:has(.m-top) .kw-vchoose { color: var(--m-sub); }
+  body:has(.m-top) .kw-upbar { background: var(--m-chip); border-radius: 3px; }
+  body:has(.m-top) .kw-upbar > span { background: var(--m-blue); }
+}

@@ -33,16 +33,24 @@ export interface CommentRow {
 
 export interface LikeRow { target_kind: 'post' | 'comment' | 'photo'; target_id: Uuid; user_id: Uuid; created_at: string }
 
-/** Reference to an encrypted file in the media bucket. */
-export interface FileRef { path: string; key: string /* b64u file key */; mime: string; w?: number; h?: number; bytes: number }
+/**
+ * Reference to an encrypted file in the media bucket. Large files (videos) are stored as several
+ * objects: `parts` lists their paths in order (parts[0] === path); the ciphertext is their
+ * concatenation and `path` is the file id bound into every chunk's associated data.
+ */
+export interface FileRef { path: string; key: string /* b64u file key */; mime: string; w?: number; h?: number; bytes: number; parts?: string[] }
+
+/** Click-to-play video embed (lib/embeds.ts). Validated with validEmbed() before use. */
+export interface LinkEmbed { provider: 'youtube' | 'vimeo' | 'dailymotion' | 'streamable' | 'tiktok'; id: string; aspect: '16:9' | '9:16'; start?: number; hash?: string }
 
 export interface PhotoFiles { big: FileRef; med: FileRef; thumb: FileRef }
 
 export interface PostPayload {
   text?: string;
-  link?: { url: string; title?: string; description?: string; site?: string; image?: FileRef };
+  link?: { url: string; title?: string; description?: string; site?: string; image?: FileRef; embed?: LinkEmbed };
   photos?: { id: Uuid; albumId: Uuid; files: PhotoFiles; caption?: string }[];
-  video?: { file: FileRef; poster?: FileRef; title?: string };
+  /** Uploaded video: encrypted on device (≤ 100 MB), `duration` in seconds, `w`/`h` in pixels. */
+  video?: { file: FileRef; poster?: FileRef; title?: string; duration?: number; w?: number; h?: number };
   question?: { text: string; options: string[]; allowAdd: boolean };
   checkin?: { place: string; address?: string; lat?: number; lng?: number; with: Uuid[] };
   note?: { title: string; body: string; tagged: Uuid[] };

@@ -7,7 +7,7 @@ import { sb, must } from '../supabase';
 import { getSession, me } from '../keys/session';
 import { notify } from '../friends';
 import { createPost, preparePosts, type Audience } from '../content';
-import { deleteMedia, fileUrl, uploadEncrypted } from '../media';
+import { deleteMedia, fileRefPaths, fileUrl, uploadEncrypted } from '../media';
 import { people } from '../people';
 import type { CommentRow, FileRef, LikeRow, PostPayload, PostRow } from '../types';
 
@@ -106,8 +106,9 @@ export async function fetchByKind(kind: PostRow['kind'], authors: string[] | nul
 // Delete / share
 
 export async function deletePost(row: PostRow, payload?: PostPayload | null) {
-  const img = payload?.link?.image;
-  if (img && row.author_id === me() && img.path.startsWith(`${me()}/`)) await deleteMedia([img.path]).catch(() => undefined);
+  const refs = [payload?.link?.image, payload?.video?.file, payload?.video?.poster].filter((r): r is FileRef => !!r);
+  const mine = refs.flatMap(fileRefPaths).filter((p) => p.startsWith(`${me()}/`));
+  if (mine.length && row.author_id === me()) await deleteMedia(mine).catch(() => undefined);
   must(await sb().from('posts').delete().eq('id', row.id));
 }
 
@@ -162,7 +163,7 @@ interface Indexed { id: string; author: string; created_at: string; text: string
 const index = new Map<string, Indexed>();
 
 export function payloadText(p: PostPayload): string {
-  return [p.text, p.sharedText, p.link?.title, p.link?.description, p.link?.url, p.question?.text, ...(p.question?.options ?? []),
+  return [p.text, p.sharedText, p.video?.title, p.link?.title, p.link?.description, p.link?.url, p.question?.text, ...(p.question?.options ?? []),
     p.note?.title, p.note?.body, p.checkin?.place, p.checkin?.address, p.lifeEvent?.title, ...(p.photos?.map((x) => x.caption) ?? [])]
     .filter(Boolean).join('\n');
 }

@@ -6,32 +6,16 @@ import { useQuery } from '@tanstack/react-query';
 import { Icon } from '@/components/Icon';
 import { Avatar } from '@/components/Avatar';
 import { ExternalLink, MapArt, NameList, hashSeed } from '@/components/social/bits';
-import { useFileUrl } from '@/lib/media';
+import { LinkAttachment } from './MediaAtt';
 import { readPost } from '@/lib/content';
 import { fetchPost } from '@/lib/feed/feed';
 import { usePerson } from '@/lib/people';
 import { useKeyringVersion } from '@/lib/hooks';
 import type { PostPayload } from '@/lib/types';
 
+/** Link attachment: preview card, or a click-to-play player for known video sites (MediaAtt.tsx). */
 export function LinkCard({ link }: { link: NonNullable<PostPayload['link']> }) {
-  const img = useFileUrl(link.image);
-  let host = link.site ?? '';
-  try { host = host || new URL(link.url).hostname.replace(/^www\./, ''); } catch { /* keep site */ }
-  return (
-    <div className="att">
-      {link.image && (
-        <ExternalLink className="th kw-lthumb" href={link.url}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {img ? <img src={img} width={90} height={68} alt="" style={{ objectFit: 'cover' }} /> : <span className="kw-ph" style={{ width: 90, height: 68 }} />}
-        </ExternalLink>
-      )}
-      <div className="ad">
-        <ExternalLink className="at" href={link.url}>{link.title || link.url}</ExternalLink>
-        {host}
-        {link.description ? <><br />{link.description}</> : null}
-      </div>
-    </div>
-  );
+  return <LinkAttachment link={link} />;
 }
 
 export function placeHref(place: string) { return `/places/${encodeURIComponent(place.trim().toLowerCase().slice(0, 100))}`; }

@@ -15,6 +15,7 @@ import { authedPost } from '@/lib/auth/api';
 import { buildExport, saveBlob, type ExportSummary } from '@/lib/export';
 import { loadSettings, saveSettings, useSettings, type EmailPrefs } from '@/lib/settings';
 import { deviceStore } from '@/lib/keys/device';
+import { InstallSection, PushSettingsSection } from '@/components/push/PushSettings';
 
 const msg = (x: unknown) => (x as Error).message;
 const USERNAME_RE = /^[a-z0-9][a-z0-9.]{2,29}$/;
@@ -28,6 +29,8 @@ export default function AccountSettingsPage() {
         <div style={{ maxWidth: 720 }}>
           <GeneralSection />
           <NotificationsSection />
+          <PushSettingsSection />
+          <InstallSection />
           <ExportSection />
           <DeleteSection />
         </div>
