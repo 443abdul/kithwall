@@ -243,7 +243,7 @@ textarea{resize:vertical}
 .dlg{width:465px;background:#fff;border:10px solid rgba(82,82,82,.7);border-radius:8px;background-clip:padding-box}
 .dlg h4{background:#6d84b4;border:1px solid #3b5998;color:#fff;font-size:14px;padding:5px 10px}
 .dlg .c{padding:10px;border:1px solid #555;border-top:0;border-bottom:0;max-height:400px;overflow:auto;line-height:15px}
-.dlg .b{background:#f2f2f2;border:1px solid #555;border-top:1px solid #ccc;padding:8px 10px;text-align:right}
+.dlg .b:not(.btn){background:#f2f2f2;border:1px solid #555;border-top:1px solid #ccc;padding:8px 10px;text-align:right}
 .dlg .b .btn{margin-left:4px}
 /* chat */
 #chatdock{position:fixed;right:15px;bottom:0;display:flex;align-items:flex-end;gap:6px;z-index:25}

@@ -58,7 +58,7 @@ export function MessageItem({ conv, row }: { conv: ConversationSummary; row: Mes
   }
 
   return (
-    <div className="msgi kwm-msg" id={`m-${row.id}`}>
+    <div className={`msgi kwm-msg${mine ? ' kwm-mine' : ''}`} id={`m-${row.id}`}>
       <AvatarLink id={row.sender_id} size={50} />
       <div className="kwm-body">
         <div className="kwm-head">

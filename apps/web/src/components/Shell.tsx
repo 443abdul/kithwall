@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Icon, JewelIcon } from './Icon';
 import { Avatar, AvatarLink } from './Avatar';
 import { ChatDock } from './ChatDock';
+import { MobileChrome } from './MobileChrome';
 import { UnlockScreen } from './UnlockScreen';
 import { AccountNotices } from './auth/AccountNotices';
 import { signOut, useSession } from '@/lib/keys/session';
@@ -289,6 +290,7 @@ export function AppPage({ active = 'none', right, children, wide = false, bare =
   return (
     <>
       <Header />
+      <MobileChrome />
       <AccountNotices />
       <main id="body">
         {bare ? children : (

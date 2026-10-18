@@ -20,6 +20,8 @@ const nextConfig: NextConfig = {
   // Lets several dev servers run from one checkout: NEXT_DIST_DIR=.next-a next dev -p 3001
   distDir: process.env.NEXT_DIST_DIR || '.next',
   poweredByHeader: false,
+  // Local multi-user testing uses localhost and 127.0.0.1 side by side (separate sessions).
+  allowedDevOrigins: ['127.0.0.1'],
   transpilePackages: ['@kithwall/crypto'],
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];

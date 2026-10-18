@@ -123,6 +123,11 @@ export function Story({ row, wallContext, canModerate = false, expanded = false,
     <div className="story" id={`st-${row.id}`}>
       <AvatarLink id={row.author_id} size={50} />
       <div className="sb">
+        {/* Mobile-only header and action bar (styles/mobile.css); desktop keeps the 2010 inline layout. */}
+        <div className="m-head">
+          <span className="m-names"><Actor id={row.author_id} />{showTo ? <> <span className="arr">&#9654;</span> <Actor id={row.wall_owner_id!} /></> : null}</span>
+          <span className="m-meta"><Link href={`/post/${row.id}`}>{when(row.created_at)}</Link>{' · '}<AudienceIcon isPublic={row.is_public} label={audLabel} /></span>
+        </div>
         <div className="sh">{head}</div>
         {att}
         <div className="sf">
@@ -142,6 +147,13 @@ export function Story({ row, wallContext, canModerate = false, expanded = false,
           {row.kind === 'question' ? <> via <Link href="/questions">Questions</Link></> : null}
           {row.kind === 'game' ? <> via <Link href="/games/kithville">Kithville</Link></> : null}
         </div>
+        {payload && (
+          <div className="m-actions" role="group" aria-label="Post actions">
+            <button type="button" className={liked ? 'on' : ''} aria-pressed={liked} onClick={() => ufi.current?.toggleLike()}><Icon name="like" /> {liked ? 'Liked' : 'Like'}</button>
+            <button type="button" onClick={() => ufi.current?.focusComment()}><Icon name="comment" /> Comment</button>
+            {canShare(row, payload) && <button type="button" onClick={() => setDialog('share')}><Icon name="share" /> Share</button>}
+          </div>
+        )}
         {payload && <Ufi ref={ufi} row={row} contentKey={contentKey} canModerate={canDelete} expanded={expanded} />}
       </div>
       <button type="button" className="sx kw-sx" title="Options" aria-label="Story options" aria-haspopup="menu" aria-expanded={menu}
