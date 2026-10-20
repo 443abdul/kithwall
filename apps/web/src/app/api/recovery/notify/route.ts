@@ -3,6 +3,7 @@
 // pending request. Trustees are notified in-app by the client (notifications table).
 import { admin, callerFromRequest, claimNotice, json, readJson, siteOrigin } from '@/lib/auth/server';
 import { mailConfigured, sendNotice } from '@/lib/auth/mailer';
+import { noticeAddress } from '@/lib/auth/passkey-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
   if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Bad request.' }, 400);
   const { data: r } = await admin().from('recovery_requests').select('id, owner_id, status, not_before').eq('id', id).maybeSingle();
   if (!r || r.owner_id !== caller.user.id || r.status !== 'pending') return json({ error: 'Not found.' }, 404);
-  const email = caller.user.email;
+  const email = await noticeAddress(caller.user.id, caller.user.email); // verified notice address, never a synthetic one
   let sent = false;
   if (email && mailConfigured() && await claimNotice('recovery_started', id, caller.user.id)) {
     try {

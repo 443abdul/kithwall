@@ -3,13 +3,15 @@
 // See docs/03-spec.md §3.1–3.4 and §3.13.
 import {
   b64u, createKeyBundle, deriveFromPassword, deriveCacheKey, unlockWithPassword, unlockWithRecoveryPhrase,
-  rewrapPassword, rotateRecovery, unlockWithAmk, type Identity, type KeyBundle, type Unlocked,
+  rewrapPassword, rotateRecovery, unlockWithAmk, unlockWithPrf, KithwallCryptoError,
+  type Identity, type KeyBundle, type Unlocked,
 } from '@kithwall/crypto';
 import { useSyncExternalStore } from 'react';
 import { sb, must } from '../supabase';
 import type { ProfileRow } from '../types';
 import { keyring } from './keyring';
 import { deviceStore } from './device';
+import { clientRpId, evaluatePrf } from '../auth/passkey-client';
 
 export type SessionStatus =
   | 'loading'     // checking for an existing session
@@ -28,6 +30,14 @@ export interface SessionState {
 
 let state: SessionState = { status: 'loading', userId: null, email: null, profile: null, error: null };
 let unlocked: Unlocked | null = null;
+// Kithwall 2: an AMK opened with a passkey while the database still hides the key bundle (the
+// account has TOTP and this session is aal1). Held in memory only; initSession() uses it once the
+// TOTP step (lib/auth/login.ts finishMfaLogin) makes the bundle readable.
+let pendingAmk: { userId: string; amk: Uint8Array } | null = null;
+// "Keep me signed in on this device" for passkey sign-ins/sign-ups (spec §3.13 device store).
+let rememberDevice = true;
+export function setRememberDevice(v: boolean) { rememberDevice = v; }
+export function getRememberDevice() { return rememberDevice; }
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<SessionState>) {
@@ -103,7 +113,79 @@ async function doInitSession(): Promise<void> {
       return;
     } catch { await deviceStore.clear(); }
   }
+  const p = takePendingAmk(userId);
+  if (p) {
+    try {
+      await becomeReady(userId, email, unlockFromAmk(userId, bundle, p), rememberDevice);
+      return;
+    } catch { /* fall through to locked */ }
+  }
   set({ status: 'locked', userId, email });
+}
+
+function takePendingAmk(userId: string): Uint8Array | null {
+  const p = pendingAmk;
+  pendingAmk = null;
+  return p && p.userId === userId ? p.amk : null;
+}
+
+/** Kithwall 2: keep a passkey-unwrapped AMK until the MFA step makes the key bundle readable. */
+export function holdPendingAmk(userId: string, amkBytes: Uint8Array) {
+  pendingAmk = { userId, amk: new Uint8Array(amkBytes) };
+}
+
+/**
+ * Kithwall 2: enter 'ready' with keys opened outside this module (passkey PRF sign-in / sign-up,
+ * passphrase sign-up). Loads the profile and starts the keyring like a password login.
+ */
+export async function adoptUnlocked(userId: string, email: string | null, u: Unlocked, remember = rememberDevice): Promise<SessionStatus> {
+  pendingAmk = null;
+  await becomeReady(userId, email, u, remember);
+  return state.status;
+}
+
+/** Kithwall 2: refresh the auth part of the state (after verifyOtp etc.) without unlocking. */
+export function noteSignedIn(userId: string, email: string | null, status: SessionStatus) {
+  set({ status, userId, email, error: null });
+}
+
+/** Which ways can the current (locked) account be unlocked on this device? */
+export async function unlockOptions(): Promise<{ passkey: boolean; password: boolean }> {
+  if (!state.userId) return { passkey: false, password: false };
+  const [bundle, pk] = await Promise.all([
+    fetchBundle(state.userId),
+    sb().from('passkeys').select('id', { count: 'exact', head: true }),
+  ]);
+  return { passkey: (pk.count ?? 0) > 0, password: typeof bundle?.amkByPassword === 'string' };
+}
+
+/**
+ * Unlock a 'locked' session with one of the account's passkeys (WebAuthn PRF). Purely local: the
+ * PRF output unwraps this credential's AMK wrap (readable by the owner only) — nothing about the
+ * passkey or the keys is sent anywhere.
+ */
+export async function unlockWithPasskey(remember = rememberDevice): Promise<void> {
+  const userId = state.userId;
+  if (!userId) throw new Error('Not signed in');
+  const creds = must(await sb().from('passkeys').select('id, credential_id, transports')) as
+    { id: string; credential_id: string; transports: string[] }[];
+  if (!creds.length) throw new Error('This account has no passkey yet.');
+  const r = await evaluatePrf(clientRpId(), creds.map((c) => ({ id: c.credential_id, transports: c.transports })));
+  if (!r) throw new KithwallCryptoError('decrypt_failed', 'This passkey cannot unlock your keys on this device.');
+  const cred = creds.find((c) => c.credential_id === r.credentialId);
+  const wrap = cred ? must(await sb().from('passkey_wraps').select('prf_salt, amk_wrap').eq('passkey_id', cred.id).maybeSingle()) as
+    { prf_salt: string; amk_wrap: string } | null : null;
+  if (!wrap) throw new KithwallCryptoError('decrypt_failed', 'This passkey has no key for this account.');
+  const bundle = await fetchBundle(userId);
+  if (!bundle) throw new Error('No keys found for this account');
+  const u = unlockWithPrf(userId, bundle, r.credentialId, wrap.amk_wrap, r.output, wrap.prf_salt);
+  r.output.fill(0);
+  await becomeReady(userId, state.email, u, remember);
+}
+
+/** The owner confirmed they saved the current recovery phrase (enables removing the last passkey). */
+export async function confirmRecoverySaved(): Promise<void> {
+  must(await sb().rpc('mark_recovery_saved', { p_saved: true }));
 }
 
 async function fetchBundle(userId: string): Promise<KeyBundle | null> {
@@ -223,6 +305,9 @@ export async function newRecoveryPhrase(): Promise<{ phrase: string; rk: Uint8Ar
   const userId = me();
   const bundle = await fetchBundle(userId);
   if (!bundle || !unlocked) throw new Error('Locked');
+  // The old phrase stops working: stop vouching for it until the new one is confirmed
+  // (confirmRecoverySaved). Best effort for databases without the Kithwall 2 migration.
+  await sb().rpc('mark_recovery_saved', { p_saved: false }).then(() => undefined, () => undefined);
   const r = rotateRecovery(userId, unlocked.amk);
   const next: KeyBundle = { ...bundle, amkByRecovery: r.amkByRecovery, rkCommitment: r.rkCommitment };
   must(await sb().from('key_bundles').update({ bundle: next, updated_at: new Date().toISOString() }).eq('user_id', userId));
@@ -234,6 +319,7 @@ export { fetchBundle };
 export async function lock(): Promise<void> {
   await keyring.stop();
   unlocked = null;
+  pendingAmk = null;
   await deviceStore.clear();
   set({ status: state.userId ? 'locked' : 'signed_out' });
 }
@@ -241,6 +327,7 @@ export async function lock(): Promise<void> {
 export async function signOut(): Promise<void> {
   await keyring.stop();
   unlocked = null;
+  pendingAmk = null;
   await deviceStore.clear();
   await sb().auth.signOut({ scope: 'local' });
   set({ status: 'signed_out', userId: null, email: null, profile: null });

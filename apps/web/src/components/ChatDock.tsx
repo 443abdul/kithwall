@@ -99,7 +99,7 @@ export function ChatDock() {
               ))}
               {visible && !online.length && <div className="gray kwc-pad">No friends are available to chat.</div>}
             </div>
-            <div className="kwc-foot"><Link href="/messages">See All Messages</Link></div>
+            <div className="kwc-foot"><Link href="/messages/inbox">See All Messages</Link></div>
           </div>
         )}
         <div className="ctab" role="button" tabIndex={0} aria-expanded={state.list} onClick={() => dock.toggleList()}

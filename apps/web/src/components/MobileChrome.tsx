@@ -85,7 +85,7 @@ export function MobileChrome() {
       <nav className="m-tabs" aria-label="Main">
         {item('home', '/', 'Home', I.home(tab === 'home'))}
         {item('friends', '/friends', 'Friends', I.friends(tab === 'friends'), n.friends)}
-        {item('messages', '/messages', 'Messages', I.chat(tab === 'messages'), n.messages)}
+        {item('messages', '/messages/inbox', 'Messages', I.chat(tab === 'messages'), n.messages)}
         {item('notifications', '/notifications', 'Alerts', I.bell(tab === 'notifications'), n.notifications)}
         <Link href="/menu" className={`m-tab${tab === 'menu' ? ' on' : ''}`} aria-current={tab === 'menu' ? 'page' : undefined} aria-label="Menu">
           <span className="m-ico m-me">{userId ? <Avatar id={userId} size={26} /> : null}</span>

@@ -1,68 +1,107 @@
 'use client';
-// Shown when a session exists but keys are not in memory (spec §3.13: after a reload without
-// "Keep me logged in", or after auto-lock). The password unlocks the keys on this device only.
+// Shown when a session exists but the keys aren't in memory (after a reload without "Keep me signed in",
+// or after auto-lock). Unlock with a passkey, the account passphrase, or — for v1 accounts — the password.
+// Self-contained Kithwall 2 screen (wraps itself in V2Root), so the remaining v1 pages can show it too.
 import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { signOut, unlock, useSession } from '@/lib/keys/session';
 import { afterLogin } from '@/lib/auth/login';
+import { accountApi } from '@/lib/auth/account';
 import { usePerson } from '@/lib/people';
-import { Avatar } from '@/components/Avatar';
-import { Footer } from '@/components/Shell';
-import '@/styles/auth.css';
+import { useFileUrl } from '@/lib/media';
+import { useT } from '@/i18n';
+import { V2Root } from '@/components/shell/V2Root';
+import { Logo } from '@/components/shell/Logo';
+import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
+import { Callout } from '@/components/ui/Callout';
+import { Switch } from '@/components/ui/Switch';
+import { PassphraseField } from '@/components/onboarding/PassphraseField';
+import { accountErrorMessage } from '@/components/onboarding/errors';
+import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 
 export function UnlockScreen() {
-  const { userId, email } = useSession();
-  const person = usePerson(userId);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  return <V2Root><UnlockInner /></V2Root>;
+}
 
-  async function onSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    setBusy(true); setErr(null);
-    try {
-      await unlock(String(f.get('pw')), f.get('keep') === 'on');
-      await afterLogin();
-    } catch (x) {
-      const m = (x as Error & { code?: string }).message;
-      setErr(/bad_password|decrypt|password/i.test(m) || (x as { code?: string }).code === 'bad_password'
-        ? 'The password you entered is incorrect. Please try again.' : m);
-    } finally { setBusy(false); }
+function UnlockInner() {
+  const t = useT();
+  const { userId, email, profile } = useSession();
+  const person = usePerson(userId);
+  const avatar = useFileUrl(person?.info?.avatar?.thumb);
+  const [secret, setSecret] = useState('');
+  const [keep, setKeep] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'passkey' | 'secret' | null>(null);
+  // Which unlock methods this account has (passkey and/or passphrase/password). Unknown → offer both.
+  const [opts, setOpts] = useState<{ passkey: boolean; password: boolean }>({ passkey: true, password: true });
+  useDocumentTitle(t('unlock.title'));
+  useEffect(() => {
+    let live = true;
+    accountApi.unlockOptions().then((o) => { if (live && (o.passkey || o.password)) setOpts(o); }).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
+
+  async function withPasskey() {
+    setBusy('passkey'); setErr(null);
+    try { await accountApi.unlockWithPasskey(); await afterLogin(); }
+    catch (e) { setErr(accountErrorMessage(t, e)); }
+    finally { setBusy(null); }
   }
 
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setBusy('secret'); setErr(null);
+    try {
+      // Passphrase accounts and v1 password accounts both unlock the key bundle the same way.
+      await unlock(secret, keep);
+      await afterLogin();
+    } catch {
+      setErr(t('unlock.wrongPassword'));
+    } finally { setBusy(null); }
+  }
+
+  const name = person?.name ?? profile?.username ?? email ?? '';
   return (
-    <>
-      <div id="blue"><div id="hd"><Link id="logo" href="/">kithwall</Link></div></div>
-      <main className="kw-center" style={{ padding: '40px 10px 60px' }}>
-        <div className="kw-box">
-          <h3>Unlock Kithwall</h3>
-          <div className="in">
-            {err && <div className="err" role="alert"><b>Couldn&rsquo;t unlock</b>{err}</div>}
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-              {userId ? <Avatar id={userId} size={50} /> : null}
-              <div>
-                <b style={{ fontSize: 13 }}>{person?.name ?? email ?? 'Your account'}</b>
-                {email ? <div className="gray">{email}</div> : null}
-              </div>
+    <div className="k-auth">
+      <header className="k-pub-head"><Logo size={32} /></header>
+      <main id="main" className="k-auth-main">
+        <div className="k-flow">
+          <section className="k-flow-step k-unlock">
+            <div className="k-unlock-who">
+              <Avatar name={name} src={avatar} size={72} />
+              <span className="k-unlock-lock" aria-hidden>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></svg>
+              </span>
             </div>
-            <p style={{ lineHeight: '16px', marginBottom: 10 }}>Enter your password to unlock Kithwall on this device.
-              Your posts and messages are encrypted; your password opens them here, and it never leaves this browser.</p>
-            <form className="form" onSubmit={onSubmit} aria-label="Unlock">
-              <table><tbody>
-                <tr><td className="l"><label htmlFor="unlock-pw">Password:</label></td>
-                  <td><input id="unlock-pw" name="pw" type="password" autoComplete="current-password" required autoFocus /></td></tr>
-                <tr><td /><td><label className="kw-check"><input type="checkbox" name="keep" /> Keep me logged in</label></td></tr>
-                <tr><td /><td><button className="btn b" disabled={busy}>{busy ? 'Unlocking…' : 'Unlock'}</button></td></tr>
-              </tbody></table>
-            </form>
-            <p style={{ marginTop: 10, borderTop: '1px solid #e2e2e2', paddingTop: 8 }}>
-              Not you? <button type="button" className="kw-link" onClick={() => void signOut().then(() => { location.href = '/'; })}>Log out</button>
-              {' '}&middot; <Link href="/recover">Forgot your password?</Link>
+            <h1>{t('unlock.title')}</h1>
+            <p className="k-muted">{name ? t('unlock.bodyNamed', { name }) : t('unlock.body')}</p>
+            {err ? <Callout tone="danger">{err}</Callout> : null}
+            {opts.passkey ? (
+              <Button variant="primary" size="lg" block icon="fingerprint" busy={busy === 'passkey'} disabled={!!busy} onClick={() => void withPasskey()}>
+                {t('unlock.passkey')}
+              </Button>
+            ) : null}
+            {opts.passkey && opts.password ? <div className="k-divider"><span>{t('unlock.or')}</span></div> : null}
+            {opts.password ? <form className="k-stack" onSubmit={onSubmit}>
+              <PassphraseField
+                label={t('unlock.secretLabel')}
+                value={secret}
+                onValue={setSecret}
+                autoComplete="current-password"
+                required
+              />
+              <Switch checked={keep} onChange={setKeep} label={t('unlock.keep')} description={t('unlock.keepHint')} />
+              <Button type="submit" variant={opts.passkey ? 'secondary' : 'primary'} size="lg" block busy={busy === 'secret'} disabled={!!busy || !secret}>{t('unlock.submit')}</Button>
+            </form> : null}
+            <p className="k-center k-small k-muted">
+              {t('unlock.notYou')}{' '}
+              <button type="button" className="k-linkbtn" onClick={() => void signOut().then(() => { location.href = '/'; })}>{t('unlock.signOut')}</button>
+              {email ? <> · <Link href="/recover">{t('signin.forgot')}</Link></> : null}
             </p>
-          </div>
+          </section>
         </div>
       </main>
-      <Footer />
-    </>
+    </div>
   );
 }

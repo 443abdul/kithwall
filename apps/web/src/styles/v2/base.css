@@ -1,0 +1,143 @@
+/* Kithwall 2 base layer. Everything is scoped to .kw (the root element of every v2 screen), so the v1
+   pages that still exist until phase 2 are untouched, and leftover v1 global rules (Next keeps a
+   stylesheet loaded after client navigation) can't leak into v2 screens: these selectors out-rank v1's
+   bare element selectors. Uses logical properties throughout so RTL just works. */
+
+/* ------------------------------------------------------------------ script-aware font stacks */
+:root {
+  --font-sans: var(--font-latin), var(--font-emoji);
+  --font-display: var(--font-display-latin), var(--font-emoji);
+}
+:root:lang(ur) {
+  /* Nastaliq when the device has it, Naskh otherwise. Nastaliq needs a taller line box. */
+  --font-sans: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting", "Alvi Nastaleeq",
+    "Noto Naskh Arabic", "Segoe UI", Tahoma, var(--font-latin), var(--font-emoji);
+  --font-display: var(--font-sans);
+  --leading: 2;
+  --leading-tight: 1.7;
+  --letter-display: 0;
+}
+:root:lang(ar) {
+  --font-sans: "Noto Naskh Arabic", "Noto Sans Arabic", "Geeza Pro", "Segoe UI", Tahoma, var(--font-latin), var(--font-emoji);
+  --font-display: "Noto Sans Arabic", var(--font-sans);
+  --leading: 1.7;
+  --leading-tight: 1.4;
+  --letter-display: 0;
+}
+:root:lang(fa) {
+  --font-sans: "Vazirmatn", "Noto Naskh Arabic", "Noto Sans Arabic", "Segoe UI", Tahoma, var(--font-latin), var(--font-emoji);
+  --font-display: var(--font-sans);
+  --leading: 1.7;
+  --leading-tight: 1.4;
+  --letter-display: 0;
+}
+:root:lang(hi) {
+  --font-sans: "Noto Sans Devanagari", "Nirmala UI", "Kohinoor Devanagari", "Devanagari Sangam MN", Mangal, var(--font-latin), var(--font-emoji);
+  --font-display: var(--font-sans);
+  --leading: 1.65;
+  --letter-display: 0;
+}
+:root:lang(bn) {
+  --font-sans: "Noto Sans Bengali", "Nirmala UI", "Kohinoor Bangla", "Bangla Sangam MN", Vrinda, var(--font-latin), var(--font-emoji);
+  --font-display: var(--font-sans);
+  --leading: 1.65;
+  --letter-display: 0;
+}
+:root:lang(zh) {
+  --font-sans: var(--font-latin), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC",
+    "Source Han Sans SC", "WenQuanYi Micro Hei", var(--font-emoji);
+  --font-display: var(--font-sans);
+  --letter-display: 0;
+}
+:root:lang(ru) {
+  /* Rounded/geometric display faces often lack Cyrillic; use the system UI face. */
+  --font-display: var(--font-latin), var(--font-emoji);
+}
+
+/* A .k-theme[data-style][data-mode] element (style previews) re-declares the palette locally; recompute
+   the display stack from its style there too (non-Latin scripts keep their script stack). */
+.k-theme { --font-display: var(--font-display-latin), var(--font-emoji); }
+:is(:lang(ur), :lang(ar), :lang(fa), :lang(hi), :lang(bn), :lang(zh)) .k-theme { --font-display: var(--font-sans); }
+:lang(ru) .k-theme { --font-display: var(--font-latin), var(--font-emoji); }
+
+/* ------------------------------------------------------------------ page */
+html:has(.kw) {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+html:has(.kw) body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: var(--weight-regular) var(--text-md) / var(--leading) var(--font-sans);
+  color-scheme: inherit;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+.kw {
+  min-block-size: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading);
+  font-weight: var(--weight-regular);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.kw *, .kw *::before, .kw *::after { box-sizing: border-box; }
+.kw :is(h1, h2, h3, h4, h5, h6, p, ul, ol, figure, blockquote, dl, dd) { margin: 0; }
+.kw :is(ul, ol)[role="list"], .kw .k-plain-list { list-style: none; padding: 0; }
+.kw :is(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  font-weight: var(--weight-display);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--letter-display, 0);
+  color: var(--text);
+  text-wrap: balance;
+}
+.kw h1 { font-size: var(--text-2xl); }
+.kw h2 { font-size: var(--text-xl); }
+.kw h3 { font-size: var(--text-lg); }
+.kw h4 { font-size: var(--text-md); }
+.kw p { text-wrap: pretty; }
+.kw a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 0.18em; text-decoration-thickness: 1px; cursor: pointer; }
+.kw a:hover { text-decoration-thickness: 2px; }
+.kw :is(input, textarea, select, button) { font: inherit; color: inherit; letter-spacing: inherit; }
+.kw :is(img, svg, video) { max-inline-size: 100%; }
+.kw img, .kw video { block-size: auto; }
+.kw :focus { outline: none; }
+.kw :focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+  border-radius: var(--radius-xs);
+}
+.kw ::selection { background: var(--accent-soft); color: var(--text); }
+
+/* Utilities */
+.kw .k-muted { color: var(--text-muted); }
+.kw .k-small { font-size: var(--text-sm); }
+.kw .k-xs { font-size: var(--text-xs); }
+.kw .k-center { text-align: center; }
+.kw .k-stack { display: flex; flex-direction: column; gap: var(--space-4); }
+.kw .k-stack-sm { display: flex; flex-direction: column; gap: var(--space-2); }
+.kw .k-row { display: flex; align-items: center; gap: var(--space-3); }
+.kw .k-row-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.kw .k-spacer { flex: 1; }
+.kw .k-ltr { direction: ltr; unicode-bidi: isolate; }
+.k-sr-only {
+  position: absolute !important; inline-size: 1px; block-size: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.kw .k-skip {
+  position: absolute; inset-inline-start: var(--space-2); inset-block-start: -100px; z-index: 100;
+  background: var(--accent); color: var(--accent-contrast); padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm); text-decoration: none; font-weight: var(--weight-bold);
+}
+.kw .k-skip:focus { inset-block-start: calc(var(--safe-top) + var(--space-2)); }
+
+/* While a non-English catalogue loads (first visit in that language), hide text for a moment instead of
+   flashing English. The reveal animation is a fail-safe in case loading fails. */
+html[data-i18n-pending] .kw { visibility: hidden; animation: k-reveal 0s 2.5s forwards; }
+@keyframes k-reveal { to { visibility: visible; } }

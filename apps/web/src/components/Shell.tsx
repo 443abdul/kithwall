@@ -146,7 +146,7 @@ function MsgFly() {
         );
       })}
       {!convs.data?.length && <div className="em">No messages.</div>}
-      <Link className="ff" href="/messages">See All Messages</Link>
+      <Link className="ff" href="/messages/inbox">See All Messages</Link>
     </div>
   );
 }
@@ -241,7 +241,7 @@ export function LeftNav({ active }: { active: NavKey }) {
       </div>
       <ul>
         {it('home', 'News Feed', '/', 'feed')}
-        {it('messages', 'Messages', '/messages', 'msg', unread)}
+        {it('messages', 'Messages', '/messages/inbox', 'msg', unread)}
         {it('events', 'Events', '/events', 'event')}
         {it('photos', 'Photos', '/photos', 'photo')}
         {it('friends', 'Friends', '/friends', 'friends', reqs.data?.length)}

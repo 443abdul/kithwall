@@ -61,7 +61,7 @@ export function NewMessage({ to }: { to?: string }) {
 
   return (
     <AppPage active="messages" right={<MessagesRight />}>
-      <Title icon="msg" right={<Link href="/messages">&laquo; Back to Messages</Link>}>New Message</Title>
+      <Title icon="msg" right={<Link href="/messages/inbox">&laquo; Back to Messages</Link>}>New Message</Title>
       {to && !VALID.test(to.trim().replace(/^@/, '').toLowerCase()) && <div className="err" role="alert">&ldquo;{to}&rdquo; isn&rsquo;t a valid username.</div>}
       {err && <div className="err" role="alert">{err}</div>}
       <form className="kwm-new" onSubmit={(e) => { e.preventDefault(); void send(); }}>

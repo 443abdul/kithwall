@@ -62,7 +62,7 @@ export function Thread({ id }: { id: string }) {
   if (!c) {
     return (
       <AppPage active="messages">
-        <Title icon="msg" right={<Link href="/messages">&laquo; Back to Messages</Link>}>Messages</Title>
+        <Title icon="msg" right={<Link href="/messages/inbox">&laquo; Back to Messages</Link>}>Messages</Title>
         <div className="note">{conv.isError ? 'This conversation couldn’t be loaded.' : 'This conversation doesn’t exist, or you’re no longer in it.'}</div>
       </AppPage>
     );
@@ -75,7 +75,7 @@ export function Thread({ id }: { id: string }) {
 
   return (
     <AppPage active="messages" right={<ConversationPanel conv={c} />}>
-      <Title icon="msg" right={<Link href="/messages" className="kwm-back">&laquo; Back to Messages</Link>}>
+      <Title icon="msg" right={<Link href="/messages/inbox" className="kwm-back">&laquo; Back to Messages</Link>}>
         <span className="kwm-title">{heading}</span>
       </Title>
       <div className="kwm-secure gray"><Icon name="lock" /> End-to-end encrypted{c.isDm ? '' : ` · ${c.members.length} people`}</div>

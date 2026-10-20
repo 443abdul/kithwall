@@ -1,14 +1,15 @@
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
-import './kw2010.css';
-import './responsive.css';
-import '../styles/mobile-dark.css'; // generated (scripts/gen-dark.mjs); before mobile.css so hand-written rules win
-import '../styles/mobile.css';
+import '../styles/v2/tokens.css';
+import '../styles/v2/base.css';
+import '../styles/v2/components.css';
+import '../styles/v2/shell.css';
+import '../styles/v2/onboarding.css';
 import { Providers } from '@/components/Providers';
 
 export const metadata: Metadata = {
-  title: { default: 'Kithwall', template: '%s | Kithwall' },
-  description: 'Your 2010 social network, sealed. End-to-end encrypted. No ads. No tracking.',
+  title: { default: 'Kithwall', template: '%s · Kithwall' },
+  description: 'Your people. Your space. Sealed. A private, end-to-end encrypted social network for the people you actually know. No ads, no tracking.',
   applicationName: 'Kithwall',
   referrer: 'no-referrer',
   robots: { index: false, follow: false },
@@ -17,15 +18,17 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: 'Kithwall', statusBarStyle: 'default' },
 };
 
-export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#3b5998' };
+// theme-color is replaced before paint by public/theme.js with the active style's chrome colour.
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#fbf6f0' };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Reading the nonce makes every page dynamic so each response gets a fresh CSP nonce.
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
-    <html lang="en" suppressHydrationWarning>
+    // lang/dir/data-style/data-mode are set by theme.js before first paint (hence suppressHydrationWarning).
+    <html lang="en" dir="ltr" suppressHydrationWarning>
       <head>
-        {/* Applies the saved appearance before first paint (public/theme.js). */}
+        {/* Applies saved appearance + language before first paint (public/theme.js). */}
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script src="/theme.js" nonce={nonce} />
       </head>

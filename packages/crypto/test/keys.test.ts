@@ -84,8 +84,8 @@ describe('key bundle and recovery flows (end to end)', async () => {
   });
 
   it('any flipped byte of amkByPassword → bad_password; of identityEnc → decrypt_failed', () => {
-    for (let i = 0; i < b64u.decode(bundle.amkByPassword).length; i++) {
-      expectCode(() => unlockWithPassword(USER, { ...bundle, amkByPassword: flipB64(bundle.amkByPassword, i) }, passwordKEK), 'bad_password');
+    for (let i = 0; i < b64u.decode(bundle.amkByPassword!).length; i++) {
+      expectCode(() => unlockWithPassword(USER, { ...bundle, amkByPassword: flipB64(bundle.amkByPassword!, i) }, passwordKEK), 'bad_password');
     }
     for (let i = 0; i < b64u.decode(bundle.identityEnc).length; i++) {
       expectCode(() => unlockWithPassword(USER, { ...bundle, identityEnc: flipB64(bundle.identityEnc, i) }, passwordKEK), 'decrypt_failed');

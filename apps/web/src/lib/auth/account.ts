@@ -26,7 +26,14 @@ export interface CreateAccountInput {
 
 export type AccountErrorCode =
   | 'handle_taken' | 'handle_invalid' | 'passkey_cancelled' | 'passkey_unsupported' | 'prf_unsupported'
-  | 'no_account_for_passkey' | 'rate_limited' | 'network' | 'weak_passphrase' | 'wrong_passphrase' | 'unknown';
+  | 'no_account_for_passkey' | 'rate_limited' | 'network' | 'weak_passphrase' | 'wrong_passphrase' | 'unknown'
+  // Added by the accounts implementation (backward compatible):
+  /** Signed in, but the account has an authenticator app: finish with finishMfaLogin(code) from lib/auth/login. */
+  | 'mfa_required'
+  /** removePasskey(): it is the only way to unlock; save the recovery key (confirmRecoverySaved) first. */
+  | 'last_unlock_method'
+  /** The operator has paused sign-ups. */
+  | 'signups_closed';
 
 export class AccountError extends Error {
   constructor(public code: AccountErrorCode, message?: string) { super(message ?? code); }
@@ -50,6 +57,18 @@ export interface AccountApi {
   removePasskey(id: string): Promise<void>;
   /** Optional email for account notices (verified by link). */
   setNoticeEmail(email: string | null): Promise<void>;
+
+  // --- Added by the accounts implementation (backward compatible) ---
+  /** 'locked' session (reload without a remembered device): unlock the keys with a passkey (PRF). */
+  unlockWithPasskey(): Promise<void>;
+  /** Which unlock methods the locked account has (passkey and/or passphrase/password). */
+  unlockOptions(): Promise<{ passkey: boolean; password: boolean }>;
+  /** Recovery nudge: a fresh 24-word recovery phrase (replaces the previous one). Show it, then confirmRecoverySaved(). */
+  newRecoveryPhrase(): Promise<string>;
+  /** The person confirmed they saved the phrase from newRecoveryPhrase(). */
+  confirmRecoverySaved(): Promise<void>;
+  /** Account facts for nudges/settings: recovery saved?, verified notice email, passkey count. */
+  accountStatus(): Promise<{ recoverySaved: boolean; noticeEmail: string | null; passkeys: number; hasPassphrase: boolean }>;
 }
 
 // Implementation is provided by ./account-impl (kept separate so the UI can be built against a mock).

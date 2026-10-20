@@ -38,6 +38,16 @@ export {
   deriveCacheKey,
 } from './keys';
 
+export {
+  PRF_APP_SALT,
+  newPrfSalt,
+  passkeyWrapAad,
+  prfWrapKey,
+  wrapAmkWithPrf,
+  unwrapAmkWithPrf,
+  unlockWithPrf,
+} from './passkey';
+
 export { type Sealed, seal, openSealed } from './seal';
 
 export {

@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 import { asUser, callerFromRequest, claimNotice, json, siteOrigin } from '@/lib/auth/server';
 import { mailConfigured, sendNotice } from '@/lib/auth/mailer';
+import { noticeAddress } from '@/lib/auth/passkey-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
     return json({ error: limited ? 'Too many requests. Try again tomorrow.' : 'We couldn\'t schedule the deletion.' }, limited ? 429 : 500);
   }
   const executeAfter = String(data);
-  const email = caller.user.email;
+  const email = await noticeAddress(caller.user.id, caller.user.email); // verified notice address, never a synthetic one
   if (email && mailConfigured()) {
     try {
       // One email per scheduled deletion: re-requesting the same schedule doesn't re-send.

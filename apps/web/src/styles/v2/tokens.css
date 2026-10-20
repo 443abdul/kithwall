@@ -1,0 +1,376 @@
+/* Kithwall 2 design tokens.
+   A style is just a token set. <html data-style="warm|minimal|bold" data-mode="light|dark"> is set before
+   first paint by public/theme.js (the "system" mode preference is resolved there and kept in sync by
+   lib/theme.ts). Components use ONLY the semantic tokens below, never raw colours.
+
+   Every colour pair a component relies on is checked for WCAG 2.2 AA by scripts/check-contrast.mjs,
+   which parses this file: keep palette values as 6-digit hex inside the [data-style][data-mode] blocks. */
+
+/* ------------------------------------------------------------------ shared scale */
+:root {
+  /* spacing (4px grid) */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* type scale (rem, so the OS / browser text size setting scales everything) */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+  --text-4xl: clamp(2.25rem, 1.6rem + 3vw, 3.5rem);
+  --leading-tight: 1.2;
+  --leading: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-bold: 650;
+  --weight-display: 700;
+
+  /* font stacks: system fonts only, nothing downloaded. Script-specific stacks are swapped in by
+     :lang() in base.css so Urdu gets Nastaliq, Hindi gets Devanagari faces, and so on. */
+  --font-latin: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif;
+  --font-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --font-display-latin: var(--font-latin);
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
+
+  /* radii (overridden per style) */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+  --border-width: 1px;
+
+  /* motion */
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.15);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --press-scale: 0.98;
+
+  /* layout */
+  --topbar-h: 56px;
+  --tabbar-h: 64px;
+  --rail-w: 248px;
+  --rail-w-collapsed: 76px;
+  --main-max: 640px;
+  --context-w: 320px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  --focus-width: 3px;
+  --font-display: var(--font-display-latin), var(--font-emoji);
+  --focus-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 1ms;
+    --dur-2: 1ms;
+    --dur-3: 1ms;
+    --ease-emphasized: linear;
+    --press-scale: 1;
+  }
+}
+
+/* ------------------------------------------------------------------ WARM
+   Soft neutrals, generous rounding, friendly rounded type. Terracotta accent. Default suggestion. */
+:root[data-style="warm"],
+.k-theme[data-style="warm"],
+:root:not([data-style]) {
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+  --font-display-latin: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", "Quicksand", var(--font-latin);
+  --weight-display: 700;
+  --letter-display: -0.01em;
+  --btn-radius: var(--radius-pill);
+  --control-radius: var(--radius-md);
+  --seg-radius: var(--radius-pill);
+  --avatar-radius: 50%;
+  --card-shadow: var(--shadow-1);
+  --btn-primary-shadow: none;
+  --btn-primary-shadow-active: none;
+  --seg-on-bg: var(--surface);
+  --seg-on-fg: var(--text);
+  --nav-on-bg: var(--accent-soft);
+  --nav-on-transform: none;
+  --art-radius: var(--radius-xl);
+  --art-transform: rotate(0deg);
+  --logo-rotate: 0deg;
+}
+
+:root[data-style="warm"][data-mode="light"],
+.k-theme[data-style="warm"][data-mode="light"],
+:root:not([data-style]):not([data-mode="dark"]) {
+  --bg: #fbf6f0;
+  --surface: #ffffff;
+  --surface-2: #f5ece2;
+  --surface-3: #ecdfd1;
+  --text: #2b211b;
+  --text-muted: #6b5a4e;
+  --border: #eadccd;
+  --border-strong: #9a8676;
+  --accent: #b4532a;
+  --accent-hover: #9c4621;
+  --accent-contrast: #ffffff;
+  --accent-soft: #fbe6d9;
+  --accent-text: #a0461f;
+  --accent-2: #3f7d6b;
+  --danger: #b42318;
+  --danger-contrast: #ffffff;
+  --danger-soft: #fde8e5;
+  --success: #2c7a4b;
+  --success-soft: #e3f3e8;
+  --warning: #8a5a00;
+  --warning-soft: #fdf1d6;
+  --focus: #b4532a;
+  --overlay: rgba(43, 33, 27, 0.45);
+  --shadow-1: 0 1px 2px rgba(80, 50, 30, 0.06), 0 1px 3px rgba(80, 50, 30, 0.08);
+  --shadow-2: 0 4px 14px rgba(80, 50, 30, 0.10), 0 1px 3px rgba(80, 50, 30, 0.06);
+  --shadow-3: 0 18px 48px rgba(80, 50, 30, 0.18), 0 4px 12px rgba(80, 50, 30, 0.08);
+  --chrome: #fbf6f0;
+  color-scheme: light;
+}
+
+:root[data-style="warm"][data-mode="dark"],
+.k-theme[data-style="warm"][data-mode="dark"],
+:root:not([data-style])[data-mode="dark"] {
+  --bg: #1b1613;
+  --surface: #251f1b;
+  --surface-2: #2f2722;
+  --surface-3: #3a302a;
+  --text: #f4ece4;
+  --text-muted: #c4b4a6;
+  --border: #3d332c;
+  --border-strong: #8a786a;
+  --accent: #ec8d61;
+  --accent-hover: #f2a37e;
+  --accent-contrast: #1b1613;
+  --accent-soft: #3d281d;
+  --accent-text: #f2a37e;
+  --accent-2: #7cc4ad;
+  --danger: #f4877b;
+  --danger-contrast: #1b1613;
+  --danger-soft: #3f211e;
+  --success: #74c995;
+  --success-soft: #1f3327;
+  --warning: #f0c167;
+  --warning-soft: #3a2e17;
+  --focus: #f2a37e;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 20px 50px rgba(0, 0, 0, 0.6);
+  --chrome: #1b1613;
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------------ MINIMAL
+   Crisp monochrome with a single electric-blue accent. Tight radii, hairline borders, quiet motion. */
+:root[data-style="minimal"],
+.k-theme[data-style="minimal"] {
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --font-display-latin: "Inter", "SF Pro Display", var(--font-latin);
+  --weight-display: 650;
+  --letter-display: -0.025em;
+  --press-scale: 1;
+  --btn-radius: var(--radius-md);
+  --control-radius: var(--radius-sm);
+  --seg-radius: var(--radius-md);
+  --avatar-radius: var(--radius-md);
+  --card-shadow: none;
+  --btn-primary-shadow: none;
+  --btn-primary-shadow-active: none;
+  --seg-on-bg: var(--surface);
+  --seg-on-fg: var(--text);
+  --nav-on-bg: transparent;
+  --nav-on-transform: none;
+  --art-radius: var(--radius-lg);
+  --art-transform: rotate(0deg);
+  --logo-rotate: 0deg;
+}
+
+:root[data-style="minimal"][data-mode="light"],
+.k-theme[data-style="minimal"][data-mode="light"] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f5f5f5;
+  --surface-3: #ebebeb;
+  --text: #0f0f0f;
+  --text-muted: #595959;
+  --border: #e4e4e4;
+  --border-strong: #8a8a8a;
+  --accent: #1f4fe0;
+  --accent-hover: #1a43bf;
+  --accent-contrast: #ffffff;
+  --accent-soft: #eaf0ff;
+  --accent-text: #1f4fe0;
+  --accent-2: #0f0f0f;
+  --danger: #c4251a;
+  --danger-contrast: #ffffff;
+  --danger-soft: #fdecea;
+  --success: #147537;
+  --success-soft: #e8f5ec;
+  --warning: #8a5300;
+  --warning-soft: #fdf3e0;
+  --focus: #1f4fe0;
+  --overlay: rgba(0, 0, 0, 0.4);
+  --shadow-1: 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-3: 0 16px 40px rgba(0, 0, 0, 0.14);
+  --chrome: #ffffff;
+  color-scheme: light;
+}
+
+:root[data-style="minimal"][data-mode="dark"],
+.k-theme[data-style="minimal"][data-mode="dark"] {
+  --bg: #0a0a0a;
+  --surface: #121212;
+  --surface-2: #1c1c1c;
+  --surface-3: #262626;
+  --text: #f5f5f5;
+  --text-muted: #a6a6a6;
+  --border: #2a2a2a;
+  --border-strong: #7a7a7a;
+  --accent: #7c9cff;
+  --accent-hover: #9cb4ff;
+  --accent-contrast: #0a0a0a;
+  --accent-soft: #18213d;
+  --accent-text: #8eaaff;
+  --accent-2: #f5f5f5;
+  --danger: #ff8a80;
+  --danger-contrast: #0a0a0a;
+  --danger-soft: #3a1714;
+  --success: #6fd394;
+  --success-soft: #12301d;
+  --warning: #f5c26b;
+  --warning-soft: #33270f;
+  --focus: #9cb4ff;
+  --overlay: rgba(0, 0, 0, 0.65);
+  --shadow-1: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 20px 50px rgba(0, 0, 0, 0.7);
+  --chrome: #0a0a0a;
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------------ BOLD
+   Vibrant violet + hot pink, chunky shapes, heavier type and springy, playful motion. */
+:root[data-style="bold"],
+.k-theme[data-style="bold"] {
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 26px;
+  --radius-xl: 34px;
+  --border-width: 2px;
+  --font-display-latin: "Avenir Next", "Montserrat", "Segoe UI Variable Display", "Segoe UI", var(--font-latin);
+  --weight-bold: 700;
+  --weight-display: 800;
+  --letter-display: -0.03em;
+  --dur-2: 240ms;
+  --dur-3: 420ms;
+  --ease-emphasized: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --press-scale: 0.94;
+  --btn-radius: var(--radius-pill);
+  --control-radius: var(--radius-md);
+  --seg-radius: var(--radius-pill);
+  --avatar-radius: 50%;
+  --card-shadow: var(--shadow-1);
+  --btn-primary-shadow: 0 4px 0 color-mix(in srgb, var(--accent) 45%, #000);
+  --btn-primary-shadow-active: 0 1px 0 color-mix(in srgb, var(--accent) 45%, #000);
+  --seg-on-bg: var(--accent);
+  --seg-on-fg: var(--accent-contrast);
+  --nav-on-bg: var(--accent-soft);
+  --nav-on-transform: translateY(-2px) scale(1.06);
+  --art-radius: 40% 60% 55% 45% / 50% 45% 55% 50%;
+  --art-transform: rotate(-4deg);
+  --logo-rotate: -6deg;
+}
+
+:root[data-style="bold"][data-mode="light"],
+.k-theme[data-style="bold"][data-mode="light"] {
+  --bg: #f8f4ff;
+  --surface: #ffffff;
+  --surface-2: #efe6ff;
+  --surface-3: #e2d4ff;
+  --text: #1a0f33;
+  --text-muted: #594c75;
+  --border: #e0d3fb;
+  --border-strong: #8b78b8;
+  --accent: #6b21d9;
+  --accent-hover: #5a17bd;
+  --accent-contrast: #ffffff;
+  --accent-soft: #ece0ff;
+  --accent-text: #6b21d9;
+  --accent-2: #d61c6f;
+  --danger: #c0182f;
+  --danger-contrast: #ffffff;
+  --danger-soft: #ffe5ea;
+  --success: #0f7a52;
+  --success-soft: #defaf0;
+  --warning: #8d4f00;
+  --warning-soft: #fff0d6;
+  --focus: #d61c6f;
+  --overlay: rgba(26, 15, 51, 0.5);
+  --shadow-1: 0 2px 0 rgba(107, 33, 217, 0.10);
+  --shadow-2: 0 6px 0 rgba(107, 33, 217, 0.10), 0 10px 24px rgba(107, 33, 217, 0.12);
+  --shadow-3: 0 24px 60px rgba(107, 33, 217, 0.25);
+  --chrome: #f8f4ff;
+  color-scheme: light;
+}
+
+:root[data-style="bold"][data-mode="dark"],
+.k-theme[data-style="bold"][data-mode="dark"] {
+  --bg: #110925;
+  --surface: #1b1136;
+  --surface-2: #261849;
+  --surface-3: #33215f;
+  --text: #f6f1ff;
+  --text-muted: #bfb1e0;
+  --border: #382865;
+  --border-strong: #8d78c9;
+  --accent: #b996ff;
+  --accent-hover: #cbb0ff;
+  --accent-contrast: #110925;
+  --accent-soft: #2e1d57;
+  --accent-text: #c4a6ff;
+  --accent-2: #ff6aa8;
+  --danger: #ff8597;
+  --danger-contrast: #110925;
+  --danger-soft: #3f1528;
+  --success: #5fe0aa;
+  --success-soft: #11332a;
+  --warning: #ffc76b;
+  --warning-soft: #3a2a12;
+  --focus: #ff6aa8;
+  --overlay: rgba(5, 2, 15, 0.7);
+  --shadow-1: 0 2px 0 rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 6px 0 rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 24px 60px rgba(0, 0, 0, 0.65);
+  --chrome: #110925;
+  color-scheme: dark;
+}

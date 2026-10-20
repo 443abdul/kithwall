@@ -65,7 +65,7 @@ export function ConversationPanel({ conv }: { conv: ConversationSummary }) {
           {!conv.isDm && isAdmin && <li><button type="button" className="kwm-link" onClick={() => setModal('rename')}>Name Conversation</button></li>}
           <li><button type="button" className="kwm-link" onClick={async () => {
             setErr(null);
-            try { await setArchived(conv.id, !archived); if (!archived) router.push('/messages'); } catch (e) { setErr((e as Error).message); }
+            try { await setArchived(conv.id, !archived); if (!archived) router.push('/messages/inbox'); } catch (e) { setErr((e as Error).message); }
           }}>{archived ? 'Unarchive' : 'Archive'}</button></li>
           {!conv.isDm && <li><button type="button" className="kwm-link" onClick={() => setModal('leave')}>Leave Conversation</button></li>}
         </ul>
@@ -82,7 +82,7 @@ export function ConversationPanel({ conv }: { conv: ConversationSummary }) {
             await leaveConversation(conv);
             dock.closeConversation(conv.id);
             await qc.invalidateQueries({ queryKey: ['conversations'] });
-            router.push('/messages');
+            router.push('/messages/inbox');
           }}>
           You&rsquo;ll stop receiving messages from <b>{conversationTitle(conv, nameOf)}</b> and won&rsquo;t be able to read anything sent after you leave.
           {isOwner && conv.members.length > 2 ? ' Someone else in the conversation will take it over.' : ''}

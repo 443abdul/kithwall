@@ -32,7 +32,11 @@ export interface KeyBundle {
   kdf: KdfParams;
   signPub: string;
   kxPub: string;
-  amkByPassword: string;
+  /**
+   * Absent for passkey-first accounts that have no password/passphrase (Kithwall 2): their AMK is
+   * wrapped per passkey with the WebAuthn PRF output instead (see passkey.ts; stored outside the bundle).
+   */
+  amkByPassword?: string;
   amkByRecovery: string;
   identityEnc: string;
   rkCommitment: string;
@@ -121,13 +125,18 @@ function newRecovery(userId: string, amk: Uint8Array): { recoveryPhrase: string;
   }
 }
 
+/**
+ * New AMK, identity keys and recovery phrase. `passwordKEK` null creates a bundle without
+ * `amkByPassword` (passkey-first account): the caller must wrap `unlocked.amk` some other way
+ * (e.g. wrapAmkWithPrf) before discarding it, or the account can only be opened with the phrase.
+ */
 export function createKeyBundle(
   userId: string,
-  passwordKEK: Uint8Array,
+  passwordKEK: Uint8Array | null,
   kdf: KdfParams = DEFAULT_KDF,
 ): { bundle: KeyBundle; unlocked: Unlocked; recoveryPhrase: string } {
   assertString(userId, 'userId');
-  assertBytes(passwordKEK, 'passwordKEK', KEY_LEN);
+  if (passwordKEK !== null) assertBytes(passwordKEK, 'passwordKEK', KEY_LEN);
   // Bundles may carry reduced params in tests; the floor is enforced at derivation time.
   const params = validateKdfParams(kdf, { allowWeakParams: true });
   const amk = randomBytes(KEY_LEN);
@@ -139,7 +148,7 @@ export function createKeyBundle(
     kdf: params,
     signPub: b64u.encode(identity.signPub),
     kxPub: b64u.encode(identity.kxPub),
-    amkByPassword: rewrapPassword(userId, amk, passwordKEK),
+    ...(passwordKEK ? { amkByPassword: rewrapPassword(userId, amk, passwordKEK) } : {}),
     amkByRecovery: rec.amkByRecovery,
     identityEnc: encryptIdentity(userId, amk, identity),
     rkCommitment: rec.rkCommitment,
@@ -159,9 +168,10 @@ function encryptIdentity(userId: string, amk: Uint8Array, identity: Identity): s
 
 function validateBundle(bundle: KeyBundle): void {
   if (typeof bundle !== 'object' || bundle === null || bundle.v !== 1) invalid('unsupported key bundle');
-  for (const f of ['signPub', 'kxPub', 'amkByPassword', 'amkByRecovery', 'identityEnc', 'rkCommitment'] as const) {
+  for (const f of ['signPub', 'kxPub', 'amkByRecovery', 'identityEnc', 'rkCommitment'] as const) {
     if (typeof bundle[f] !== 'string') invalid(`bundle.${f} must be a string`);
   }
+  if (bundle.amkByPassword !== undefined && typeof bundle.amkByPassword !== 'string') invalid('bundle.amkByPassword must be a string');
 }
 
 /**
@@ -198,6 +208,8 @@ export function unlockWithPassword(userId: string, bundle: KeyBundle, passwordKE
   assertString(userId, 'userId');
   assertBytes(passwordKEK, 'passwordKEK', KEY_LEN);
   validateBundle(bundle);
+  // A passkey-only account has no password wrap: any password is simply wrong.
+  if (bundle.amkByPassword === undefined) fail('bad_password', 'this account has no password');
   let amk: Uint8Array;
   try {
     amk = packDecrypt(passwordKEK, bundle.amkByPassword, wrapAad('amk-password', userId));

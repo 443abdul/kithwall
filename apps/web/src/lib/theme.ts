@@ -1,57 +1,144 @@
 'use client';
-// Appearance preference (per device): 'system' follows the OS, or force 'light' / 'dark'.
-// public/theme.js applies it before first paint; this module changes it at runtime.
-// Dark mode applies to the phone UI; the desktop keeps the 2010 look.
+// Appearance preferences (per device): a style (warm | minimal | bold) and a mode (system | light | dark).
+// Stored in localStorage as 'kw.style' and 'kw.mode' (not sensitive; never leaves the device; later also
+// mirrored into encrypted settings). public/theme.js applies them before first paint, so there is no
+// flash; this module changes them at runtime and keeps "system" in sync with the OS.
+//
+// <html data-style="warm" data-mode="dark" data-mode-pref="system">, plus the v1 attributes
+// data-theme / data-theme-pref that the remaining v1 pages read (until phase 2).
 import { useSyncExternalStore } from 'react';
+import type { ModePref, StylePref } from '@/lib/auth/account';
 
-export type ThemePref = 'system' | 'light' | 'dark';
-const KEY = 'kw.theme';
-const listeners = new Set<() => void>();
+export type { ModePref, StylePref };
+export type Mode = 'light' | 'dark';
+export interface Prefs { style: StylePref; mode: ModePref }
 
-export function getThemePref(): ThemePref {
-  try {
-    const v = localStorage.getItem(KEY);
-    return v === 'light' || v === 'dark' ? v : 'system';
-  } catch { return 'system'; }
+export const STYLES: readonly StylePref[] = ['warm', 'minimal', 'bold'];
+export const MODES: readonly ModePref[] = ['system', 'light', 'dark'];
+export const STYLE_KEY = 'kw.style';
+export const MODE_KEY = 'kw.mode';
+/** v1 key ('system' | 'light' | 'dark'); migrated to kw.mode. */
+export const LEGACY_THEME_KEY = 'kw.theme';
+export const DEFAULT_PREFS: Prefs = { style: 'warm', mode: 'system' };
+
+/** Browser-chrome colour (meta theme-color) per style and mode = the --chrome token in styles/v2/tokens.css. */
+export const THEME_COLORS: Record<StylePref, Record<Mode, string>> = {
+  warm: { light: '#fbf6f0', dark: '#1b1613' },
+  minimal: { light: '#ffffff', dark: '#0a0a0a' },
+  bold: { light: '#f8f4ff', dark: '#110925' },
+};
+
+type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+const isStyle = (v: unknown): v is StylePref => v === 'warm' || v === 'minimal' || v === 'bold';
+const isMode = (v: unknown): v is ModePref => v === 'system' || v === 'light' || v === 'dark';
+
+function storage(): StorageLike | null {
+  try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
 }
 
-function systemDark() {
+/** Read preferences, migrating the v1 'kw.theme' value into 'kw.mode' once. */
+export function readPrefs(s: StorageLike | null = storage()): Prefs {
+  if (!s) return { ...DEFAULT_PREFS };
+  try {
+    const style = s.getItem(STYLE_KEY);
+    let mode: string | null = s.getItem(MODE_KEY);
+    if (!isMode(mode)) {
+      const legacy = s.getItem(LEGACY_THEME_KEY);
+      if (legacy === 'light' || legacy === 'dark') {
+        mode = legacy;
+        s.setItem(MODE_KEY, legacy);
+      } else mode = 'system';
+      if (legacy !== null) s.removeItem(LEGACY_THEME_KEY);
+    }
+    return { style: isStyle(style) ? style : DEFAULT_PREFS.style, mode: mode as ModePref };
+  } catch { return { ...DEFAULT_PREFS }; }
+}
+
+export function writePrefs(p: Partial<Prefs>, s: StorageLike | null = storage()) {
+  if (!s) return;
+  try {
+    if (p.style) s.setItem(STYLE_KEY, p.style);
+    if (p.mode) s.setItem(MODE_KEY, p.mode);
+  } catch { /* storage blocked: still applied for this page */ }
+}
+
+export function systemDark(): boolean {
   return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-color-scheme: dark)').matches;
 }
 
-export function applyTheme(pref: ThemePref = getThemePref()) {
-  const dark = pref === 'dark' || (pref === 'system' && systemDark());
+export function resolveMode(mode: ModePref, isSystemDark: boolean): Mode {
+  return mode === 'system' ? (isSystemDark ? 'dark' : 'light') : mode;
+}
+
+let current: Prefs = DEFAULT_PREFS;
+let resolved: Mode = 'light';
+const listeners = new Set<() => void>();
+
+/** Write the attributes + theme-color for these preferences onto <html>. */
+export function applyPrefs(p: Prefs = readPrefs()) {
+  const mode = resolveMode(p.mode, systemDark());
   const root = document.documentElement;
-  root.setAttribute('data-theme', dark ? 'dark' : 'light');
-  root.setAttribute('data-theme-pref', pref);
-  // Status-bar / browser chrome colour on phones.
+  root.setAttribute('data-style', p.style);
+  root.setAttribute('data-mode', mode);
+  root.setAttribute('data-mode-pref', p.mode);
+  root.setAttribute('data-theme', mode);       // v1 pages
+  root.setAttribute('data-theme-pref', p.mode); // v1 pages
   const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  const narrow = window.matchMedia?.('(max-width: 767px)').matches;
-  if (meta) meta.content = narrow ? (dark ? '#242526' : '#ffffff') : '#3b5998';
-  listeners.forEach((l) => l());
+  if (meta) meta.content = THEME_COLORS[p.style][mode];
+  if (p.style !== current.style || p.mode !== current.mode || mode !== resolved) {
+    current = p;
+    resolved = mode;
+    listeners.forEach((l) => l());
+  }
 }
 
-export function setThemePref(pref: ThemePref) {
-  try {
-    if (pref === 'system') localStorage.removeItem(KEY); else localStorage.setItem(KEY, pref);
-  } catch { /* storage blocked: still apply for this page */ }
-  applyTheme(pref);
+export function setStyle(style: StylePref) {
+  const next = { ...readPrefs(), style };
+  writePrefs({ style });
+  applyPrefs(next);
 }
 
-/** Keep 'system' in sync with the OS while the app is open. */
-export function watchSystemTheme(): () => void {
-  const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
-  if (!mq) return () => undefined;
-  const on = () => { if (getThemePref() === 'system') applyTheme('system'); };
-  mq.addEventListener('change', on);
-  applyTheme();
-  return () => mq.removeEventListener('change', on);
+export function setMode(mode: ModePref) {
+  const next = { ...readPrefs(), mode };
+  writePrefs({ mode });
+  applyPrefs(next);
 }
 
-export function useThemePref(): ThemePref {
-  return useSyncExternalStore(
-    (l) => { listeners.add(l); return () => { listeners.delete(l); }; },
-    getThemePref,
-    () => 'system',
-  );
+let watching = 0;
+let unwatch: (() => void) | null = null;
+/** Follow OS light/dark changes (for mode 'system') and other tabs' changes. Ref-counted. */
+export function watchSystemMode(): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+  if (watching++ === 0) {
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const onMq = () => applyPrefs();
+    const onStorage = (e: StorageEvent) => { if (e.key === STYLE_KEY || e.key === MODE_KEY) applyPrefs(); };
+    mq?.addEventListener('change', onMq);
+    window.addEventListener('storage', onStorage);
+    applyPrefs();
+    unwatch = () => { mq?.removeEventListener('change', onMq); window.removeEventListener('storage', onStorage); };
+  }
+  return () => { if (--watching === 0) { unwatch?.(); unwatch = null; } };
 }
+
+function subscribe(l: () => void) {
+  listeners.add(l);
+  if (typeof window !== 'undefined') applyPrefs();
+  return () => { listeners.delete(l); };
+}
+
+/** Current preferences + the resolved mode. Server snapshot is the default (warm/system/light). */
+export function usePrefs(): Prefs & { resolved: Mode } {
+  const p = useSyncExternalStore(subscribe, () => current, () => DEFAULT_PREFS);
+  const r = useSyncExternalStore(subscribe, () => resolved, () => 'light' as Mode);
+  return { ...p, resolved: r };
+}
+
+// ---- v1 compatibility (app/menu, components/MobileChrome) until the v1 pages are deleted in phase 2.
+export type ThemePref = ModePref;
+export const getThemePref = (): ThemePref => readPrefs().mode;
+export const setThemePref = (m: ThemePref) => setMode(m);
+export const applyTheme = (m: ThemePref = getThemePref()) => applyPrefs({ ...readPrefs(), mode: m });
+export const watchSystemTheme = watchSystemMode;
+export function useThemePref(): ThemePref { return usePrefs().mode; }
