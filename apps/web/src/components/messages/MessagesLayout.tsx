@@ -9,16 +9,18 @@ import { useSession } from '@/lib/keys/session';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { ConversationListPane } from './ChatList';
 import { useChatRuntime } from './runtime';
+import { useMessagesLive } from '@/lib/chat/live';
 
 export function MessagesLayout({ children }: { children: ReactNode }) {
   const t = useT();
   const segment = useSelectedLayoutSegment();
   const params = useParams<{ id?: string }>();
-  const { status } = useSession();
+  const { status, userId } = useSession();
   const s = useSettings();
   useDocumentTitle(t('nav.messages'));
   useEffect(() => { if (status === 'ready') void loadSettings().catch(() => undefined); }, [status]);
   useChatRuntime(s.typingIndicator);
+  useMessagesLive(status === 'ready' ? userId : null);
   const open = segment !== null;
   const activeId = typeof params?.id === 'string' ? params.id.toLowerCase() : null;
   return (

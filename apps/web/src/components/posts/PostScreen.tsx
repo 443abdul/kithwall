@@ -13,6 +13,7 @@ import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { PostCard, PostCardSkeleton } from './PostCard';
 import { refetchPost } from './data';
 import { useCircleName } from './bits';
+import { usePostsLive } from './live';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -21,6 +22,7 @@ export function PostScreen({ id }: { id: string }) {
   const router = useRouter();
   const { status } = useSession();
   const valid = UUID.test(id);
+  usePostsLive();
   const q = useQuery({ queryKey: ['v2feed', 'post', id], enabled: status === 'ready' && valid, queryFn: () => refetchPost(id) });
   const circle = q.data?.group_id ?? null;
   const circleName = useCircleName(circle);

@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useT } from '@/i18n';
 import { Avatar } from '@/components/ui/Avatar';
-import { Button } from '@/components/ui/Button';
+import { Button, ButtonLink } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -27,6 +27,8 @@ import { people, usePeopleVersion, usePerson, type Person } from '@/lib/people';
 import { birthdayText } from '@/lib/social/profile';
 import type { PhotoFiles } from '@/lib/types';
 import { normalizeHandle } from './data';
+import { KeyChangeBanner } from '@/components/verify/KeyChangeBanner';
+import { VerifiedBadge } from '@/components/verify/VerifiedBadge';
 import { EditProfileDialog } from './EditProfile';
 import { PersonActions } from './PersonActions';
 
@@ -63,16 +65,18 @@ function Profile({ id }: { id: string }) {
   const canRead = self || !!p.info;
   return (
     <Page title={p.name} back={self ? { href: '/you', label: t('common.back') } : undefined}>
+      {!self ? <KeyChangeBanner userId={id} name={p.name} handle={p.username} /> : null}
       <Card className="k-profile-head">
         <Avatar name={p.name} src={avatar} size={96} />
         <div className="k-profile-head-text">
-          <h2 className="k-profile-name">{p.name}</h2>
+          <h2 className="k-profile-name">{p.name}{!self ? <> <VerifiedBadge userId={id} /></> : null}</h2>
           <p className="k-muted k-ltr">@{p.username}</p>
           {p.info?.bio ? <p className="k-profile-bio" dir="auto">{p.info.bio}</p> : null}
         </div>
         <div className="k-profile-head-actions">
           {self ? <Button variant="secondary" size="sm" icon="edit" onClick={() => setEditing(true)}>{t('profile.edit')}</Button>
             : <PersonActions userId={id} name={p.name} />}
+          {!self ? <ButtonLink href={`/u/${encodeURIComponent(p.username)}/verify`} variant="ghost" size="sm" icon="shield">{t('verify.profileLink')}</ButtonLink> : null}
         </div>
       </Card>
       {canRead ? (

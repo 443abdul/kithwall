@@ -12,6 +12,7 @@ import { usePeopleVersion } from '@/lib/people';
 import { listConversations, readMessage, type ConversationSummary } from '@/lib/messages';
 import { isArchived, useMessagesPrefs } from '@/lib/chat/prefs';
 import { rekeyWhereNeeded } from '@/lib/chat/live';
+import { useHiddenChats } from '@/lib/safety/hidden';
 import { Icon } from '@/components/ui/Icon';
 import { ButtonLink, IconButton } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -65,6 +66,7 @@ function Row({ c, active, pinned, filter }: { c: ConversationSummary; active: bo
         <span className="k-chat-row-body">
           <span className="k-chat-row-top">
             <span className="k-chat-row-title">{title}</span>
+            {c.disappear_secs ? <span className="k-eph-rowico" title={t('ephemeral.chat.title')}><Icon name="clock" /></span> : null}
             <time className="k-chat-row-time" dateTime={c.last?.created_at ?? c.last_message_at}>{when(c.last?.created_at ?? c.last_message_at)}</time>
           </span>
           <span className="k-chat-row-bottom">
@@ -84,17 +86,19 @@ export function ConversationListPane({ activeId }: { activeId: string | null }) 
   useKeyringVersion();
   const q = useConversationList();
   const prefs = useMessagesPrefs();
+  // Chats hidden behind the app PIN (Safety centre) are left out until revealed.
+  const hiddenChats = useHiddenChats();
   const [filter, setFilter] = useState('');
   const [showArchived, setShowArchived] = useState(false);
 
   const { visible, archived } = useMemo(() => {
-    const all = q.data ?? [];
+    const all = (q.data ?? []).filter((c) => !hiddenChats.has(c.id));
     const p = prefs.data;
     const entries = all.map((c) => ({ c, id: c.id, lastAt: c.last?.created_at ?? c.last_message_at, pinnedAt: p?.pinned?.[c.id] ?? null }));
     const arch = entries.filter((e) => isArchived(p, e.id, e.lastAt) && !e.pinnedAt);
     const vis = entries.filter((e) => !arch.includes(e));
     return { visible: orderConversations(vis), archived: orderConversations(arch) };
-  }, [q.data, prefs.data]);
+  }, [q.data, prefs.data, hiddenChats]);
 
   const shown = showArchived ? archived : visible;
   const unread = visible.filter((e) => e.c.unread).length;

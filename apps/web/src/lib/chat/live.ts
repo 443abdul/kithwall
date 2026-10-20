@@ -5,6 +5,8 @@
 //  - which thread is on screen (so we don't pop a chat window for it);
 //  - re-keying: when a conversation I own has had a membership change, rotate its key.
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { useEffect } from 'react';
+import { useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
 import { sb } from '../supabase';
 import { getSession } from '../keys/session';
 import type { MessageRow } from '../types';
@@ -79,4 +81,38 @@ export function rekeyWhereNeeded(convs: ConversationSummary[] | undefined) {
     attempted.set(key, Date.now());
     void rotateConversation(c).catch((e) => console.warn('conversation key rotation failed', e));
   }
+}
+
+// ------------------------------------------------------------------------------------------
+// Edits, unsends and timer changes, live (phase 3). Realtime delivers UPDATEs on messages that pass RLS
+// (members only): an edit carries the new sealed payload, an unsend a content-free tombstone (the row is
+// deleted by the server a few minutes later). The cached thread is patched in place, so the other side
+// sees the change within a second or two, without refetching the whole page.
+
+/** Replace one message in a cached thread (no-op when that thread isn't loaded). */
+export function patchCachedMessage(qc: QueryClient, row: MessageRow) {
+  qc.setQueryData<InfiniteData<MessageRow[]>>(['messages', row.conversation_id], (data) => {
+    if (!data) return data;
+    let hit = false;
+    const pages = data.pages.map((page) => page.map((m) => (m.id === row.id ? ((hit = true), { ...m, ...row }) : m)));
+    return hit ? { ...data, pages } : data;
+  });
+}
+
+/** Subscribe while the Messages section is open. */
+export function useMessagesLive(uid: string | null | undefined) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!uid) return;
+    const ch = sb().channel(`chat-edits:${uid}:${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (p) => {
+        const m = { ...(p.new as MessageRow) };
+        if (!m?.id || !m.conversation_id) return;
+        if (m.envelope == null) delete (m as Partial<MessageRow>).envelope;
+        patchCachedMessage(qc, m);
+        void qc.invalidateQueries({ queryKey: ['conversations'] });
+      })
+      .subscribe();
+    return () => { void sb().removeChannel(ch); };
+  }, [uid, qc]);
 }

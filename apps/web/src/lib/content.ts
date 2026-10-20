@@ -2,7 +2,7 @@
 // Encrypt/decrypt posts and comments (spec §3.8). Every function here is the ONLY way the
 // app should create or read posts/comments, so headers are built consistently.
 import {
-  b64u, deriveSubkey, extractContentKey, openEnvelope, openWithContentKey, sealEnvelope, sealWithContentKey,
+  b64u, deriveSubkey, extractContentKey, openEnvelope, openWithContentKey, resealEnvelope, sealEnvelope, sealWithContentKey,
   type Envelope, type EnvelopeHeader,
 } from '@kithwall/crypto';
 import { sb, must } from './supabase';
@@ -33,6 +33,10 @@ export interface CreatePostArgs {
   audience?: Audience;           // defaults to friends
   sharedPostId?: string;
   id?: string;                   // pre-generated (e.g. when media was uploaded first)
+  /** Scheduled post (phase 3): ISO time it goes out; only I can see it until then. */
+  publishAt?: string | null;
+  /** Disappearing post (phase 3): seconds after it goes out (the server computes expires_at). */
+  disappearSecs?: number | null;
 }
 
 /** Resolve which audience (and key) a new post uses. */
@@ -59,14 +63,25 @@ export async function createPost(args: CreatePostArgs): Promise<PostRow> {
     id, author_id: me(), ...ctxIds, kind: args.kind, is_public: audienceId === null,
     audience_id: audienceId, epoch, shared_post_id: args.sharedPostId ?? null,
   };
+  // The header binds identity and audience only, so scheduling and timers never change the ciphertext.
   const envelope = sealEnvelope({ header: postHeader(row), payload: args.payload, audienceKey: key ?? undefined, signPriv: identity().signPriv });
-  return must(await sb().from('posts').insert({ ...row, envelope }).select().single()) as PostRow;
+  const extra = {
+    ...(args.publishAt ? { publish_at: args.publishAt } : {}),
+    ...(args.disappearSecs ? { disappear_secs: args.disappearSecs } : {}),
+  };
+  return must(await sb().from('posts').insert({ ...row, ...extra, envelope }).select().single()) as PostRow;
 }
 
+/**
+ * Edit a post: the new payload is sealed under the post's EXISTING content key (resealEnvelope keeps the
+ * wrapped key), so comments, poll votes and report disclosures derived from it stay readable. (Sealing a
+ * fresh envelope would mint a new content key and orphan every comment.)
+ */
 export async function editPost(post: PostRow, payload: PostPayload): Promise<void> {
   const key = post.is_public ? undefined : keyring.get(post.audience_id!, post.epoch!) ?? undefined;
   if (!post.is_public && !key) throw new KeyWaitingError(post.audience_id!);
-  const envelope = sealEnvelope({ header: postHeader(post), payload, audienceKey: key, signPriv: identity().signPriv });
+  const signPub = b64u.decode(people.get(post.author_id)?.sign_pub ?? '');
+  const envelope = resealEnvelope({ header: postHeader(post), envelope: post.envelope, payload, audienceKey: key, signPub, signPriv: identity().signPriv });
   must(await sb().from('posts').update({ envelope }).eq('id', post.id));
 }
 
@@ -130,6 +145,19 @@ export async function addComment(parent: { postId?: string; photoId?: string; co
   return must(await sb().from('comments').insert({ ...base, envelope }).select().single()) as CommentRow;
 }
 
+/** Edit my comment: re-sealed under the same id and key; the server sets edited_at (no history kept). */
+export async function editComment(row: CommentRow, parentKey: Uint8Array | null, text: string, replyTo?: string): Promise<void> {
+  if (row.author_id !== me()) throw new Error('You can only edit your own comments.');
+  const header = commentHeader(row);
+  const payload: CommentPayload = replyTo ? { text, replyTo } : { text };
+  const envelope = parentKey
+    ? sealWithContentKey({ header, payload, contentKey: deriveSubkey(parentKey, 'comment', row.id), signPriv: identity().signPriv })
+    : sealEnvelope({ header: { ...header, audience: 'public' }, payload, signPriv: identity().signPriv });
+  const res = await sb().from('comments').update({ envelope }).eq('id', row.id).select('id');
+  if (res.error) throw new Error(res.error.message);
+  if (!res.data?.length) throw new Error("This comment can't be edited any more.");
+}
+
 export function readComment(row: CommentRow, parentKey: Uint8Array | null): Decrypted<CommentPayload> {
   const author = people.get(row.author_id);
   if (!author) return { ok: false, reason: 'waiting' };
@@ -170,4 +198,22 @@ export async function fetchWall(userId: string, before?: string, pageSize = 20):
   const rows = must(await q) as PostRow[];
   await preparePosts(rows);
   return rows;
+}
+
+// ---------------------------------------------------------------------------------------
+// Scheduled posts (phase 3). Until publish_at the database shows them to nobody but me.
+
+/** My posts still waiting for their time, soonest first. */
+export async function fetchScheduled(): Promise<PostRow[]> {
+  const rows = must(await sb().from('posts').select('*').eq('author_id', me()).gt('publish_at', new Date().toISOString())
+    .order('publish_at', { ascending: true }).limit(200)) as PostRow[];
+  await preparePosts(rows);
+  return rows;
+}
+
+/** Move a scheduled post to another time, or (null) post it right now. */
+export async function reschedulePost(post: Pick<PostRow, 'id'>, publishAt: string | null): Promise<void> {
+  const res = await sb().from('posts').update({ publish_at: publishAt }).eq('id', post.id).select('id');
+  if (res.error) throw new Error(res.error.message);
+  if (!res.data?.length) throw new Error("This post can't be changed.");
 }

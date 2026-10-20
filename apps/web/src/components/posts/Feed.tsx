@@ -17,12 +17,14 @@ import type { FeedProps } from '.';
 import { feedKey, fetchScopePage } from './data';
 import { dedupeById } from './logic';
 import { PostCard, PostCardSkeleton } from './PostCard';
+import { usePostsLive } from './live';
 
 export function Feed({ scope, empty }: FeedProps) {
   const t = useT();
   const qc = useQueryClient();
   const { status } = useSession();
   const sentinel = useRef<HTMLDivElement>(null);
+  usePostsLive();
   const q = useInfiniteQuery({
     queryKey: feedKey(scope),
     enabled: status === 'ready',

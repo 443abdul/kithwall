@@ -116,6 +116,13 @@ Stories (24 h) expire in the database: expired stories are hidden at once and a 
 bucket, unreadable to everyone but the author, until `GET /api/cron/stories` removes them (daily in
 `vercel.json`; on a Vercel plan with hourly crons, `"30 * * * *"` keeps the bucket tidier).
 
+Disappearing messages and posts, unsend and scheduled posts (`20261024000100_ephemeral`): the
+`kithwall-ephemeral` `pg_cron` job runs every minute — it publishes due scheduled posts (and notifies
+their authors, which sends the push), deletes expired messages and posts and old unsend tombstones.
+Every media row that goes away leaves its storage path in a private trash list (`kw.media_trash`); the
+objects are unreadable from that moment and `GET /api/cron/ephemeral` (daily in `vercel.json`, same
+`CRON_SECRET`) deletes them from the bucket.
+
 ### Push notifications (Web Push)
 
 1. Generate the keys once (keep them; rotating the VAPID pair silently breaks every existing

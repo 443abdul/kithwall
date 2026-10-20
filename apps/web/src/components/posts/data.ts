@@ -11,6 +11,7 @@ import { deleteMedia, fileRefPaths } from '@/lib/media';
 import type { FileRef, PostPayload, PostRow } from '@/lib/types';
 import type { FeedScope } from '.';
 import { nextCursor } from './logic';
+import { isExpired, isScheduled } from '@/lib/chat/ephemeral';
 
 export const PAGE_SIZE = 12;
 
@@ -32,7 +33,10 @@ export async function fetchScopePage(scope: FeedScope, before?: string): Promise
   }
   await rememberAudienceKinds(rows);
   // Circle docs are stored as note revisions (shared_post_id = the doc); only the newest is a post.
-  const shown = rows.filter((r) => !HIDDEN_KINDS.has(r.kind) && !(r.kind === 'note' && r.shared_post_id && r.group_id));
+  // My own scheduled posts wait in "Scheduled" (You), not in feeds; expired ones are already gone.
+  const now = Date.now();
+  const shown = rows.filter((r) => !HIDDEN_KINDS.has(r.kind) && !(r.kind === 'note' && r.shared_post_id && r.group_id)
+    && !isScheduled(r, now) && !isExpired(r, now));
   return { rows: shown, cursor: nextCursor(rows, PAGE_SIZE) };
 }
 

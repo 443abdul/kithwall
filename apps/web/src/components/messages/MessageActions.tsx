@@ -1,11 +1,12 @@
 'use client';
 // Actions for one message (long-press on phones, right-click or the ⋯ button elsewhere): react, reply,
-// copy, unsend (mine: deleted for everyone, files too) and report (others': the decrypted message and
-// its own content key go to moderators, nothing else from the chat).
+// copy, edit (mine: re-sealed, shown as "edited", no history kept), unsend (mine: wiped for everyone, files
+// too, live on the other screens) and report (others': the decrypted message and its own content key go
+// to moderators, nothing else from the chat). No time limits: people control their own words.
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useT, type MessageKey } from '@/i18n';
-import { deleteMessage, messageContentKey, type ChatPayload, type ConversationSummary } from '@/lib/messages';
+import { deleteMessage, editMessage, MAX_MESSAGE_CHARS, messageContentKey, type ChatPayload, type ConversationSummary } from '@/lib/messages';
 import { REACTIONS, setReaction, type ReactionEmoji } from '@/lib/chat/reactions';
 import { reportItem, type ReportReason } from '@/lib/report';
 import type { MessageRow } from '@/lib/types';
@@ -31,7 +32,8 @@ export function MessageActions({ c, line, mine, myReaction, onReply, onClose }: 
   const t = useT();
   const qc = useQueryClient();
   const toast = useToast();
-  const [step, setStep] = useState<'menu' | 'unsend' | 'report'>('menu');
+  const [step, setStep] = useState<'menu' | 'unsend' | 'report' | 'edit'>('menu');
+  const [draft, setDraft] = useState(line.payload?.text ?? '');
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [details, setDetails] = useState('');
@@ -62,6 +64,20 @@ export function MessageActions({ c, line, mine, myReaction, onReply, onClose }: 
     } catch { setBusy(false); toast({ message: t('messages.actions.unsendFailed'), tone: 'danger' }); }
   }
 
+  async function saveEdit() {
+    const next = draft.trim();
+    if (!p || next === (p.text ?? '').trim()) { onClose(); return; }
+    if (!next && !p.attachments?.length) return;
+    setBusy(true);
+    try {
+      await editMessage(c, line.row, next);
+      await qc.invalidateQueries({ queryKey: ['messages', c.id] });
+      void qc.invalidateQueries({ queryKey: ['conversations'] });
+      onClose();
+      toast({ message: t('edit.saved') });
+    } catch { setBusy(false); toast({ message: t('edit.failed'), tone: 'danger' }); }
+  }
+
   async function report() {
     if (!reason || !p) return;
     setBusy(true);
@@ -81,6 +97,22 @@ export function MessageActions({ c, line, mine, myReaction, onReply, onClose }: 
         footer={<><Button variant="ghost" onClick={() => setStep('menu')} disabled={busy}>{t('common.back')}</Button>
           <Button variant="danger" busy={busy} onClick={() => void unsend()}>{t('messages.actions.unsend')}</Button></>}>
         <p className="k-muted">{t('messages.actions.unsendBody')}</p>
+      </Dialog>
+    );
+  }
+
+  if (step === 'edit') {
+    const empty = !draft.trim() && !p?.attachments?.length;
+    return (
+      <Dialog open onClose={onClose} title={t('edit.messageTitle')} sheet dismissible={!busy}
+        footer={<><Button variant="ghost" onClick={() => setStep('menu')} disabled={busy}>{t('common.back')}</Button>
+          <Button variant="primary" busy={busy} disabled={empty} onClick={() => void saveEdit()}>{t('edit.save')}</Button></>}>
+        <div className="k-stack">
+          <Textarea label={t('edit.messageTitle')} hideLabel value={draft} rows={4} maxLength={MAX_MESSAGE_CHARS} dir="auto" autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void saveEdit(); } }} />
+          <p className="k-small k-muted">{t('edit.note')}</p>
+        </div>
       </Dialog>
     );
   }
@@ -120,6 +152,7 @@ export function MessageActions({ c, line, mine, myReaction, onReply, onClose }: 
         <List>
           <li><ListItem icon="back" title={t('messages.actions.reply')} onClick={onReply} chevron={false} /></li>
           {p?.text ? <li><ListItem icon="copy" title={t('messages.actions.copy')} onClick={() => void copy()} chevron={false} /></li> : null}
+          {mine && p && !p.event ? <li><ListItem icon="edit" title={t('edit.message')} onClick={() => { setDraft(p.text ?? ''); setStep('edit'); }} chevron={false} /></li> : null}
           {mine ? <li><ListItem icon="close" title={t('messages.actions.unsend')} subtitle={t('messages.actions.unsendSub')} onClick={() => setStep('unsend')} chevron={false} /></li> : null}
           {!mine && p ? <li><ListItem icon="alert" title={t('messages.report.title')} onClick={() => setStep('report')} chevron={false} /></li> : null}
         </List>

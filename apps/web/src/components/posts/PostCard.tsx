@@ -1,18 +1,19 @@
 'use client';
 // One post in a feed: author, relative time, audience, text (safe links), photos + lightbox, encrypted
 // video, link preview / click-to-play embed, a heart (counts only for the author — calm, no public
-// like counts), one-level comments, and edit / delete / report.
+// like counts), one-level comments, and edit / delete / report. Phase 3: a disappearing post shows how long
+// it has left and leaves the screen the moment it expires; the author's scheduled post says when it goes out.
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useT } from '@/i18n';
+import { useT, type MessageKey } from '@/i18n';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { Textarea } from '@/components/ui/Field';
+import { Textarea, TextField } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
 import { editPost, postContentKey, readPost, setLike } from '@/lib/content';
 import { clean, fetchPostLikes, likesKey, notifySafe } from '@/lib/feed/feed';
@@ -27,6 +28,9 @@ import { audienceOf, deletePostFully } from './data';
 import { Lightbox, LinkCard, PhotoGrid, VideoPlayer } from './Media';
 import { Menu } from './Menu';
 import { ReportDialog } from './ReportDialog';
+import { useClock } from '@/lib/chat/clock';
+import { isExpired, isScheduled, timeLeft } from '@/lib/chat/ephemeral';
+import { useWhen } from './PostOptions';
 
 export function PostCardSkeleton() {
   return (
@@ -59,6 +63,8 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
   const [reporting, setReporting] = useState(false);
   const [focusComment, setFocusComment] = useState(0);
   const [showComments, setShowComments] = useState(expanded);
+  const now = useClock([row]);
+  const when = useWhen();
 
   const likes = useQuery({ queryKey: likesKey('post', row.id), queryFn: () => fetchPostLikes('post', row.id) });
   const comments = useComments(row.id);
@@ -91,6 +97,11 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
   ];
   const contentKey = () => postContentKey(row);
 
+  // Gone the moment its timer runs out (the server hides it then too, and deletes it within a minute).
+  if (isExpired(row, now)) return null;
+  const left = row.expires_at ? timeLeft(row.expires_at, now) : null;
+  const scheduled = isScheduled(row, now);
+
   return (
     <Card as="article" className="k-post" aria-label={name}>
       <header className="k-post-head">
@@ -101,6 +112,11 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
           <span className="k-post-meta">
             <RelativeTime iso={row.created_at} />
             {row.edited_at ? <span className="k-muted">· {t('feed.edited')}</span> : null}
+            {left ? (
+              <span className="k-eph-left" title={t('ephemeral.post.label')}>
+                <span aria-hidden>·</span> <Icon name="clock" /> {t(`ephemeral.left.${left.unit}` as MessageKey, { count: left.count })}
+              </span>
+            ) : null}
             <span aria-hidden>·</span>
             <AudienceTag audience={audienceOf(row)} />
           </span>
@@ -108,6 +124,9 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
         <Menu label={t('feed.postMenu')} items={menu} />
       </header>
 
+      {scheduled && row.publish_at ? (
+        <p className="k-eph-banner k-small"><Icon name="calendar" /> {t('schedule.banner', { when: when(row.publish_at) })}</p>
+      ) : null}
       {!d.ok ? (
         d.reason === 'waiting'
           ? <p className="k-post-waiting k-muted k-small"><Icon name="key" /> {t('feed.waitingKey', { name })}</p>
@@ -179,20 +198,28 @@ export function PostBody({ payload, onOpenPhoto }: { payload: PostPayload; onOpe
   );
 }
 
-function EditDialog({ row, payload, onClose }: { row: PostRow; payload: PostPayload; onClose: () => void }) {
+export function EditDialog({ row, payload, onClose }: { row: PostRow; payload: PostPayload; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
   const qc = useQueryClient();
-  const [text, setText] = useState(payload.text ?? '');
+  // Every post kind keeps its media, link, video and other fields; notes edit their title and body.
+  const isNote = !!payload.note;
+  const [text, setText] = useState(isNote ? payload.note!.body : payload.text ?? '');
+  const [title, setTitle] = useState(payload.note?.title ?? '');
   const [busy, setBusy] = useState(false);
   async function save() {
     setBusy(true);
     try {
       const next: PostPayload = { ...payload };
-      const v = text.trim().slice(0, 8000);
-      if (v) next.text = v; else delete next.text;
+      if (isNote) {
+        next.note = { ...payload.note!, title: title.trim().slice(0, 200) || payload.note!.title, body: text.slice(0, 60000) };
+      } else {
+        const v = text.trim().slice(0, 8000);
+        if (v) next.text = v; else delete next.text;
+      }
       await editPost(row, clean(next));
       await qc.invalidateQueries({ queryKey: ['v2feed'] });
+      void qc.invalidateQueries({ queryKey: ['scheduled'] });
       toast({ message: t('feed.saved') });
       onClose();
     } catch {
@@ -205,7 +232,14 @@ function EditDialog({ row, payload, onClose }: { row: PostRow; payload: PostPayl
         <Button variant="ghost" onClick={onClose} disabled={busy}>{t('feed.cancel')}</Button>
         <Button variant="primary" onClick={() => void save()} busy={busy}>{t('feed.save')}</Button>
       </>}>
-      <Textarea label={t('feed.editTitle')} hideLabel value={text} rows={6} maxLength={8000} dir="auto" onChange={(e) => setText(e.target.value)} />
+      <div className="k-stack">
+        {isNote ? <TextField label={t('edit.noteTitle')} value={title} maxLength={200} dir="auto" onChange={(e) => setTitle(e.target.value)} /> : null}
+        <Textarea label={isNote ? t('edit.noteBody') : t('feed.editTitle')} hideLabel={!isNote} value={text} rows={isNote ? 10 : 6}
+          maxLength={isNote ? 60000 : 8000} dir="auto" onChange={(e) => setText(e.target.value)} />
+        {!scheduledRow(row) ? <p className="k-small k-muted">{t('edit.postNote')}</p> : null}
+      </div>
     </Dialog>
   );
 }
+
+const scheduledRow = (row: PostRow) => isScheduled(row);

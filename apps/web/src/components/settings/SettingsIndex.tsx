@@ -45,6 +45,11 @@ export function SettingsIndex() {
           </div>
         </Card>
       </section>
+      <Card padding="flush">
+        <List label={t('you.safety')}>
+          <li><ListItem icon="shield" title={t('you.safety')} subtitle={t('you.safetySub')} href={href('/you/safety')} /></li>
+        </List>
+      </Card>
       <section className="k-stack" aria-labelledby="more-h">
         <h2 id="more-h" className="k-section-title">{t('settings.account')}</h2>
         <Card padding="flush">

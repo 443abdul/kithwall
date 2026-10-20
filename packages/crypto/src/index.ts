@@ -60,6 +60,7 @@ export {
   extractContentKey,
   sealWithContentKey,
   openWithContentKey,
+  resealEnvelope,
 } from './envelope';
 
 export { encryptBlob, decryptBlob } from './blob';
@@ -68,4 +69,17 @@ export { FILE_CHUNK_SIZE, encryptFile, decryptFile } from './files';
 
 export { splitRecoveryKey, combineRecoveryShares, generateEphemeral, verificationPhrase } from './recovery';
 
-export { type KeyChange, safetyNumber, signChallenge, verifyChallenge, signKeyChange, verifyKeyChange } from './safety';
+export {
+  type KeyChange,
+  safetyNumber,
+  formatSafetyNumber,
+  normalizeSafetyDigits,
+  safetyNumbersMatch,
+  SAFETY_QR_PREFIX,
+  safetyQrPayload,
+  parseSafetyQr,
+  signChallenge,
+  verifyChallenge,
+  signKeyChange,
+  verifyKeyChange,
+} from './safety';

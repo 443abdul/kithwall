@@ -1,0 +1,85 @@
+/* Kithwall 2 phase 3: disappearing, scheduled, edit and unsend. Tokens only (every style × light/dark). */
+
+/* --- Chats ------------------------------------------------------------------------------------- */
+.kw .k-eph-hint { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.kw .k-eph-hint .k-icon { inline-size: 13px; block-size: 13px; }
+.kw .k-eph-headbtn.is-on { color: var(--accent-text); }
+.kw .k-eph-rowico { display: inline-flex; color: var(--text-muted); flex: none; }
+.kw .k-eph-rowico .k-icon { inline-size: 14px; block-size: 14px; }
+.kw .k-eph-edited { font-style: italic; }
+
+.kw .k-eph-explain { display: flex; gap: var(--space-2); align-items: flex-start; color: var(--text-muted); font-size: var(--text-sm); margin: 0; }
+.kw .k-eph-explain .k-icon { flex: none; margin-block-start: 2px; }
+.kw .k-eph-options { display: flex; flex-direction: column; gap: var(--space-1); }
+.kw .k-eph-option {
+  display: flex; align-items: center; gap: var(--space-3); min-block-size: 44px;
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer;
+}
+.kw .k-eph-option:hover { background: var(--surface-2); }
+.kw .k-eph-option.is-on { background: var(--accent-soft); color: var(--accent-text); }
+.kw .k-eph-option.is-disabled { cursor: default; opacity: .7; }
+.kw .k-eph-option.is-disabled:hover { background: none; }
+.kw .k-eph-option.is-on.is-disabled:hover { background: var(--accent-soft); }
+.kw .k-eph-option input { accent-color: var(--accent); margin: 0; }
+.kw .k-eph-default { margin-inline-start: auto; font-size: var(--text-xs); color: var(--text-muted); }
+.kw .k-eph-option.is-on .k-eph-default { color: inherit; }
+
+/* One-time suggestion in older chats, above the composer. */
+.kw .k-eph-suggest {
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  margin: 0 var(--space-3) var(--space-2); padding: var(--space-3);
+  background: var(--surface-2); border: var(--border-width) solid var(--border); border-radius: var(--radius-lg);
+}
+.kw .k-eph-suggest-ico {
+  flex: none; display: grid; place-items: center; inline-size: 36px; block-size: 36px;
+  border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent-text);
+}
+.kw .k-eph-suggest-body { min-inline-size: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.kw .k-eph-suggest-body p { margin: 0; }
+.kw .k-eph-suggest-title { font-weight: var(--weight-bold); }
+.kw .k-eph-suggest-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-block-start: var(--space-1); }
+
+/* --- Posts ------------------------------------------------------------------------------------- */
+.kw .k-eph-left { display: inline-flex; align-items: center; gap: 3px; }
+.kw .k-eph-left .k-icon { inline-size: 14px; block-size: 14px; }
+.kw .k-eph-banner {
+  display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+  background: var(--accent-soft); color: var(--accent-text);
+}
+.kw .k-eph-h { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--text-md); }
+.kw .k-eph-chips { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.kw .k-eph-chip {
+  display: inline-flex; align-items: center; max-inline-size: 100%;
+  border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent-text);
+  padding-inline-end: 2px;
+}
+.kw .k-eph-chip-main {
+  display: inline-flex; align-items: center; gap: var(--space-1); min-inline-size: 0; min-block-size: 32px;
+  padding: 0 var(--space-1) 0 var(--space-3); border: 0; background: none; color: inherit; font: inherit;
+  font-size: var(--text-sm); cursor: pointer; border-radius: var(--radius-pill);
+}
+.kw .k-eph-chip-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw .k-eph-chip-main .k-icon { flex: none; inline-size: 16px; block-size: 16px; }
+.kw .k-eph-chip .k-iconbtn { color: inherit; }
+
+.kw .k-eph-cedit { display: flex; flex-direction: column; gap: var(--space-2); margin-block-start: var(--space-1); }
+.kw .k-eph-cedit-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+
+/* Scheduled list */
+.kw .k-eph-sched { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.kw .k-eph-sitem { display: flex; flex-direction: column; gap: var(--space-3); }
+.kw .k-eph-sitem-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.kw .k-eph-sitem-when { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-bold); }
+.kw .k-eph-sitem-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); }
+.kw .k-eph-sitem-meta > span { display: inline-flex; align-items: center; gap: 3px; }
+.kw .k-eph-sitem-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+@media (max-width: 420px) {
+  .kw .k-eph-sitem-actions .k-btn { flex: 1 1 calc(50% - var(--space-2)); }
+}
+
+/* Narrow chat headers: the timer matters more than the (always true) "end-to-end encrypted" line. */
+@media (max-width: 520px) {
+  .kw .k-chat-head-sub .k-eph-sub-base, .kw .k-chat-head-sub .k-eph-sep { display: none; }
+}

@@ -43,6 +43,7 @@ const WHAT: Record<string, string> = {
   relationship: 'listed you in a relationship', recovery_request: 'is asking for your help to recover their account',
   recovery_trustee: 'chose you as a trusted friend for account recovery', game: 'sent you a Kithville request',
   key_waiting: 'is waiting for your device to share your posts with them',
+  post_published: '',   // own words below: "Your scheduled post is now shared"
 };
 
 /** Preference switch that controls each kind of push (push_preferences columns). */
@@ -54,6 +55,7 @@ const CATEGORY: Record<string, PushCategory> = {
   poke: 'pokes',
   group_invite: 'invites', group_request: 'invites', event_invite: 'invites', game: 'invites',
   recovery_request: 'security', recovery_trustee: 'security', key_waiting: 'security',
+  post_published: 'activity',
 };
 
 export interface Plan {
@@ -109,6 +111,13 @@ export function describe(p: Plan): { category: PushCategory; payload: Omit<PushP
         body: p.group ? `${who} sent a message to a group conversation` : `${who} sent you a message`,
         tag: `conv:${p.conversation_id}`, url: `/messages/${p.conversation_id}`,
       },
+    };
+  }
+  if (p.type === 'post_published') {
+    // Sent to the author by the scheduler (migration 20261024000100) when a scheduled post goes out.
+    return {
+      category: 'activity', urgency: 'normal',
+      payload: { v: 1, title: 'Kithwall', kind: 'notification', body: 'Your scheduled post is now shared', tag: `n:post_published:${p.object_id ?? ''}`, url: notifUrl(p) },
     };
   }
   const what = p.type ? WHAT[p.type] : undefined;

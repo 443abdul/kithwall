@@ -12,6 +12,7 @@ import { useSession } from '@/lib/keys/session';
 import { usePerson } from '@/lib/people';
 import { useFileUrl } from '@/lib/media';
 import { useConversations, useNotifications, useRequests } from '@/lib/hooks';
+import { useHiddenChats } from '@/lib/safety/hidden';
 import { Icon } from '@/components/ui/Icon';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -31,8 +32,9 @@ function useBadges(): Partial<Record<NavKey, number>> {
   const reqs = useRequests();
   const convs = useConversations();
   const notifs = useNotifications(20);
+  const hidden = useHiddenChats();
   return {
-    messages: convs.data?.filter((c) => c.unread).length ?? 0,
+    messages: convs.data?.filter((c) => c.unread && !hidden.has(c.id)).length ?? 0,
     activity: (notifs.data?.filter((x) => !x.read_at).length ?? 0) + (reqs.data?.length ?? 0),
   };
 }

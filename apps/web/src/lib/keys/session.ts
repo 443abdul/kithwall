@@ -291,19 +291,46 @@ export async function newRecoveryPhrase(): Promise<{ phrase: string; rk: Uint8Ar
 
 export { fetchBundle };
 
+// ---------------------------------------------------------------------------------------------
+// Safety centre hooks (docs/v2/03-safety.md). lib/safety listens for locks to forget revealed hidden
+// chats and other per-unlock state; the app PIN unlocks through unlockWithDeviceAmk().
+type LockListener = (reason: 'lock' | 'sign_out') => void;
+const lockListeners = new Set<LockListener>();
+export function onLock(fn: LockListener): () => void {
+  lockListeners.add(fn);
+  return () => { lockListeners.delete(fn); };
+}
+function emitLock(reason: 'lock' | 'sign_out') {
+  lockListeners.forEach((l) => { try { l(reason); } catch { /* listeners must not block a lock */ } });
+}
+
+/** Enter 'ready' with an AMK opened on this device (the app PIN). Never re-saved as "remember me". */
+export async function unlockWithDeviceAmk(amkBytes: Uint8Array): Promise<void> {
+  const userId = state.userId;
+  if (!userId) throw new Error('Not signed in');
+  const bundle = await fetchBundle(userId);
+  if (!bundle) throw new Error('No keys found for this account');
+  const u = unlockFromAmk(userId, bundle, amkBytes);
+  await becomeReady(userId, state.email, u, false);
+}
+
 export async function lock(): Promise<void> {
   await keyring.stop();
+  if (unlocked) unlocked.amk.fill(0);
   unlocked = null;
   pendingAmk = null;
   await deviceStore.clear();
+  emitLock('lock');
   set({ status: state.userId ? 'locked' : 'signed_out' });
 }
 
 export async function signOut(): Promise<void> {
   await keyring.stop();
+  if (unlocked) unlocked.amk.fill(0);
   unlocked = null;
   pendingAmk = null;
   await deviceStore.clear();
+  emitLock('sign_out');
   await sb().auth.signOut({ scope: 'local' });
   set({ status: 'signed_out', userId: null, email: null, profile: null });
 }

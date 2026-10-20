@@ -38,6 +38,7 @@ export function PublicFooter() {
           <li><Link href="/legal/terms">{t('footer.terms')}</Link></li>
           <li><Link href="/legal/community">{t('footer.community')}</Link></li>
           <li><Link href="/legal/law-enforcement">{t('footer.lawEnforcement')}</Link></li>
+          <li><Link href="/transparency">{t('transparency.footer')}</Link></li>
           <li><Link href="/help">{t('footer.help')}</Link></li>
         </ul>
       </nav>

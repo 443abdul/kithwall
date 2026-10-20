@@ -56,12 +56,14 @@ export function YouScreen() {
           <li><ListItem icon="image" title={t('you.albums')} href="/albums" /></li>
           <li><ListItem icon="edit" title={t('you.notes')} href="/notes" /></li>
           <li><ListItem icon="calendar" title={t('you.events')} href="/events" /></li>
-          <li><ListItem icon="shield" title={t('you.safety')} subtitle={t('you.safetySub')} trailing={soon} /></li>
+          <li><ListItem icon="clock" title={t('schedule.title')} subtitle={t('schedule.youSub')} href="/you/scheduled" /></li>
+          <li><ListItem icon="shield" title={t('you.safety')} subtitle={t('you.safetySub')} href={href('/you/safety')} /></li>
         </List>
       </Card>
       <Card padding="flush">
         <List label={t('settings.title')}>
           <li><ListItem icon="settings" title={t('settings.title')} subtitle={t('you.settingsSub')} href={href('/you/settings')} /></li>
+          <li><ListItem icon="eye" title={t('transparency.you.title')} subtitle={t('transparency.you.sub')} href="/you/privacy-report" /></li>
           <li><ListItem icon="info" title={t('help.title')} href="/help" /></li>
           {staff.data ? <li><ListItem icon="flag" title={staff.data === 'admin' ? t('mod.titleAdmin') : t('mod.title')} href="/mod" /></li> : null}
           <li><ListItem icon="gift" title={t('you.donate')} subtitle={t('you.donateSub')} trailing={soon} /></li>

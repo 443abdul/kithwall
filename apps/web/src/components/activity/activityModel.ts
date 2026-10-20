@@ -72,7 +72,7 @@ export function activityHref(g: Pick<ActivityGroup, 'type' | 'objectKind' | 'obj
 }
 
 /** Icon shown on the avatar for each kind of activity. */
-export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'circles' | 'calendar' | 'key' | 'image' | 'share' | 'lock' | 'activity' {
+export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'circles' | 'calendar' | 'key' | 'image' | 'share' | 'lock' | 'clock' | 'activity' {
   switch (type) {
     case 'like': case 'reaction': case 'story_reaction': case 'relationship': return 'heart';
     case 'comment': case 'mention': case 'wall_post': return 'messages';
@@ -83,6 +83,7 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
     case 'tag': return 'image';
     case 'share': return 'share';
     case 'key_waiting': return 'lock';
+    case 'post_published': return 'clock';
     default: return 'activity';
   }
 }
@@ -91,5 +92,5 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
 export const ACTIVITY_TYPES = [
   'friend_request', 'friend_accept', 'wall_post', 'comment', 'like', 'tag', 'poke', 'group_invite', 'group_request',
   'event_invite', 'mention', 'share', 'question_vote', 'checkin_tag', 'relationship', 'recovery_request', 'recovery_trustee',
-  'game', 'key_waiting',
+  'game', 'key_waiting', 'post_published',
 ] as const;

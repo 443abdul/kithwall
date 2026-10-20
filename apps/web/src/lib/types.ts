@@ -25,10 +25,15 @@ export interface PostRow {
   id: Uuid; author_id: Uuid; wall_owner_id: Uuid | null; group_id: Uuid | null; event_id: Uuid | null;
   page_id: Uuid | null; kind: PostKind; is_public: boolean; audience_id: Uuid | null; epoch: number | null;
   shared_post_id: Uuid | null; envelope: Envelope; created_at: string; edited_at: string | null;
+  /** Scheduled posts (phase 3): visible only to the author until this time. null once published. */
+  publish_at?: string | null;
+  /** Disappearing posts (phase 3): the chosen timer and when the server deletes the post. */
+  disappear_secs?: number | null; expires_at?: string | null;
 }
 
 export interface CommentRow {
   id: Uuid; post_id: Uuid | null; photo_id: Uuid | null; author_id: Uuid; envelope: Envelope; created_at: string;
+  edited_at?: string | null;
 }
 
 export interface LikeRow { target_kind: 'post' | 'comment' | 'photo'; target_id: Uuid; user_id: Uuid; created_at: string }
@@ -80,7 +85,12 @@ export interface ProfileInfo {
   hideFriends?: boolean;
 }
 
-export interface MessageRow { id: Uuid; conversation_id: Uuid; sender_id: Uuid; epoch: number; envelope: Envelope; created_at: string }
+export interface MessageRow {
+  id: Uuid; conversation_id: Uuid; sender_id: Uuid; epoch: number; envelope: Envelope; created_at: string;
+  /** Phase 3: set by the server from the chat's timer; edits; unsend tombstones; server notices (timer changes). */
+  expires_at?: string | null; edited_at?: string | null; unsent_at?: string | null;
+  notice?: { kind: 'timer'; secs: number | null } | null;
+}
 export interface MessagePayload { text: string; attachments?: FileRef[]; subject?: string }
 
 export interface NotificationRow {

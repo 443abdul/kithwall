@@ -128,6 +128,28 @@ export function sealEnvelope<T>(args: { header: EnvelopeHeader; payload: T; audi
 }
 
 /**
+ * Edit: a new payload under the SAME content key (the existing wk is kept), re-signed by the author.
+ * Anything keyed off the content key (comments: deriveSubkey(CK, 'comment', id); poll votes; disclosed
+ * report keys) keeps working after the edit, while the old ciphertext is replaced. The old envelope must
+ * verify against `signPub` (only an envelope the author really made can be edited this way).
+ */
+export function resealEnvelope<T>(args: { header: EnvelopeHeader; envelope: Envelope; payload: T; audienceKey?: Uint8Array; signPub: Uint8Array; signPriv: Uint8Array }): Envelope {
+  const h = normalizeHeader(args.header);
+  if (h.audience === 'public') return sealEnvelope({ header: h, payload: args.payload, signPriv: args.signPriv });
+  assertBytes(args.audienceKey, 'audienceKey', KEY_LEN);
+  assertBytes(args.signPriv, 'signPriv', KEY_LEN);
+  const f = verifyEnvelope(h, args.envelope, args.signPub);
+  if (typeof f.wk !== 'string') fail('decrypt_failed', 'envelope has no wrapped content key');
+  const ck = unwrapContentKey(h, f.wk, args.audienceKey as Uint8Array);
+  try {
+    const { n, ct } = encryptPayload(h, args.payload, ck);
+    return signEnvelope(h, { wk: f.wk, n, ct }, args.signPriv);
+  } finally {
+    wipe(ck);
+  }
+}
+
+/**
  * Checks the envelope's shape against the header and verifies the signature.
  * Anything that does not verify (including malformed envelopes) is `bad_signature`.
  */

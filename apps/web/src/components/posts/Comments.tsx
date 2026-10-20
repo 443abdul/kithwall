@@ -1,15 +1,18 @@
 'use client';
 // Comments under a post, threaded one level (a reply to a reply joins the same thread). Comments are
 // encrypted with a subkey of the post's content key (lib/content addComment/readComment); the comment it
-// replies to travels inside the ciphertext.
+// replies to travels inside the ciphertext. Phase 3: authors edit their own comments (re-sealed, "edited",
+// no history kept); edits reach other readers live (components/posts/live.ts).
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Button } from '@/components/ui/Button';
+import { Textarea } from '@/components/ui/Field';
 import { useT } from '@/i18n';
 import { Avatar } from '@/components/ui/Avatar';
 import { IconButton } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
-import { addComment, readComment } from '@/lib/content';
+import { addComment, editComment, readComment } from '@/lib/content';
 import { commentsKey, fetchComments, notifySafe, snippet } from '@/lib/feed/feed';
 import { sb, must } from '@/lib/supabase';
 import { useSession } from '@/lib/keys/session';
@@ -100,12 +103,12 @@ export function Comments({ post, contentKey, focusSignal }: { post: PostRow; con
           {shown.map((th) => (
             <li key={th.root.id}>
               <CommentView item={th.root} canDelete={canDelete(th.root.row)} onReply={() => reply(th.root)} onDelete={() => void remove(th.root.row)}
-                contentKey={contentKey} />
+                contentKey={contentKey} postId={post.id} />
               {th.replies.length ? (
                 <ul className="k-comment-replies" role="list">
                   {th.replies.map((r) => (
                     <li key={r.id}>
-                      <CommentView item={r} canDelete={canDelete(r.row)} onReply={() => reply(th.root)} onDelete={() => void remove(r.row)} contentKey={contentKey} />
+                      <CommentView item={r} canDelete={canDelete(r.row)} onReply={() => reply(th.root)} onDelete={() => void remove(r.row)} contentKey={contentKey} postId={post.id} />
                     </li>
                   ))}
                 </ul>
@@ -134,16 +137,36 @@ export function Comments({ post, contentKey, focusSignal }: { post: PostRow; con
   );
 }
 
-function CommentView({ item, canDelete, onReply, onDelete, contentKey }: {
-  item: Item; canDelete: boolean; onReply: () => void; onDelete: () => void; contentKey: Uint8Array | null;
+function CommentView({ item, canDelete, onReply, onDelete, contentKey, postId }: {
+  item: Item; canDelete: boolean; onReply: () => void; onDelete: () => void; contentKey: Uint8Array | null; postId: string;
 }) {
   const t = useT();
+  const toast = useToast();
+  const qc = useQueryClient();
   const { userId } = useSession();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const mine = item.row.author_id === userId;
+  async function save() {
+    const v = draft.trim().slice(0, 4000);
+    if (!v || saving) return;
+    if (v === item.text) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await editComment(item.row, contentKey, v, item.replyTo);
+      await qc.invalidateQueries({ queryKey: commentsKey(postId) });
+      setEditing(false);
+      toast({ message: t('edit.commentSaved') });
+    } catch { toast({ message: t('edit.failed'), tone: 'danger' }); }
+    finally { setSaving(false); }
+  }
   const author = usePerson(item.row.author_id);
   const avatar = useFileUrl(author?.info?.avatar?.thumb);
   const [reporting, setReporting] = useState(false);
   const name = author?.name ?? '…';
   const menu = [
+    ...(mine && item.text !== null ? [{ label: t('edit.comment'), icon: 'edit' as const, onSelect: () => { setDraft(item.text ?? ''); setEditing(true); } }] : []),
     ...(canDelete ? [{ label: t('feed.commentDelete'), icon: 'trash' as const, danger: true, onSelect: onDelete }] : []),
     ...(item.row.author_id !== userId ? [{ label: t('feed.commentReport'), icon: 'flag' as const, onSelect: () => setReporting(true) }] : []),
   ];
@@ -153,10 +176,24 @@ function CommentView({ item, canDelete, onReply, onDelete, contentKey }: {
       <div className="k-comment-main">
         <div className="k-comment-bubble">
           {author ? <Link className="k-comment-name" href={`/u/${author.username}`}>{name}</Link> : <span className="k-comment-name">{name}</span>}
-          {item.text !== null ? <RichText text={item.text} clamp={400} /> : <p className="k-muted k-small">{t('feed.commentHidden')}</p>}
+          {editing ? (
+            <form className="k-eph-cedit" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+              <Textarea label={t('edit.comment')} hideLabel value={draft} rows={2} maxLength={4000} dir="auto" autoFocus disabled={saving}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
+                  else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void save(); }
+                }} />
+              <div className="k-eph-cedit-actions">
+                <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={saving}>{t('feed.cancel')}</Button>
+                <Button size="sm" variant="primary" type="submit" busy={saving} disabled={!draft.trim()}>{t('edit.save')}</Button>
+              </div>
+            </form>
+          ) : item.text !== null ? <RichText text={item.text} clamp={400} /> : <p className="k-muted k-small">{t('feed.commentHidden')}</p>}
         </div>
         <div className="k-comment-meta k-small">
           <RelativeTime iso={item.created_at} />
+          {item.row.edited_at ? <span className="k-muted">{t('edit.edited')}</span> : null}
           <button type="button" className="k-linkbtn" onClick={onReply}>{t('feed.reply')}</button>
           <Menu label={t('feed.postMenu')} items={menu} />
         </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityHref, groupActivity, type ActivityRow } from './activityModel';
+import { ACTIVITY_TYPES, activityHref, activityIcon, groupActivity, type ActivityRow } from './activityModel';
 
 const P = '11111111-1111-4111-8111-111111111111';
 const row = (id: string, actor: string, type: string, at: string, extra: Partial<ActivityRow> = {}): ActivityRow =>
@@ -37,5 +37,13 @@ describe('activityHref', () => {
     expect(activityHref({ type: 'friend_accept', objectKind: 'profile', objectId: P }, 'dan')).toBe('/u/dan');
     expect(activityHref({ type: 'event_invite', objectKind: 'event', objectId: P })).toBe(`/events/${P}`);
     expect(activityHref({ type: 'x', objectKind: 'group', objectId: 'not-a-uuid' })).toBe('/circles');
+  });
+});
+
+describe('scheduled posts (phase 3)', () => {
+  it('knows "your scheduled post is now shared" and leads to the post', () => {
+    expect(ACTIVITY_TYPES).toContain('post_published');
+    expect(activityIcon('post_published')).toBe('clock');
+    expect(activityHref({ type: 'post_published', objectKind: 'post', objectId: P })).toBe(`/post/${P}`);
   });
 });

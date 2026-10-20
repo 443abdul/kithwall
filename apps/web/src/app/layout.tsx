@@ -9,6 +9,9 @@ import '../styles/v2/feed.css';
 import '../styles/v2/messages.css';
 import '../styles/v2/circles.css';
 import '../styles/v2/public.css';
+import '../styles/v2/transparency.css';
+import '../styles/v2/safety.css';
+import '../styles/v2/ephemeral.css';
 import { Providers } from '@/components/Providers';
 
 export const metadata: Metadata = {

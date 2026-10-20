@@ -1,0 +1,102 @@
+/* Kithwall 2 Safety centre (components/safety): PIN pad and lock screen, decoy bits, panic card,
+   check-ins, devices, tips, the quick-exit button. Tokens only; logical properties (RTL-safe). */
+
+/* ------------------------------------------------------------------ quick exit */
+html.kw-exiting body { visibility: hidden !important; }
+html.kw-exiting { background: #fff !important; }
+
+.kw-qx {
+  position: fixed; z-index: 60;
+  inset-inline-end: calc(var(--space-4) + var(--safe-right));
+  inset-block-end: calc(var(--tabbar-h) + var(--safe-bottom) + var(--space-4));
+  inline-size: 52px; block-size: 52px; border-radius: var(--radius-pill);
+  display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--danger);
+  box-shadow: var(--shadow-2);
+}
+.kw-qx .k-icon { inline-size: 26px; block-size: 26px; }
+.kw-qx:hover { background: var(--danger-soft); }
+.kw-qx:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+@media (min-width: 768px) { .kw-qx { inset-block-end: calc(var(--space-6) + var(--safe-bottom)); } }
+
+/* ------------------------------------------------------------------ PIN pad */
+.kw .k-pin { display: flex; flex-direction: column; gap: var(--space-4); inline-size: 100%; max-inline-size: 340px; margin-inline: auto; }
+.kw .k-pin-field {
+  position: relative; block-size: 56px; border-radius: var(--control-radius);
+  border: var(--border-width) solid var(--border-strong); background: var(--surface);
+}
+.kw .k-pin-field:focus-within { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.kw .k-pin-field[data-invalid] { border-color: var(--danger); }
+.kw .k-pin-input {
+  position: absolute; inset: 0; inline-size: 100%; block-size: 100%; opacity: 0; border: 0;
+  font-size: 16px; /* no zoom on iOS */ caret-color: transparent; cursor: text;
+}
+.kw .k-pin-dots { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: var(--space-2); pointer-events: none; direction: ltr; }
+.kw .k-pin-dot { inline-size: 12px; block-size: 12px; border-radius: 50%; background: var(--text); }
+.kw .k-pin-ph { color: var(--text-muted); font-size: var(--text-sm); }
+.kw .k-pin-err { justify-content: center; text-align: center; }
+.kw .k-pin-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+.kw .k-pin-key {
+  block-size: 56px; border-radius: var(--radius-lg); border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font-size: var(--text-xl); font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums; cursor: pointer; display: grid; place-items: center;
+  transition: background-color var(--dur-1) var(--ease-standard), transform var(--dur-1) var(--ease-standard);
+}
+.kw .k-pin-key:hover:not(:disabled) { background: var(--surface-3); }
+.kw .k-pin-key:active:not(:disabled) { transform: scale(var(--press-scale)); }
+.kw .k-pin-key:disabled { opacity: 0.5; cursor: not-allowed; }
+.kw .k-pin-key:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.kw .k-pin-key-aux { color: var(--text-muted); }
+.kw .k-pin-key-go { background: var(--accent-soft); color: var(--accent-text); }
+.kw .k-pin-key .k-icon { inline-size: 22px; block-size: 22px; }
+/* The keypad replaces the big button on touch screens; keep the button for keyboard-first desktops. */
+@media (pointer: coarse) { .kw .k-pin > .k-btn { display: none; } }
+@media (pointer: fine) { .kw .k-pin-key-go { display: none; } .kw .k-pin-keys > .k-pin-key-aux { grid-column: 1; } }
+.kw .k-dialog .k-pin { max-inline-size: none; }
+
+/* lock screen */
+.kw .k-pinlock .k-auth-main { align-items: flex-start; }
+.kw .k-pinlock-step { inline-size: 100%; max-inline-size: 380px; text-align: center; align-items: stretch; }
+.kw .k-pinlock-step h1 { font-size: var(--text-2xl); }
+.kw .k-pinlock-icon {
+  align-self: center; inline-size: 56px; block-size: 56px; border-radius: var(--radius-pill);
+  display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text);
+}
+
+/* ------------------------------------------------------------------ decoy */
+.kw .k-decoy-post { display: flex; gap: var(--space-3); align-items: flex-start; }
+.kw .k-decoy-post-who { margin: 0; }
+.kw .k-decoy-post-text { margin: var(--space-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ------------------------------------------------------------------ centre */
+.kw .k-safety-h { font-size: var(--text-lg); margin: 0 0 var(--space-1); }
+.kw .k-safety-panic { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.kw .k-safety-panic-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+@media (max-width: 380px) { .kw .k-safety-panic-row { grid-template-columns: 1fr; } }
+.kw .k-safety-bullets { margin: 0; padding-inline-start: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
+.kw .k-safety-pinfields { display: grid; gap: var(--space-3); grid-template-columns: 1fr; }
+@media (min-width: 560px) { .kw .k-safety-pinfields { grid-template-columns: 1fr 1fr; } }
+.kw .k-safety-devico {
+  flex: none; inline-size: 36px; block-size: 36px; border-radius: var(--radius-md);
+  display: grid; place-items: center; background: var(--surface-2); color: var(--accent-text);
+}
+
+/* check-ins */
+.kw .k-checkins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.kw .k-checkin {
+  display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2);
+}
+.kw .k-checkin-head { display: flex; flex-direction: column; gap: var(--space-2); }
+.kw .k-checkin-time { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.kw .k-checkin-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.kw .k-checkin-preview { border: 1px dashed var(--border-strong); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); }
+.kw .k-checkin-preview summary { cursor: pointer; font-weight: var(--weight-bold); font-size: var(--text-sm); }
+.kw .k-checkin-preview p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-sm); margin: var(--space-2) 0 0; }
+
+/* tips */
+.kw .k-safety-tips { display: grid; gap: var(--space-3); }
+@media (min-width: 900px) { .kw .k-safety-tips { grid-template-columns: 1fr 1fr; } }
+.kw .k-safety-tip { display: flex; gap: var(--space-3); align-items: flex-start; }
+.kw .k-safety-tip .k-item-icon { flex: none; display: grid; place-items: center; }
+.kw .k-safety-tip p { margin: 0; }

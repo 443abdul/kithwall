@@ -1,6 +1,9 @@
 'use client';
 // One chat (Kithwall 2): header, the conversation as bubbles (day separators, runs, replies, photos,
 // videos, link cards, reactions), optimistic sending, optional typing and read receipts, composer.
+// Phase 3: disappearing messages (timer in the header, expired messages leave the screen at once, timer
+// notices inline, a one-time suggestion in older chats), edits ("edited") and live unsend.
+import { VerifiedBadge } from '@/lib/transparency/verified';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -30,6 +33,7 @@ import { ChatInfo } from './ChatInfo';
 import { ChatIcon } from './ChatIcon';
 import { sendDraft, SendError, type Draft } from './send';
 import { useSwipeBack, useVisualViewportHeight } from './runtime';
+import { OldChatSuggestion, TimerHint } from './Ephemeral';
 
 interface Line extends ChatLine { row: MessageRow; payload: ChatPayload | null }
 interface Pending { tempId: string; draft: Draft; status: 'sending' | 'failed'; progress: number; error?: string }
@@ -83,7 +87,7 @@ function Thread({ c }: { c: ConversationSummary }) {
   const [reply, setReply] = useState<ReplyTarget | null>(null);
   const [focusKey, setFocusKey] = useState(0);
   const [acting, setActing] = useState<Line | null>(null);
-  const [info, setInfo] = useState(false);
+  const [info, setInfo] = useState<false | 'main' | 'timer'>(false);
   const [atBottom, setAtBottom] = useState(true);
   const [newBelow, setNewBelow] = useState(false);
   useVisualViewportHeight(root);
@@ -91,11 +95,12 @@ function Thread({ c }: { c: ConversationSummary }) {
   useMarkRead(c, true);
   useEffect(() => { live.setViewing(c.id); return () => live.setViewing(null); }, [c.id]);
   useEffect(() => { rekeyWhereNeeded([c]); }, [c]);
-  // Unsent messages disappear for everyone: Realtime only tells us about new rows, so re-check now and then.
+  // Edits and unsends arrive live (lib/chat/live useMessagesLive); this slow re-check is only a safety net
+  // for a dropped Realtime connection.
   useEffect(() => {
     const h = setInterval(() => {
       if (document.visibilityState === 'visible') void qc.invalidateQueries({ queryKey: ['messages', c.id] });
-    }, 30_000);
+    }, 60_000);
     return () => clearInterval(h);
   }, [c.id, qc]);
 
@@ -213,14 +218,19 @@ function Thread({ c }: { c: ConversationSummary }) {
     <div ref={root} className="k-chat-thread">
       <header className="k-chat-head">
         <Link href="/messages" className="k-iconbtn k-chat-back" aria-label={t('messages.backToList')} title={t('messages.backToList')}><Icon name="back" /></Link>
-        <button type="button" className="k-chat-head-who" onClick={() => setInfo(true)} aria-label={t('messages.info.open', { title })}>
+        <button type="button" className="k-chat-head-who" onClick={() => setInfo('main')} aria-label={t('messages.info.open', { title })}>
           <ConversationAvatar c={c} size={40} />
           <span className="k-chat-head-text">
-            <span className="k-chat-head-title">{title}</span>
-            <span className={cx('k-chat-head-sub', typing.length > 0 && 'is-typing')} aria-live="polite">{subtitle}</span>
+            <span className="k-chat-head-title">{title}{!isGroup && others.length === 1 ? <> <VerifiedBadge userId={others[0]} /></> : null}</span>
+            <span className={cx('k-chat-head-sub', typing.length > 0 && 'is-typing')} aria-live="polite">
+              {!typing.length && c.disappear_secs
+                ? <><span className="k-eph-sub-base">{subtitle}</span><span className="k-eph-sep" aria-hidden> · </span><TimerHint secs={c.disappear_secs} /></>
+                : subtitle}
+            </span>
           </span>
         </button>
-        <IconButton icon="info" label={t('messages.info.title')} onClick={() => setInfo(true)} />
+        <IconButton icon="clock" label={t('ephemeral.chat.title')} onClick={() => setInfo('timer')} className={c.disappear_secs ? 'k-eph-headbtn is-on' : 'k-eph-headbtn'} />
+        <IconButton icon="info" label={t('messages.info.title')} onClick={() => setInfo('main')} />
       </header>
 
       <div ref={scroller} className="k-chat-scroll" onScroll={onScroll} role="log" aria-label={t('messages.threadLabel', { title })} aria-live="polite" aria-relevant="additions">
@@ -286,6 +296,7 @@ function Thread({ c }: { c: ConversationSummary }) {
       </div>
       {newBelow ? <button type="button" className="k-chat-jump" onClick={toBottom}><Icon name="down" /> {t('messages.newBelow')}</button> : null}
 
+      <OldChatSuggestion c={c} onChoose={() => setInfo('timer')} />
       <ChatComposer convId={c.id} members={c.members} disabled={disabled} reply={reply} onCancelReply={() => setReply(null)} onSend={send} focusKey={focusKey} />
 
       {acting ? (
@@ -294,7 +305,7 @@ function Thread({ c }: { c: ConversationSummary }) {
           onReply={() => { const l = acting; setActing(null); startReply(l); }}
           onClose={() => setActing(null)} />
       ) : null}
-      <ChatInfo c={c} open={info} onClose={() => setInfo(false)} title={title} />
+      <ChatInfo c={c} open={!!info} initialStep={info || 'main'} onClose={() => setInfo(false)} title={title} />
     </div>
   );
 }
@@ -364,9 +375,10 @@ function Bubble({ l, c, first, last, mine, isGroup, replyTo, reactions, seen, re
             ))}
           </div>
         ) : null}
-        {last || seen ? (
+        {last || seen || l.row.edited_at ? (
           <div className="k-chat-meta">
-            <time dateTime={l.at}>{time}</time>
+            {last || seen ? <time dateTime={l.at}>{time}</time> : null}
+            {l.row.edited_at ? <span className="k-eph-edited">{t('edit.edited')}</span> : null}
             {seen && receiptsOn ? (
               <span className="k-chat-seen">
                 <ChatIcon name="doubleCheck" size={14} />

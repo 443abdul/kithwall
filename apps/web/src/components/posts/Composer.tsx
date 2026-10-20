@@ -2,9 +2,11 @@
 // The composer: text (with automatic link previews through the no-log proxy), photos, one video, and an
 // audience picker (connections / a circle / only me). Everything is built into a payload and encrypted on
 // this device (lib/content createPost); photos and videos are re-encoded / encrypted before upload, with
-// progress shown while they go up.
+// progress shown while they go up. Phase 3: an optional disappearing timer and a publish time (scheduled
+// posts wait, sealed and visible only to their author, until then).
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { useFormat, useT } from '@/i18n';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -28,6 +30,8 @@ import type { ComposerAudience, ComposerProps } from '.';
 import { formatBytes, formatDuration } from './bits';
 import { LinkCard } from './Media';
 import { MAX_VIDEO_BYTES, probeVideo, uploadVideo, videoMime, type VideoProbe } from './video';
+import { PostOptionChips, PostOptionsDialog, scheduleProblemKey, useWhen, type PostOptionsValue } from './PostOptions';
+import { checkSchedule } from '@/lib/chat/ephemeral';
 
 const MAX_TEXT = 8000;
 const MAX_PHOTOS = 10;
@@ -91,6 +95,10 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
   const req = useRef<{ url: string; ac: AbortController; p: Promise<LinkDraft | null> } | null>(null);
   const pasted = useRef(false);
   const circles = useMyCircles(!fixedAudience);
+  const router = useRouter();
+  const when = useWhen();
+  const [options, setOptions] = useState<PostOptionsValue>({ disappear: null, schedule: null });
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
   // Follow a changed `audience` prop (compared by value: callers pass object literals).
   const initialKey = JSON.stringify(initial);
@@ -175,6 +183,11 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
     const body = text.trim().slice(0, MAX_TEXT);
     const pendingLink = req.current;
     if (!body && !photos.length && !video && !link && !pendingLink) { setErr(t('feed.writeSomething')); return; }
+    const schedule = options.schedule;
+    if (schedule) {
+      const problem = checkSchedule(schedule);
+      if (problem) { setErr(t(scheduleProblemKey(problem))); setOptionsOpen(true); return; }
+    }
     setBusy(true);
     const id = crypto.randomUUID();
     const uploaded: string[] = [];
@@ -213,10 +226,17 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
         }
       }
       setProgress({ label: t('feed.sharing'), pct: 100 });
-      await createPost({ id, kind, payload: clean(payload), audience: target.audience, groupId: target.groupId, eventId: target.eventId });
+      await createPost({
+        id, kind, payload: clean(payload), audience: target.audience, groupId: target.groupId, eventId: target.eventId,
+        publishAt: schedule ? schedule.toISOString() : null, disappearSecs: options.disappear,
+      });
       if (uploaded.length) await linkPostMedia(uploaded, id);
       setText(''); clearPhotos(); setVideo(null); setLink(null); skip.current.clear();
-      toast({ message: t('feed.posted') });
+      setOptions({ disappear: null, schedule: null });
+      if (schedule) {
+        toast({ message: t('schedule.done', { when: when(schedule) }), action: { label: t('schedule.view'), onClick: () => router.push('/you/scheduled') } });
+        void qc.invalidateQueries({ queryKey: ['scheduled'] });
+      } else toast({ message: t('feed.posted') });
       await qc.invalidateQueries({ queryKey: ['v2feed'] });
       onPosted?.();
     } catch (x) {
@@ -289,6 +309,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
             <span className="k-progress" aria-hidden><span style={{ inlineSize: `${progress.pct ?? 5}%` }} data-indeterminate={progress.pct === undefined ? '' : undefined} /></span>
           </div>
         ) : null}
+        <PostOptionChips value={options} disabled={busy} onChange={setOptions} onOpen={() => setOptionsOpen(true)} />
         {err ? <p className="k-error" role="alert"><Icon name="alert" />{err}</p> : null}
 
         <div className="k-composer-bar">
@@ -296,6 +317,8 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
           <input ref={videoInput} type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={(e) => void pickVideo(e.target.files?.[0])} />
           <IconButton icon="image" label={t('feed.addPhotos')} disabled={busy || !!video || photos.length >= MAX_PHOTOS} onClick={() => photoInput.current?.click()} />
           <IconButton icon="video" label={t('feed.addVideo')} disabled={busy || photos.length > 0 || !!video} onClick={() => videoInput.current?.click()} />
+          <IconButton icon="clock" label={t('schedule.options')} disabled={busy} aria-haspopup="dialog"
+            variant={options.disappear || options.schedule ? 'soft' : 'ghost'} onClick={() => setOptionsOpen(true)} />
           <span className="k-spacer" />
           {fixedAudience ? (
             <span className="k-chip" title={t('feed.sharedWith', { audience: audienceLabel })}><Icon name={audienceIcon} />{audienceLabel}</span>
@@ -305,10 +328,11 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
               <Icon name={audienceIcon} /><span>{audienceLabel}</span><Icon name="down" />
             </button>
           )}
-          <Button type="submit" variant="primary" size="sm" busy={busy} disabled={!canPost}>{t('feed.post')}</Button>
+          <Button type="submit" variant="primary" size="sm" busy={busy} disabled={!canPost}>{options.schedule ? t('schedule.submit') : t('feed.post')}</Button>
         </div>
       </form>
 
+      <PostOptionsDialog open={optionsOpen} value={options} onClose={() => setOptionsOpen(false)} onChange={(v) => { setOptions(v); setErr(null); }} />
       {!fixedAudience ? (
         <Dialog open={picking} onClose={() => setPicking(false)} title={t('feed.audiencePicker')} sheet>
           <AudienceOptions value={audience} circles={circles} onPick={(a) => { setAudience(a); setPicking(false); }} />

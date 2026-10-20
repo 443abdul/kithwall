@@ -39,6 +39,47 @@ export function safetyNumber(a: { userId: string; signPub: Uint8Array }, b: { us
   return fa < fb ? fa + fb : fb + fa;
 }
 
+/** The 60 digits as twelve groups of five, the way people read them aloud. */
+export function formatSafetyNumber(n: string): string[] {
+  if (typeof n !== 'string' || !/^\d{60}$/.test(n)) invalid('safety number must be 60 digits');
+  return n.match(/\d{5}/g)!;
+}
+
+const DIGIT_ZEROS = [0x30, 0x660, 0x6f0, 0x966, 0x9e6, 0xff10];
+
+/**
+ * Digits typed or pasted by a person, in any of the scripts the app ships (Latin, Arabic-Indic,
+ * Persian, Devanagari, Bengali, full-width), as ASCII; everything else (spaces, dashes) is dropped.
+ */
+export function normalizeSafetyDigits(text: string): string {
+  let out = '';
+  for (const ch of String(text ?? '')) {
+    const cp = ch.codePointAt(0)!;
+    for (const z of DIGIT_ZEROS) if (cp >= z && cp <= z + 9) { out += String(cp - z); break; }
+  }
+  return out;
+}
+
+/** True when what the other person read out / pasted is exactly this safety number. */
+export function safetyNumbersMatch(expected: string, typed: string): boolean {
+  return /^\d{60}$/.test(expected) && normalizeSafetyDigits(typed) === expected;
+}
+
+/** QR payload shown on the verify screen; scanning the other person's code compares the numbers. */
+export const SAFETY_QR_PREFIX = 'kithwall-safety:1:';
+
+export function safetyQrPayload(n: string): string {
+  formatSafetyNumber(n);
+  return SAFETY_QR_PREFIX + n;
+}
+
+/** The 60 digits inside a scanned code, or null when it isn't a Kithwall safety code. */
+export function parseSafetyQr(text: string): string | null {
+  if (typeof text !== 'string' || !text.startsWith(SAFETY_QR_PREFIX)) return null;
+  const n = text.slice(SAFETY_QR_PREFIX.length);
+  return /^\d{60}$/.test(n) ? n : null;
+}
+
 function challengeMessage(nonce: string): Uint8Array {
   assertString(nonce, 'nonce', 1024);
   return utf8(canonicalJson({ d: 'kithwall/v1/proof-of-key', nonce }));

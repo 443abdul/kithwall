@@ -7,6 +7,10 @@ import { useSession } from '../keys/session';
 import { fetchMessages, getConversation, markRead, type ConversationSummary } from '../messages';
 import type { MessageRow } from '../types';
 import { signals, useSignalsVersion } from './signals';
+import { visibleNow } from './ephemeral';
+import { useClock } from './clock';
+
+export { useClock };
 
 const PAGE = 50;
 
@@ -27,13 +31,16 @@ export function useMessages(convId: string | null | undefined) {
     queryFn: ({ pageParam }) => fetchMessages({ id: convId! }, pageParam, PAGE),
     getNextPageParam: (first: MessageRow[]) => (first.length === PAGE ? first[0]!.created_at : undefined),
   });
-  const rows = useMemo(() => {
+  const all = useMemo(() => {
     const pages = q.data?.pages ?? [];
     const seen = new Set<string>();
     const out: MessageRow[] = [];
     for (let i = pages.length - 1; i >= 0; i--) for (const m of pages[i]!) if (!seen.has(m.id)) { seen.add(m.id); out.push(m); }
     return out;
   }, [q.data]);
+  // Expired messages and unsend tombstones never show (the server hides/deletes them too).
+  const now = useClock(all);
+  const rows = useMemo(() => visibleNow(all, now), [all, now]);
   return { ...q, rows, loadOlder: q.fetchNextPage, hasOlder: q.hasNextPage };
 }
 

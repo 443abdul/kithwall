@@ -6,6 +6,9 @@
  *   server and this browser (RFC 8291); the push service in between can't read them.
  * - Clicking a notification focuses an open Kithwall tab and asks it to navigate in-app (keeping
  *   its unlocked keys in memory), or opens a new window.
+ * - Hidden chats (Safety centre, docs/v2/03-safety.md): the app keeps salted SHA-256 hashes of the
+ *   hidden conversation ids in IndexedDB ("kithwall-sw"); pushes for those chats are shown as a
+ *   generic "new activity" notice, without the sender or a link into the chat.
  */
 'use strict';
 
@@ -50,6 +53,46 @@ function setBadge(n) {
   }
 }
 
+// ---------------------------------------------------------------------------------------
+// Hidden chats (written by apps/web/src/lib/safety/swmirror.ts; same hash: SHA-256("<salt>:<id>")).
+function readHidden() {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('kithwall-sw', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('kv');
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        const db = req.result;
+        try {
+          const get = db.transaction('kv', 'readonly').objectStore('kv').get('hidden');
+          get.onsuccess = () => { db.close(); resolve(get.result || null); };
+          get.onerror = () => { db.close(); resolve(null); };
+        } catch (_) { db.close(); resolve(null); }
+      };
+    } catch (_) { resolve(null); }
+  });
+}
+
+function b64(buf) {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
+
+async function isHiddenConversation(path, tag) {
+  const m = /^\/messages\/([0-9a-f-]{36})/i.exec(path) || /^conv:([0-9a-f-]{36})$/i.exec(tag || '');
+  if (!m) return false;
+  const rec = await readHidden();
+  if (!rec || typeof rec.salt !== 'string' || !Array.isArray(rec.hashes) || !rec.hashes.length) return false;
+  try {
+    const h = b64(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rec.salt + ':' + m[1].toLowerCase())));
+    return rec.hashes.indexOf(h) >= 0;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function handlePush(event) {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
@@ -58,6 +101,16 @@ async function handlePush(event) {
   const tag = typeof data.tag === 'string' && data.tag ? data.tag.slice(0, 120) : 'kithwall';
   const path = safePath(data.url);
   const badge = Number.isFinite(data.badge) ? Math.max(0, Math.min(999, data.badge | 0)) : null;
+
+  // A hidden chat: say only that something happened (no sender, no preview, no link into the chat).
+  if (await isHiddenConversation(path, data.tag)) {
+    if (badge !== null) await setBadge(badge);
+    await self.registration.showNotification('Kithwall', {
+      body: 'You have new activity on Kithwall.', tag: 'kithwall', icon: ICON, badge: BADGE,
+      timestamp: Date.now(), data: { url: '/activity', kind: 'notification' },
+    });
+    return;
+  }
 
   if (badge !== null) await setBadge(badge);
 

@@ -18,6 +18,10 @@ import type { Decrypted } from './content';
 export interface ConversationRow {
   id: string; audience_id: string; created_by: string; dm_key: string | null; last_message_at: string; created_at: string;
   rekey_needed?: boolean;
+  /** Disappearing messages (phase 3): seconds, null = off. New chats start at 4 weeks. */
+  disappear_secs?: number | null;
+  /** When someone last chose the timer (null for chats from before phase 3 that nobody has set). */
+  disappear_set_at?: string | null;
 }
 export interface ConversationSummary extends ConversationRow {
   /** Everyone in the conversation (owner + active members), including me. */
@@ -44,7 +48,9 @@ export type ConversationEvent =
   | { kind: 'rename'; name: string }
   | { kind: 'added'; ids: string[] }
   | { kind: 'removed'; ids: string[] }
-  | { kind: 'left' };
+  | { kind: 'left' }
+  /** Server notice (phase 3): someone changed the disappearing-messages timer (null = off). */
+  | { kind: 'timer'; secs: number | null };
 export interface ChatPayload extends MessagePayload {
   event?: ConversationEvent;
   /** Quoted message (Kithwall 2): the id plus its author, so the quote survives if it scrolls out of the loaded page. */
@@ -239,14 +245,46 @@ export async function sendMessage(conv: ConversationRow, payload: ChatPayload, i
   return res.data as MessageRow;
 }
 
+/**
+ * Unsend (for everyone). Removes my files from storage, then the database wipes the ciphertext and keeps a
+ * content-free tombstone for a few minutes so the other members' screens drop it live
+ * (unsend_message RPC, migration 20261024000100).
+ */
 export async function deleteMessage(row: MessageRow, attachments: FileRef[] = []) {
   if (row.sender_id !== me()) throw new Error('You can only delete your own messages.');
   const mine = attachments.map((a) => a.path).filter((p) => p.startsWith(`${me()}/`));
   if (mine.length) {
     await sb().storage.from('media').remove(mine);
   }
-  must(await sb().from('messages').delete().eq('id', row.id));
-  cache.delete(row.id);
+  must(await sb().rpc('unsend_message', { msg: row.id }));
+  forget(row.id);
+}
+
+/**
+ * Edit my message: a new payload sealed under the SAME epoch key (so an edit never reaches people who
+ * joined later), replacing the old one; the server sets edited_at and keeps no history.
+ */
+export async function editMessage(conv: Pick<ConversationRow, 'audience_id'>, row: MessageRow, text: string): Promise<void> {
+  if (row.sender_id !== me()) throw new Error('You can only edit your own messages.');
+  if (text.length > MAX_MESSAGE_CHARS) throw new Error('That message is too long.');
+  const cur = readMessage(conv, row);
+  if (!cur.ok || cur.value.event) throw new Error("This message can't be edited.");
+  const next: ChatPayload = { ...cur.value, text: text.trim() };
+  if (!next.text && !next.attachments?.length) throw new Error("A message can't be empty.");
+  let key = keyring.get(conv.audience_id, row.epoch);
+  if (!key) { await keyring.load(); key = keyring.get(conv.audience_id, row.epoch); }
+  if (!key) throw new KeyWaitingError(conv.audience_id);
+  const envelope = sealEnvelope({ header: messageHeader(row, conv.audience_id), payload: next, audienceKey: key, signPriv: identity().signPriv });
+  const res = await sb().from('messages').update({ envelope }).eq('id', row.id).select('id');
+  if (res.error) throw new Error(res.error.code === 'P0429' ? "You've edited a lot of messages today. Try again later." : res.error.message);
+  if (!res.data?.length) throw new Error("This message can't be edited any more.");
+  forget(row.id);
+}
+
+/** Set (seconds) or turn off (null) disappearing messages. The server posts a notice in the thread. */
+export async function setConversationTimer(conv: Pick<ConversationRow, 'id'>, secs: number | null): Promise<void> {
+  const r = await sb().rpc('set_conversation_timer', { conv: conv.id, secs });
+  if (r.error) throw new Error(r.error.code === '42501' ? 'not_allowed' : r.error.code === 'P0429' ? 'rate_limited' : r.error.message);
 }
 
 export async function fetchMessages(conv: Pick<ConversationRow, 'id'>, before?: string, pageSize = 50): Promise<MessageRow[]> {
@@ -258,9 +296,23 @@ export async function fetchMessages(conv: Pick<ConversationRow, 'id'>, before?: 
 }
 
 const cache = new Map<string, Decrypted<ChatPayload>>();
+const cacheKey = (row: Pick<MessageRow, 'id' | 'edited_at'>) => `${row.id}:${row.edited_at ?? ''}`;
+function forget(id: string) {
+  for (const k of cache.keys()) if (k.startsWith(`${id}:`)) cache.delete(k);
+}
+
+/** A server notice (timer change) as a system event. Notices carry no content, so nothing to decrypt. */
+function readNotice(row: MessageRow): Decrypted<ChatPayload> {
+  const n = row.notice as { kind?: unknown; secs?: unknown } | null | undefined;
+  if (n && n.kind === 'timer' && (n.secs === null || (typeof n.secs === 'number' && Number.isFinite(n.secs)))) {
+    return { ok: true, value: { text: '', event: { kind: 'timer', secs: n.secs as number | null } } };
+  }
+  return { ok: false, reason: 'unverified' };
+}
 
 export function readMessage(conv: Pick<ConversationRow, 'audience_id'>, row: MessageRow): Decrypted<ChatPayload> {
-  const hit = cache.get(row.id);
+  if (row.notice) return readNotice(row);
+  const hit = cache.get(cacheKey(row));
   if (hit) return hit;
   const sender = people.get(row.sender_id);
   const key = keyring.get(conv.audience_id, row.epoch);
@@ -273,7 +325,7 @@ export function readMessage(conv: Pick<ConversationRow, 'audience_id'>, row: Mes
     out = { ok: false, reason: 'unverified' };
   }
   if (cache.size > 5000) cache.clear();
-  cache.set(row.id, out);
+  cache.set(cacheKey(row), out);
   return out;
 }
 

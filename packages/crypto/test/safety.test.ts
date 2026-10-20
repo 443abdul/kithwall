@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { type KeyChange, b64u, generateIdentity, safetyNumber, signChallenge, signKeyChange, verifyChallenge, verifyKeyChange } from '../src/index';
+import {
+  type KeyChange, SAFETY_QR_PREFIX, b64u, formatSafetyNumber, generateIdentity, normalizeSafetyDigits, parseSafetyQr, safetyNumber,
+  safetyNumbersMatch, safetyQrPayload, signChallenge, signKeyChange, verifyChallenge, verifyKeyChange,
+} from '../src/index';
 import { expectCode, flipB64 } from './helpers';
 
 const a = generateIdentity();
@@ -21,6 +24,54 @@ describe('safetyNumber', () => {
   it('validates inputs', () => {
     expectCode(() => safetyNumber({ userId: '', signPub: a.signPub }, { userId: 'ub', signPub: b.signPub }), 'invalid_input');
     expectCode(() => safetyNumber({ userId: 'ua', signPub: new Uint8Array(3) }, { userId: 'ub', signPub: b.signPub }), 'invalid_input');
+  });
+});
+
+describe('safetyNumber known answer', () => {
+  // Locks the algorithm (domain string, 5200 iterations, digit extraction, ordering): a change here
+  // would make every verified contact look changed.
+  it('matches the recorded vector', () => {
+    const n = safetyNumber(
+      { userId: '00000000-0000-0000-0000-00000000000a', signPub: new Uint8Array(32).fill(1) },
+      { userId: '00000000-0000-0000-0000-00000000000b', signPub: new Uint8Array(32).fill(2) },
+    );
+    expect(n).toBe('266945553356581885080741637371903790060714856152031344693685');
+  });
+});
+
+describe('safety number display and comparison', () => {
+  const n = safetyNumber({ userId: 'ua', signPub: a.signPub }, { userId: 'ub', signPub: b.signPub });
+  it('groups into twelve blocks of five', () => {
+    const g = formatSafetyNumber(n);
+    expect(g).toHaveLength(12);
+    expect(g.every((x) => /^\d{5}$/.test(x))).toBe(true);
+    expect(g.join('')).toBe(n);
+    expectCode(() => formatSafetyNumber('123'), 'invalid_input');
+  });
+  it('compares what a person typed, in any script, ignoring spaces', () => {
+    expect(safetyNumbersMatch(n, formatSafetyNumber(n).join(' '))).toBe(true);
+    expect(safetyNumbersMatch(n, formatSafetyNumber(n).join('-\n'))).toBe(true);
+    const arabic = [...n].map((d) => String.fromCodePoint(0x660 + Number(d))).join('');
+    const persian = [...n].map((d) => String.fromCodePoint(0x6f0 + Number(d))).join(' ');
+    const devanagari = [...n].map((d) => String.fromCodePoint(0x966 + Number(d))).join('');
+    const bengali = [...n].map((d) => String.fromCodePoint(0x9e6 + Number(d))).join('');
+    for (const v of [arabic, persian, devanagari, bengali]) expect(safetyNumbersMatch(n, v)).toBe(true);
+    expect(normalizeSafetyDigits('١٢ 3-٤')).toBe('1234');
+    const wrong = (n[0] === '9' ? '0' : '9') + n.slice(1);
+    expect(safetyNumbersMatch(n, wrong)).toBe(false);
+    expect(safetyNumbersMatch(n, n.slice(0, 59))).toBe(false);
+    expect(safetyNumbersMatch(n, n + '1')).toBe(false);
+    expect(safetyNumbersMatch('short', 'short')).toBe(false);
+  });
+  it('round-trips through the QR payload', () => {
+    const qr = safetyQrPayload(n);
+    expect(qr.startsWith(SAFETY_QR_PREFIX)).toBe(true);
+    expect(parseSafetyQr(qr)).toBe(n);
+    expect(parseSafetyQr('https://example.com/' + n)).toBeNull();
+    expect(parseSafetyQr(SAFETY_QR_PREFIX + n.slice(1))).toBeNull();
+    expect(parseSafetyQr(SAFETY_QR_PREFIX + n + 'x')).toBeNull();
+    expect(parseSafetyQr(null as unknown as string)).toBeNull();
+    expectCode(() => safetyQrPayload('x'), 'invalid_input');
   });
 });
 

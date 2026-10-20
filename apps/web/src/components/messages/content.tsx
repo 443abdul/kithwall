@@ -3,6 +3,7 @@
 import type { TFunction } from '@/i18n';
 import type { ChatPayload } from '@/lib/messages';
 import type { Decrypted } from '@/lib/content';
+import { durationKey } from '@/lib/chat/ephemeral';
 import { linkify, snippet } from './chatModel';
 
 export function MessageText({ text }: { text: string }) {
@@ -27,6 +28,9 @@ export function eventLine(p: ChatPayload, actor: string, nameOf: (id: string) =>
     case 'added': return t('messages.event.added', { name: actor, people: list(ids.map(nameOf)) });
     case 'removed': return t('messages.event.removed', { name: actor, people: list(ids.map(nameOf)) });
     case 'left': return t('messages.event.left', { name: actor });
+    case 'timer': return e.secs
+      ? t('ephemeral.event.set', { name: actor, duration: t(durationKey(e.secs)) })
+      : t('ephemeral.event.off', { name: actor });
     default: return null;
   }
 }
