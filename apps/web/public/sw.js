@@ -23,8 +23,9 @@ function v2Path(p) {
   if (p.indexOf('/settings/security') === 0) return '/you/settings/security' + p.slice('/settings/security'.length);
   if (p.indexOf('/settings/account') === 0) return '/you/settings/notifications' + p.slice('/settings/account'.length);
   if (p.indexOf('/groups/') === 0) return '/circles/' + p.slice('/groups/'.length);
-  if (p.indexOf('/events/') === 0) return '/circles/events/' + p.slice('/events/'.length);
-  if (p.indexOf('/post/') === 0 || p.indexOf('/photos/') === 0) return '/activity';
+  if (p.indexOf('/circles/events/') === 0) return p.slice('/circles'.length);
+  if (p.indexOf('/circles/notes/') === 0) return p.slice('/circles'.length);
+  if (p.indexOf('/photos/') === 0) return '/albums';
   return p;
 }
 

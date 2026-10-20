@@ -23,14 +23,6 @@ export async function incomingRequests(): Promise<FriendshipRow[]> {
   return rows.filter((r) => r.status === 'pending' && r.requested_by !== me());
 }
 
-export async function friendStatus(userId: string): Promise<'self' | 'friends' | 'sent' | 'received' | 'none'> {
-  if (userId === me()) return 'self';
-  const { data } = await sb().from('friendships').select('*').match(pair(me(), userId)).maybeSingle();
-  const f = data as FriendshipRow | null;
-  if (!f) return 'none';
-  if (f.status === 'accepted') return 'friends';
-  return f.requested_by === me() ? 'sent' : 'received';
-}
 
 async function notify(recipient: string, type: string, objectKind?: string, objectId?: string, preview?: string) {
   let sealed: unknown = null;
@@ -83,10 +75,6 @@ export async function unblock(userId: string) {
   must(await sb().from('blocks').delete().match({ blocker: me(), blocked: userId }));
 }
 
-export async function poke(userId: string) {
-  must(await sb().from('pokes').insert({ from_id: me(), to_id: userId }));
-  await notify(userId, 'poke', 'profile', me()).catch(() => undefined);
-}
 
 // ---------------------------------------------------------------------------------------
 // My encrypted profile info (shared with my friends audience).

@@ -9,8 +9,8 @@ import { identity, me } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
 import { people } from './people';
 import { notify } from './friends';
-import { createPost, editPost, preparePosts, type Decrypted } from './content';
-import type { AudienceRow, PostPayload, PostRow } from './types';
+import { preparePosts, type Decrypted } from './content';
+import type { AudienceRow, PostRow } from './types';
 
 // ---------------------------------------------------------------------------------------
 // Shared container plumbing (groups + events)
@@ -142,8 +142,6 @@ export interface GroupRow extends ContainerRow {
 
 export interface GroupInfo { name: string; description?: string; color?: string }
 
-export const GROUP_COLORS = ['#6d84b4', '#3b5998', '#5aa33a', '#d8862b', '#c0392b', '#8e44ad', '#16a085', '#7f8c8d'];
-
 export function readGroup(g: GroupRow, signers?: Set<string>): Decrypted<GroupInfo> {
   const res = openContainer<GroupInfo>('group', g, g.envelope, g.privacy === 'open', signers);
   if (res.ok && g.privacy === 'open' && g.name_public) return { ok: true, value: { ...res.value, name: g.name_public } };
@@ -169,13 +167,6 @@ export async function getGroup(id: string): Promise<GroupRow | null> {
   const g = data as GroupRow | null;
   if (g) await people.ensure([g.creator_id, g.envelope_by ?? ''].filter(Boolean));
   return g;
-}
-
-/** Privacy of a Closed group we can't see (so we can offer "Ask to Join"). */
-export async function groupPreview(id: string): Promise<{ privacy: GroupPrivacy; creator_id: string } | null> {
-  const { data } = await sb().rpc('group_preview', { g: id });
-  const r = (data as { privacy: GroupPrivacy; creator_id: string }[] | null)?.[0];
-  return r ?? null;
 }
 
 export async function createGroup(args: { info: GroupInfo; privacy: GroupPrivacy; invite: string[] }): Promise<string> {
@@ -240,21 +231,6 @@ export async function leave(aud: string) {
   must(await sb().from('audience_members').delete().eq('audience_id', aud).eq('member_id', me()));
 }
 
-export async function askToJoin(groupId: string): Promise<'requested' | 'active' | 'invited'> {
-  const st = must(await sb().rpc('request_group_join', { g: groupId })) as 'requested' | 'active' | 'invited';
-  if (st === 'requested') {
-    const prev = await groupPreview(groupId);
-    if (prev) await notifyWith(prev.creator_id, 'group_request', 'group', groupId, 'asked to join your group');
-  }
-  return st;
-}
-
-export async function approveRequest(g: GroupRow, memberId: string, name: string) {
-  must(await sb().from('audience_members').update({ status: 'active' }).eq('audience_id', g.audience_id).eq('member_id', memberId));
-  await deliverMemberKeys(g.audience_id).catch(() => undefined);
-  await notifyWith(memberId, 'group_invite', 'group', g.id, `approved your request to join ${name}`);
-}
-
 export async function setRole(aud: string, memberId: string, role: 'admin' | 'member') {
   must(await sb().from('audience_members').update({ role }).eq('audience_id', aud).eq('member_id', memberId));
   if (role === 'admin') await deliverMemberKeys(aud).catch(() => undefined);
@@ -274,16 +250,6 @@ export async function deleteGroup(g: GroupRow) {
   must(await sb().from('audiences').delete().eq('id', g.audience_id));
 }
 
-/** Groups to show on someone's profile: never Secret ones, and only groups I can see anyway. */
-export async function profileGroups(userId: string): Promise<GroupRow[]> {
-  const groups = (must(await sb().from('groups').select('*').neq('privacy', 'secret')) as GroupRow[]);
-  if (!groups.length) return [];
-  const rows = must(await sb().from('audience_members').select('audience_id')
-    .eq('member_id', userId).eq('status', 'active').in('audience_id', groups.map((g) => g.audience_id))) as { audience_id: string }[];
-  const set = new Set(rows.map((r) => r.audience_id));
-  return groups.filter((g) => set.has(g.audience_id) || g.creator_id === userId);
-}
-
 // ---------------------------------------------------------------------------------------
 // Group wall and docs
 
@@ -297,33 +263,6 @@ export async function containerPosts(col: 'group_id' | 'event_id' | 'page_id', i
 
 export function groupAudience(g: GroupRow) {
   return g.privacy === 'open' ? { kind: 'public' as const } : { kind: 'audience' as const, id: g.audience_id };
-}
-
-export async function postToGroup(g: GroupRow, payload: PostPayload, kind: PostRow['kind'] = 'status'): Promise<PostRow> {
-  return createPost({ kind, payload, groupId: g.id, audience: groupAudience(g) });
-}
-
-/**
- * Docs are posts of kind "note" in the group. Members edit a doc by adding a revision: another
- * note post whose shared_post_id points at the original. The newest revision is the doc.
- */
-export interface DocRevision { row: PostRow; docId: string }
-
-export async function groupDocRows(groupId: string): Promise<PostRow[]> {
-  const rows = must(await sb().from('posts').select('*').eq('group_id', groupId).eq('kind', 'note')
-    .order('created_at', { ascending: false }).limit(500)) as PostRow[];
-  await preparePosts(rows);
-  return rows;
-}
-
-export async function saveDoc(g: GroupRow, title: string, body: string, docId?: string, previous?: PostRow): Promise<PostRow> {
-  const payload: PostPayload = { note: { title: title.slice(0, 200), body: body.slice(0, 40000), tagged: [] } };
-  if (previous && previous.author_id === me()) {
-    // The latest version is ours: update it in place instead of stacking revisions.
-    await editPost(previous, payload);
-    return previous;
-  }
-  return createPost({ kind: 'note', payload, groupId: g.id, audience: groupAudience(g), sharedPostId: docId });
 }
 
 export { KeyWaitingError };

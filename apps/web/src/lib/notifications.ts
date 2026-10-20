@@ -29,39 +29,3 @@ export function preview(n: NotificationRow): string | null {
     return new TextDecoder().decode(bytes);
   } catch { return null; }
 }
-
-export const NOTIF_ICON: Record<string, string> = {
-  friend_request: 'friends', friend_accept: 'friends', wall_post: 'wall', comment: 'comment', like: 'like', tag: 'photo',
-  poke: 'poke', group_invite: 'group', group_request: 'group', event_invite: 'event', mention: 'comment', share: 'share',
-  question_vote: 'question', checkin_tag: 'place', relationship: 'heart', recovery_request: 'key', recovery_trustee: 'key',
-  game: 'game', key_waiting: 'lock',
-};
-
-const TEXT: Record<string, string> = {
-  friend_request: 'sent you a friend request.', friend_accept: 'accepted your friend request.',
-  wall_post: 'wrote on your Wall.', comment: 'commented on your post.', like: 'likes your post.',
-  tag: 'tagged you in a photo.', poke: 'poked you.', group_invite: 'added you to a group.',
-  group_request: 'asked to join your group.', event_invite: 'invited you to an event.', mention: 'mentioned you in a comment.',
-  share: 'shared your post.', question_vote: 'answered your question.', checkin_tag: 'checked in with you.',
-  relationship: 'listed you in a relationship.', recovery_request: 'is asking for your help to recover their account.',
-  recovery_trustee: 'chose you as a trusted friend for account recovery.', game: 'sent you a Kithville request.',
-  key_waiting: 'is waiting for your device to share your posts with them.',
-};
-export const notifText = (type: string) => TEXT[type] ?? 'did something.';
-
-/** Where clicking a notification goes. */
-export function notifHref(n: NotificationRow, actorUsername?: string): string {
-  switch (n.object_kind) {
-    case 'post': return `/post/${n.object_id}`;
-    case 'photo': return `/photos/${n.object_id}`;
-    case 'group': return `/groups/${n.object_id}`;
-    case 'event': return `/events/${n.object_id}`;
-    case 'conversation': return `/messages/${n.object_id}`;
-    case 'recovery_request': return `/settings/security#trusted`;
-    case 'page': return `/pages/${n.object_id}`;
-  }
-  if (n.type === 'friend_request') return '/requests';
-  if (n.type === 'poke') return '/pokes';
-  if (n.type === 'game') return '/games/kithville';
-  return actorUsername ? `/${actorUsername}` : '/notifications';
-}

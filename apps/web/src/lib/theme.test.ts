@@ -92,7 +92,8 @@ describe('public/theme.js (pre-paint)', () => {
   });
   it('follows the OS in system mode and applies saved style', () => {
     const r = run({ storage: { [STYLE_KEY]: 'bold' }, dark: true });
-    expect(r.attrs).toMatchObject({ 'data-style': 'bold', 'data-mode': 'dark', 'data-theme': 'dark' });
+    expect(r.attrs).toMatchObject({ 'data-style': 'bold', 'data-mode': 'dark' });
+    expect(r.attrs['data-theme']).toBeUndefined(); // the v1 attribute is gone with the v1 pages
     expect(r.meta).toBe(THEME_COLORS.bold.dark);
   });
   it('migrates kw.theme like lib/theme.ts', () => {
@@ -100,18 +101,16 @@ describe('public/theme.js (pre-paint)', () => {
     expect(r.attrs['data-mode']).toBe('dark');
     expect(r.store).toEqual({ [MODE_KEY]: 'dark' });
   });
-  it('detects an RTL device language on v2 pages', () => {
+  it('detects an RTL device language', () => {
     const r = run({ languages: ['ur-PK', 'en'] });
     expect(r.attrs).toMatchObject({ lang: 'ur', dir: 'rtl', 'data-i18n-pending': '' });
   });
   it('honours a saved language and uses zh-Hans', () => {
     expect(run({ storage: { 'kw.locale': 'zh' }, path: '/home' }).attrs).toMatchObject({ lang: 'zh-Hans', dir: 'ltr' });
   });
-  it('keeps v1 pages English and left-to-right', () => {
-    const r = run({ storage: { 'kw.locale': 'ar' }, path: '/settings/security' });
-    expect(r.attrs).toMatchObject({ lang: 'en', dir: 'ltr' });
-    expect(run({ storage: { 'kw.locale': 'ar' }, path: '/messages/inbox' }).attrs.dir).toBe('ltr');
-    expect(run({ storage: { 'kw.locale': 'ar' }, path: '/messages' }).attrs.dir).toBe('rtl');
+  it('applies the saved language on every page (no v1 English-only pages left)', () => {
+    expect(run({ storage: { 'kw.locale': 'ar' }, path: '/legal/privacy' }).attrs).toMatchObject({ lang: 'ar', dir: 'rtl' });
+    expect(run({ storage: { 'kw.locale': 'ar' }, path: '/recover' }).attrs.dir).toBe('rtl');
     expect(run({ storage: { 'kw.locale': 'ar' }, path: '/you/settings' }).attrs.dir).toBe('rtl');
   });
 });

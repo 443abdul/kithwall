@@ -1,6 +1,6 @@
 'use client';
 // The You tab: my profile summary (with edit), my connections and requests, my things (albums, notes,
-// events), settings, and sign out. Settings themselves live under /you/settings (another work stream).
+// events), settings, help, moderation (staff only) and sign out. Settings live under /you/settings.
 import Link from 'next/link';
 import { useState } from 'react';
 import { useT } from '@/i18n';
@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { List, ListItem } from '@/components/ui/ListItem';
 import { Page, useMe, useShellHref } from '@/components/shell/AppShell';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
-import { useFriendIds, useRequests } from '@/lib/hooks';
+import { useFriendIds, useIsStaff, useRequests } from '@/lib/hooks';
 import { signOut } from '@/lib/keys/session';
 import { usePerson } from '@/lib/people';
 import { EditProfileDialog } from './EditProfile';
@@ -23,6 +23,7 @@ export function YouScreen() {
   const person = usePerson(me.userId);
   const friends = useFriendIds();
   const reqs = useRequests();
+  const staff = useIsStaff();
   const [editing, setEditing] = useState(false);
   useDocumentTitle(t('nav.you'));
   const soon = <Badge tone="neutral">{t('common.soon')}</Badge>;
@@ -61,6 +62,8 @@ export function YouScreen() {
       <Card padding="flush">
         <List label={t('settings.title')}>
           <li><ListItem icon="settings" title={t('settings.title')} subtitle={t('you.settingsSub')} href={href('/you/settings')} /></li>
+          <li><ListItem icon="info" title={t('help.title')} href="/help" /></li>
+          {staff.data ? <li><ListItem icon="flag" title={staff.data === 'admin' ? t('mod.titleAdmin') : t('mod.title')} href="/mod" /></li> : null}
           <li><ListItem icon="gift" title={t('you.donate')} subtitle={t('you.donateSub')} trailing={soon} /></li>
           {/* A full page load after signing out drops every in-memory key and cache. */}
           {/* eslint-disable-next-line @next/next/no-location-assign-relative-destination */}

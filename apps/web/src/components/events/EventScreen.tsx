@@ -151,9 +151,9 @@ export function EventScreen({ id }: { id: string }) {
   const ev = s?.event;
   useEffect(() => { if (ev && host) void eventHousekeeping(ev); }, [ev, host]);
 
-  const back = { href: s?.event.group_id ? `/circles/${s.event.group_id}?tab=events` : '/circles/events', label: t('common.back') };
+  const back = { href: s?.event.group_id ? `/circles/${s.event.group_id}?tab=events` : '/events', label: t('common.back') };
   if (q.isLoading) return <Page title={t('events.title')} back={back}><Loading /></Page>;
-  if (!s) return <Page title={t('events.title')} back={back}><NotFound icon="calendar" title={t('events.notFound')} body={t('events.notFoundBody')} actions={<ButtonLink href="/circles/events" variant="soft">{t('events.title')}</ButtonLink>} /></Page>;
+  if (!s) return <Page title={t('events.title')} back={back}><NotFound icon="calendar" title={t('events.notFound')} body={t('events.notFoundBody')} actions={<ButtonLink href="/events" variant="soft">{t('events.title')}</ButtonLink>} /></Page>;
 
   const rsvp = s.me?.rsvp ?? null;
   const setAnswer = async (r: Rsvp) => {
@@ -178,7 +178,7 @@ export function EventScreen({ id }: { id: string }) {
 
   return (
     <Page title={info?.name ?? t('events.sealed')} back={back}
-      actions={host && info ? <ButtonLink href={`/circles/events/${id}/edit`} variant="secondary" size="sm" icon="edit">{t('events.edit')}</ButtonLink> : undefined}>
+      actions={host && info ? <ButtonLink href={`/events/${id}/edit`} variant="secondary" size="sm" icon="edit">{t('events.edit')}</ButtonLink> : undefined}>
       <Card className="ke-hero">
         {info ? (
           <div className="k-stack">

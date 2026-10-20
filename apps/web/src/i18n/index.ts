@@ -94,7 +94,7 @@ function start() {
   });
 }
 
-/** Re-apply <html lang dir> for the active language (after visiting a v1 page, which forces en/ltr). */
+/** Re-apply <html lang dir> for the active language (e.g. after a full page load set it in theme.js). */
 export function reapplyLocale() {
   if (typeof document === 'undefined') return;
   if (!started) { start(); return; } // first load: theme.js already set lang/dir

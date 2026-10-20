@@ -1,5 +1,5 @@
 // Signed-in Kithwall 2 screens (home, circles, messages, activity, you). The guard routes by session
-// status: signed out → /signin, locked → unlock screen, v1 account without keys yet → /welcome.
+// status: signed out → /signin, locked → unlock screen, account without keys yet (or awaiting its 6-digit code) → /setup.
 import { AppGate } from '@/components/shell/AppGate';
 import { V2Root } from '@/components/shell/V2Root';
 

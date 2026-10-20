@@ -38,7 +38,7 @@ function NoteCard({ row, showAuthor }: { row: PostRow; showAuthor?: boolean }) {
   const author = usePersonName(row.author_id);
   return (
     <li>
-      <Link href={`/circles/notes/${row.id}`} className="kn-card">
+      <Link href={`/notes/${row.id}`} className="kn-card">
         <span dir="auto" className="kn-card-title">{d.ok ? d.value.title || t('notes.untitled') : t('notes.sealed')}</span>
         {d.ok && d.value.body ? <span dir="auto" className="kn-card-excerpt">{excerpt(d.value.body)}</span> : null}
         <span className="kn-card-meta">
@@ -65,7 +65,7 @@ export function NotesScreen({ initialView }: { initialView?: string }) {
   const rows = view === 'connections' ? others.data ?? []
     : (mine.data ?? []).filter((r) => (view === 'journal' ? noteAudience(r).kind === 'only_me' : noteAudience(r).kind !== 'only_me'));
   const loading = view === 'connections' ? others.isLoading : mine.isLoading;
-  const writeHref = view === 'journal' ? '/circles/notes/new?journal=1' : '/circles/notes/new';
+  const writeHref = view === 'journal' ? '/notes/new?journal=1' : '/notes/new';
   return (
     <Page title={t('notes.title')} description={t('notes.description')}
       actions={<ButtonLink href={writeHref} variant="primary" icon="edit" size="sm">{view === 'journal' ? t('notes.writeJournal') : t('notes.write')}</ButtonLink>}
@@ -92,7 +92,7 @@ export function CircleNotes({ circle }: { circle: CircleRow }) {
   if (q.isLoading) return <Loading />;
   return (
     <div className="k-stack">
-      <div className="k-row-wrap"><ButtonLink href={`/circles/notes/new?circle=${circle.id}`} variant="soft" icon="edit">{t('notes.writeInCircle')}</ButtonLink></div>
+      <div className="k-row-wrap"><ButtonLink href={`/notes/new?circle=${circle.id}`} variant="soft" icon="edit">{t('notes.writeInCircle')}</ButtonLink></div>
       {q.data?.length ? <NoteList rows={q.data} showAuthor /> : <Card><EmptyState icon="edit" title={t('notes.emptyCircle')} body={t('notes.emptyCircleBody')} /></Card>}
     </div>
   );

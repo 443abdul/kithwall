@@ -29,13 +29,13 @@ describe('activityHref', () => {
   it('points at Kithwall 2 routes', () => {
     expect(activityHref({ type: 'x', objectKind: 'conversation', objectId: P })).toBe(`/messages/${P}`);
     expect(activityHref({ type: 'group_invite', objectKind: 'group', objectId: P })).toBe(`/circles/${P}`);
-    expect(activityHref({ type: 'like', objectKind: 'post', objectId: P }, new Map([[P, 'c1']]))).toBe('/circles/c1');
-    expect(activityHref({ type: 'like', objectKind: 'post', objectId: P })).toBe('/home');
+    expect(activityHref({ type: 'like', objectKind: 'post', objectId: P })).toBe(`/post/${P}`);
+    expect(activityHref({ type: 'comment', objectKind: 'post', objectId: 'nope' })).toBe('/home');
     expect(activityHref({ type: 'friend_request', objectKind: 'profile', objectId: P })).toBe('/activity?tab=requests');
     expect(activityHref({ type: 'recovery_request', objectKind: 'recovery_request', objectId: P })).toBe('/you/settings/security#trusted');
     expect(activityHref({ type: 'friend_accept', objectKind: 'profile', objectId: P })).toBeNull();
-    expect(activityHref({ type: 'friend_accept', objectKind: 'profile', objectId: P }, new Map(), 'dan')).toBe('/u/dan');
-    expect(activityHref({ type: 'event_invite', objectKind: 'event', objectId: P })).toBe(`/circles/events/${P}`);
+    expect(activityHref({ type: 'friend_accept', objectKind: 'profile', objectId: P }, 'dan')).toBe('/u/dan');
+    expect(activityHref({ type: 'event_invite', objectKind: 'event', objectId: P })).toBe(`/events/${P}`);
     expect(activityHref({ type: 'x', objectKind: 'group', objectId: 'not-a-uuid' })).toBe('/circles');
   });
 });

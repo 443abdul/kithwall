@@ -16,7 +16,12 @@ export const NAV: NavItem[] = [
 
 /** Sections without a tab of their own, highlighted under the tab they belong to. */
 export const NAV_SECTIONS: { prefix: string; key: NavKey }[] = [
-  { prefix: '/albums', key: 'you' }, // circles stream: albums live under You (circle albums open from a circle)
+  { prefix: '/albums', key: 'you' }, // albums live under You (circle albums open from a circle)
+  { prefix: '/events', key: 'circles' },
+  { prefix: '/notes', key: 'circles' },
+  { prefix: '/people', key: 'you' },
+  { prefix: '/post', key: 'home' },
+  { prefix: '/mod', key: 'you' },
 ];
 
 export function activeNav(path: string): NavKey | null {

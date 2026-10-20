@@ -3,7 +3,7 @@
 // requests with accept / decline. Previews ("Dan commented: …") are sealed to me and opened here.
 import Link from 'next/link';
 import { useMemo, useState, type ReactNode } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { b64u, openSealed, type Sealed } from '@kithwall/crypto';
 import { useFormat, useT, type MessageKey, type TFunction } from '@/i18n';
 import { identity, useSession } from '@/lib/keys/session';
@@ -11,7 +11,6 @@ import { people, usePeopleVersion } from '@/lib/people';
 import { useKeyringVersion, useNotifications, useRequests } from '@/lib/hooks';
 import { markAllRead, markRead, preview } from '@/lib/notifications';
 import { acceptFriend, ignoreRequest } from '@/lib/friends';
-import { sb } from '@/lib/supabase';
 import type { FriendshipRow, NotificationRow } from '@/lib/types';
 import { Page } from '@/components/shell/AppShell';
 import { Tabs } from '@/components/ui/Tabs';
@@ -36,19 +35,6 @@ function actorsText(ids: string[], nameOf: (id: string) => string, t: TFunction)
   if (ids.length === 1) return nameOf(a);
   if (ids.length === 2) return t('activity.actors.two', { a: nameOf(a), b: nameOf(b!) });
   return t('activity.actors.many', { name: nameOf(a), count: ids.length - 1 });
-}
-
-/** Posts a notification points at, mapped to their circle (posts in a circle open the circle). */
-function useCircleOfPosts(rows: NotificationRow[] | undefined) {
-  const ids = [...new Set((rows ?? []).filter((r) => r.object_kind === 'post' && r.object_id).map((r) => r.object_id!))];
-  const { status } = useSession();
-  return useQuery({
-    queryKey: ['activity', 'post-circles', ids.join(',')], enabled: status === 'ready' && ids.length > 0, staleTime: 5 * 60_000,
-    queryFn: async () => {
-      const { data } = await sb().from('posts').select('id, group_id').in('id', ids.slice(0, 200));
-      return new Map(((data ?? []) as { id: string; group_id: string | null }[]).map((p) => [p.id, p.group_id]));
-    },
-  });
 }
 
 function useDay() {
@@ -101,7 +87,6 @@ function AllTab() {
   const toast = useToast();
   useKeyringVersion();
   const notifs = useNotifications(100);
-  const circles = useCircleOfPosts(notifs.data);
   const dayLabel = useDay();
   const days = useMemo(() => groupActivity(notifs.data ?? []), [notifs.data]);
   const unread = (notifs.data ?? []).some((n) => !n.read_at);
@@ -135,7 +120,7 @@ function AllTab() {
           <h2 className="k-section-title">{dayLabel(d.at)}</h2>
           <Card padding="tight">
             <ul className="k-act-list">
-              {d.groups.map((g) => <Item key={g.key} g={g} href={activityHref(g, circles.data, people.get(g.actors[0] ?? '')?.username)} onOpen={(x) => void open(x)} />)}
+              {d.groups.map((g) => <Item key={g.key} g={g} href={activityHref(g, people.get(g.actors[0] ?? '')?.username)} onOpen={(x) => void open(x)} />)}
             </ul>
           </Card>
         </section>

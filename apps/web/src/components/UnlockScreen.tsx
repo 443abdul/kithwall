@@ -1,7 +1,7 @@
 'use client';
 // Shown when a session exists but the keys aren't in memory (after a reload without "Keep me signed in",
 // or after auto-lock). Unlock with a passkey, the account passphrase, or — for v1 accounts — the password.
-// Self-contained Kithwall 2 screen (wraps itself in V2Root), so the remaining v1 pages can show it too.
+// Self-contained Kithwall 2 screen (wraps itself in V2Root).
 import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { signOut, unlock, useSession } from '@/lib/keys/session';

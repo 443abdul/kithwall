@@ -50,28 +50,22 @@ export function groupActivity(rows: ActivityRow[]): ActivityDay[] {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * Where a group leads in Kithwall 2. `circleOfPost` maps post ids to their circle (posts in a circle
- * open the circle; there is no post permalink yet). null = nowhere to go (the line is just text).
- */
-export function activityHref(g: Pick<ActivityGroup, 'type' | 'objectKind' | 'objectId'>, circleOfPost: Map<string, string | null> = new Map(), actorHandle?: string | null): string | null {
+/** Where a group leads in Kithwall 2 (null = nowhere to go; the line is just text). */
+export function activityHref(g: Pick<ActivityGroup, 'type' | 'objectKind' | 'objectId'>, actorHandle?: string | null): string | null {
   const id = g.objectId && UUID.test(g.objectId) ? g.objectId : null;
   switch (g.objectKind) {
     case 'conversation': return id ? `/messages/${id}` : '/messages';
     case 'group': return id ? `/circles/${id}` : '/circles';
-    case 'event': return id ? `/circles/events/${id}` : '/circles/events';
+    case 'event': return id ? `/events/${id}` : '/events';
     case 'photo': return '/albums';
     case 'recovery_request': return '/you/settings/security#trusted';
-    case 'post': case 'comment': {
-      const circle = id ? circleOfPost.get(id) : null;
-      return circle ? `/circles/${circle}` : '/home';
-    }
+    case 'post': case 'comment': return id ? `/post/${id}` : '/home';
   }
   switch (g.type) {
     case 'friend_request': return '/activity?tab=requests';
     case 'recovery_request': case 'recovery_trustee': return '/you/settings/security#trusted';
     case 'group_invite': case 'group_request': return '/circles';
-    case 'event_invite': return '/circles/events';
+    case 'event_invite': return '/events';
     case 'key_waiting': return '/home';
   }
   return actorHandle && /^[a-z0-9.]{1,30}$/.test(actorHandle) ? `/u/${actorHandle}` : null;

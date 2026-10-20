@@ -5,13 +5,11 @@
 // The owner's new device keeps the ephemeral private key E in IndexedDB, wrapped by a non-extractable
 // WebCrypto key, until the request completes.
 import {
-  b64u, combineRecoveryShares, generateEphemeral, openSealed, recoveryKeyFromPhrase, seal, splitRecoveryKey,
-  unlockWithRecoveryKey, verificationPhrase, type Sealed,
+  b64u, openSealed, recoveryKeyFromPhrase, seal, splitRecoveryKey, unlockWithRecoveryKey, verificationPhrase, type Sealed,
 } from '@kithwall/crypto';
 import { sb, must } from './supabase';
-import { fetchBundle, getSession, identity, me, newRecoveryPhrase, setNewPassword } from './keys/session';
+import { fetchBundle, getSession, identity, me } from './keys/session';
 import { people } from './people';
-import { authedPost } from './auth/api';
 
 export const shareContext = (ownerId: string, trusteeId: string, setupId: string) => `recovery-share/${ownerId}/${trusteeId}/${setupId}`;
 export const releaseContext = (requestId: string, trusteeId: string) => `recovery-release/${requestId}/${trusteeId}`;
@@ -116,120 +114,29 @@ async function idbDo<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDB
 interface StoredEph { requestId: string; userId: string; key: CryptoKey; iv: Uint8Array; ct: ArrayBuffer }
 const ephAad = (userId: string, requestId: string) => new TextEncoder().encode(`kithwall/v1/recovery-eph/${userId}/${requestId}`);
 
-async function storeEph(userId: string, requestId: string, priv: Uint8Array) {
+export async function storeEph(userId: string, requestId: string, priv: Uint8Array) {
   const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: ephAad(userId, requestId) }, key, priv as BufferSource);
   await idbDo('readwrite', (s) => s.put({ requestId, userId, key, iv, ct } satisfies StoredEph, requestId));
 }
 
-async function loadEph(userId: string, requestId: string): Promise<Uint8Array | null> {
+export async function loadEph(userId: string, requestId: string): Promise<Uint8Array | null> {
   const rec = await idbDo<StoredEph | undefined>('readonly', (s) => s.get(requestId)).catch(() => undefined);
   if (!rec || rec.userId !== userId) return null;
   const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: rec.iv as BufferSource, additionalData: ephAad(userId, requestId) }, rec.key, rec.ct);
   return new Uint8Array(pt);
 }
 
-async function dropEph(requestId: string) { await idbDo('readwrite', (s) => s.delete(requestId)).catch(() => undefined); }
+export async function dropEph(requestId: string) { await idbDo('readwrite', (s) => s.delete(requestId)).catch(() => undefined); }
 
-/** The signed-in user (works without keys, e.g. in a reset session). */
-async function sessionUser(): Promise<{ id: string; email: string }> {
-  const { data } = await sb().auth.getUser();
-  if (!data.user?.email) throw new Error('Open the password reset link from your email first.');
-  return { id: data.user.id, email: data.user.email };
-}
-
-/** My newest open recovery request, and whether THIS device holds its private key. */
-export async function myOpenRequest(): Promise<{ req: RequestRow; onThisDevice: boolean } | null> {
-  const u = await sessionUser();
-  const rows = must(await sb().from('recovery_requests').select('*').eq('owner_id', u.id).eq('status', 'pending')
-    .gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(1)) as RequestRow[];
-  const req = rows[0];
-  if (!req) return null;
-  const priv = await loadEph(u.id, req.id).catch(() => null);
-  if (priv) priv.fill(0);
-  return { req, onThisDevice: !!priv };
-}
-
-/** How many trusted friends I have and how many are needed (visible to me in a reset session). */
-export async function myRecoverySetup(): Promise<{ trustees: string[]; threshold: number } | null> {
-  const u = await sessionUser();
-  const rows = must(await sb().from('recovery_shares').select('trustee_id, threshold').eq('owner_id', u.id)) as { trustee_id: string; threshold: number }[];
-  if (!rows.length) return null;
-  await people.ensure(rows.map((r) => r.trustee_id));
-  return { trustees: rows.map((r) => r.trustee_id), threshold: rows[0]!.threshold };
-}
-
-export async function startFriendRecovery(): Promise<RequestRow> {
-  const u = await sessionUser();
-  const setup = await myRecoverySetup();
-  if (!setup) throw new Error('You haven\'t chosen any trusted friends, so they can\'t help you get back in.');
-  const e = generateEphemeral();
-  const req = must(await sb().from('recovery_requests').insert({ owner_id: u.id, eph_pub: b64u.encode(e.pub) }).select().single()) as RequestRow;
-  try { await storeEph(u.id, req.id, e.priv); } finally { e.priv.fill(0); }
-  for (const t of setup.trustees) {
-    await sb().from('notifications').insert({ recipient_id: t, actor_id: u.id, type: 'recovery_request', object_kind: 'recovery_request', object_id: req.id });
-  }
-  await authedPost('/api/recovery/notify', { requestId: req.id }).catch(() => undefined);
-  return req;
-}
 
 export async function cancelRequest(id: string): Promise<void> {
   must(await sb().from('recovery_requests').update({ status: 'cancelled' }).eq('id', id));
   await dropEph(id);
 }
 
-export async function fetchResponses(requestId: string): Promise<ResponseRow[]> {
-  const rows = must(await sb().from('recovery_responses').select('*').eq('request_id', requestId)) as ResponseRow[];
-  await people.ensure(rows.map((r) => r.trustee_id));
-  return rows;
-}
-
-/**
- * Rebuild RK from the released shares, check it against the bundle, set a new password, then issue a
- * fresh recovery key and re-split it to the same friends. Returns the NEW 24 words to show the user.
- */
-export async function completeFriendRecovery(req: RequestRow, newPassword: string): Promise<{ phrase: string; resplit: boolean }> {
-  const u = await sessionUser();
-  const bundle = await fetchBundle(u.id);
-  if (!bundle) throw new Error('No keys found for this account');
-  const priv = await loadEph(u.id, req.id);
-  if (!priv) throw new Error('This recovery was started on another device. Finish it there, or start a new one here.');
-  const ephPub = b64u.decode(req.eph_pub);
-  const responses = await fetchResponses(req.id);
-  const shares: Uint8Array[] = [];
-  try {
-    for (const r of responses) {
-      const t = people.get(r.trustee_id);
-      if (!t) continue;
-      try {
-        shares.push(openSealed({ sealed: r.sealed, recipientKxPriv: priv, recipientKxPub: ephPub, senderSignPub: b64u.decode(t.sign_pub), context: releaseContext(req.id, r.trustee_id) }));
-      } catch (e) { console.warn('ignored a recovery share that failed verification', r.trustee_id, e); }
-    }
-    if (shares.length < 2) throw new Error('Not enough of your friends have responded yet.');
-    // Try the largest set first; a bad share makes the commitment check fail, so fall back to subsets.
-    let rk: Uint8Array | null = null;
-    const sets = subsets(shares).filter((s) => s.length >= 2).sort((a, b) => b.length - a.length);
-    for (const s of sets) {
-      try { rk = await combineRecoveryShares(s.slice(0, 5), bundle.rkCommitment); break; } catch { /* next */ }
-    }
-    if (!rk) throw new Error('Your friends\' responses don\'t fit together yet. Wait for one more friend to respond.');
-    const unlocked = unlockWithRecoveryKey(u.id, bundle, rk);
-    rk.fill(0);
-    await setNewPassword(u.id, u.email, bundle, unlocked, newPassword);
-  } finally {
-    priv.fill(0);
-    shares.forEach((s) => s.fill(0));
-  }
-  must(await sb().from('recovery_requests').update({ status: 'completed' }).eq('id', req.id));
-  await dropEph(req.id);
-  // Spec §3.5 step 5: fresh RK, re-issue all shares.
-  const fresh = await newRecoveryPhrase();
-  const resplit = await resplitToSameTrustees(fresh.rk);
-  return { phrase: fresh.phrase, resplit };
-}
-
-function subsets<T>(xs: T[]): T[][] {
+export function subsets<T>(xs: T[]): T[][] {
   const out: T[][] = [];
   const n = Math.min(xs.length, 8);
   for (let m = 1; m < 1 << n; m++) out.push(xs.slice(0, n).filter((_, i) => m & (1 << i)));

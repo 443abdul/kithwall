@@ -4,8 +4,7 @@
 // mirrored into encrypted settings). public/theme.js applies them before first paint, so there is no
 // flash; this module changes them at runtime and keeps "system" in sync with the OS.
 //
-// <html data-style="warm" data-mode="dark" data-mode-pref="system">, plus the v1 attributes
-// data-theme / data-theme-pref that the remaining v1 pages read (until phase 2).
+// <html data-style="warm" data-mode="dark" data-mode-pref="system">.
 import { useSyncExternalStore } from 'react';
 import type { ModePref, StylePref } from '@/lib/auth/account';
 
@@ -82,8 +81,6 @@ export function applyPrefs(p: Prefs = readPrefs()) {
   root.setAttribute('data-style', p.style);
   root.setAttribute('data-mode', mode);
   root.setAttribute('data-mode-pref', p.mode);
-  root.setAttribute('data-theme', mode);       // v1 pages
-  root.setAttribute('data-theme-pref', p.mode); // v1 pages
   const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
   if (meta) meta.content = THEME_COLORS[p.style][mode];
   if (p.style !== current.style || p.mode !== current.mode || mode !== resolved) {
@@ -134,11 +131,3 @@ export function usePrefs(): Prefs & { resolved: Mode } {
   const r = useSyncExternalStore(subscribe, () => resolved, () => 'light' as Mode);
   return { ...p, resolved: r };
 }
-
-// ---- v1 compatibility (app/menu, components/MobileChrome) until the v1 pages are deleted in phase 2.
-export type ThemePref = ModePref;
-export const getThemePref = (): ThemePref => readPrefs().mode;
-export const setThemePref = (m: ThemePref) => setMode(m);
-export const applyTheme = (m: ThemePref = getThemePref()) => applyPrefs({ ...readPrefs(), mode: m });
-export const watchSystemTheme = watchSystemMode;
-export function useThemePref(): ThemePref { return usePrefs().mode; }

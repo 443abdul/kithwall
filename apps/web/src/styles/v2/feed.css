@@ -55,6 +55,8 @@
 .kw .k-post-body { display: flex; flex-direction: column; gap: var(--space-3); }
 .kw .k-post-text { font-size: var(--text-md); }
 .kw .k-post-note h3 { font-size: var(--text-lg); margin-block-end: var(--space-1); }
+.kw .k-post-note-body.kn-prose { font-size: inherit; line-height: 1.6; max-inline-size: none; }
+.kw .k-post-note-body.kn-prose > * + * { margin-block-start: 0.6em; }
 .kw .k-post-actions { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; border-block-start: 1px solid var(--border); padding-block-start: var(--space-2); margin-inline: calc(-1 * var(--space-1)); }
 .kw .k-action {
   display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: 40px; padding-inline: var(--space-3);

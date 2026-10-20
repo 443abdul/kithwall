@@ -2,13 +2,19 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useT } from '@/i18n';
+import { useSession } from '@/lib/keys/session';
 import { Logo } from '@/components/shell/Logo';
 import { ButtonLink } from '@/components/ui/Button';
 import { LanguagePicker } from './LanguagePicker';
 
-/** Header for signed-out pages: logo, language, and a sign-in / join link. */
-export function PublicHeader({ cta = 'signin' }: { cta?: 'signin' | 'join' | 'none' }) {
+export type PublicCta = 'signin' | 'join' | 'none' | 'auto';
+
+/** Header for public pages: logo, language, and a sign-in / join link ('auto': back to the app when signed in). */
+export function PublicHeader({ cta = 'signin' }: { cta?: PublicCta }) {
   const t = useT();
+  const { status } = useSession();
+  const inApp = cta === 'auto' && (status === 'ready' || status === 'locked');
+  if (cta === 'auto') cta = inApp ? 'none' : 'signin';
   return (
     <header className="k-pub-head">
       <Link href="/" className="k-pub-brand" aria-label={t('shell.homeLink')}><Logo size={32} /></Link>
@@ -16,6 +22,7 @@ export function PublicHeader({ cta = 'signin' }: { cta?: 'signin' | 'join' | 'no
         <LanguagePicker compact />
         {cta === 'signin' ? <ButtonLink href="/signin" variant="ghost" size="sm">{t('landing.signIn')}</ButtonLink> : null}
         {cta === 'join' ? <ButtonLink href="/join" variant="ghost" size="sm">{t('landing.join')}</ButtonLink> : null}
+        {inApp ? <ButtonLink href="/home" variant="soft" size="sm">{t('public.openApp')}</ButtonLink> : null}
       </div>
     </header>
   );
@@ -40,11 +47,22 @@ export function PublicFooter() {
 }
 
 /** Centred single-column card layout used by /join and /signin. */
-export function AuthFrame({ children, cta }: { children: ReactNode; cta?: 'signin' | 'join' | 'none' }) {
+export function AuthFrame({ children, cta }: { children: ReactNode; cta?: PublicCta }) {
   return (
     <div className="k-auth">
       <PublicHeader cta={cta} />
       <main id="main" className="k-auth-main">{children}</main>
+      <PublicFooter />
+    </div>
+  );
+}
+
+/** Wide single-column frame for public reading pages (legal documents, help). */
+export function PublicFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="k-auth k-public">
+      <PublicHeader cta="auto" />
+      <main id="main" className="k-public-main">{children}</main>
       <PublicFooter />
     </div>
   );

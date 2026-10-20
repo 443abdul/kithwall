@@ -1,6 +1,5 @@
 // Kithwall 2 icon set: 24px grid, 1.75 stroke, round caps/joins, currentColor. Inline SVG as JSX
 // (no innerHTML, no network). Directional icons carry `flip` so they mirror in right-to-left layouts.
-// The v1 16px icons stay in components/Icon.tsx until the v1 pages are deleted (phase 2).
 import type { ReactElement } from 'react';
 
 const P: Record<string, ReactElement> = {

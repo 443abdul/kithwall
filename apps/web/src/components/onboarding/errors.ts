@@ -18,6 +18,9 @@ export const ACCOUNT_ERROR_KEYS: Record<AccountErrorCode, MessageKey> = {
   mfa_required: 'errors.mfa_required',
   last_unlock_method: 'errors.last_unlock_method',
   signups_closed: 'errors.signups_closed',
+  no_account: 'errors.no_account',
+  no_trustees: 'errors.no_trustees',
+  bad_recovery_key: 'errors.bad_recovery_key',
 };
 
 export function errorCode(e: unknown): AccountErrorCode {

@@ -89,11 +89,6 @@ export async function uploadPreparedImage(p: PreparedImage): Promise<FileRef> {
   return { ...ref, w: p.w, h: p.h };
 }
 
-/** Re-encode the preview image on device (drops metadata, bounds size), encrypt and upload it. */
-export async function uploadPreviewImage(img: { mime: string; data: string }): Promise<FileRef | undefined> {
-  const p = await prepareImage(img);
-  return p ? uploadPreparedImage(p) : undefined;
-}
 
 /** Fetch a preview and prepare it for attaching (image re-encoded, embed validated). */
 export async function loadLinkDraft(url: string, signal?: AbortSignal): Promise<LinkDraft> {

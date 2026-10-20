@@ -8,13 +8,6 @@ import { me } from './keys/session';
 export type ReportKind = 'post' | 'comment' | 'photo' | 'message' | 'profile' | 'group' | 'event' | 'page';
 export type ReportReason = 'spam' | 'harassment' | 'hate' | 'violence' | 'nudity' | 'child_safety' | 'self_harm' | 'impersonation' | 'illegal' | 'other';
 
-export const REPORT_REASONS: [ReportReason, string][] = [
-  ['spam', 'Spam or scam'], ['harassment', 'Harassment or bullying'], ['hate', 'Hate speech'],
-  ['violence', 'Violence or threats'], ['nudity', 'Nudity or sexual content'], ['child_safety', 'Involves a child'],
-  ['self_harm', 'Self-harm or suicide'], ['impersonation', 'Pretending to be someone'], ['illegal', 'Illegal goods or activity'],
-  ['other', 'Something else'],
-];
-
 export interface Disclosure {
   /** Decrypted content the reporter saw (text, file refs etc.). */
   plaintext: unknown;

@@ -78,14 +78,14 @@ export function NoteEditorScreen({ id, circleId, journal }: { id?: string; circl
       }
       void qc.invalidateQueries({ queryKey: ['notes'] });
       toast({ message: t('notes.saved') });
-      router.replace(`/circles/notes/${nid}`);
+      router.replace(`/notes/${nid}`);
     } catch {
       toast({ message: t('circles.ui.error'), tone: 'danger' });
       setBusy(false);
     }
   };
 
-  const back = { href: id ? `/circles/notes/${id}` : circleId ? `/circles/${circleId}?tab=notes` : '/circles/notes', label: t('common.back') };
+  const back = { href: id ? `/notes/${id}` : circleId ? `/circles/${circleId}?tab=notes` : '/notes', label: t('common.back') };
   if (id && existing.isLoading) return <Page title={t('notes.edit')} back={back}><Loading /></Page>;
   if (id && (!row || row.author_id !== me())) return <Page title={t('notes.edit')} back={back}><NotFound icon="lock" title={t('notes.authorOnly')} /></Page>;
   const near = body.length > MAX_BODY * 0.9;
@@ -145,9 +145,9 @@ export function NoteScreen({ id }: { id: string }) {
   const d = row ? readNote(row) : null;
   useDocumentTitle(d?.ok ? d.value.title || t('notes.untitled') : t('notes.title'));
   const author = usePersonName(row?.author_id);
-  const back = { href: row?.group_id ? `/circles/${row.group_id}?tab=notes` : '/circles/notes', label: t('common.back') };
+  const back = { href: row?.group_id ? `/circles/${row.group_id}?tab=notes` : '/notes', label: t('common.back') };
   if (q.isLoading) return <Page title={t('notes.title')} back={back}><Loading /></Page>;
-  if (!row) return <Page title={t('notes.title')} back={back}><NotFound icon="edit" title={t('notes.notFound')} actions={<ButtonLink href="/circles/notes" variant="soft">{t('notes.title')}</ButtonLink>} /></Page>;
+  if (!row) return <Page title={t('notes.title')} back={back}><NotFound icon="edit" title={t('notes.notFound')} actions={<ButtonLink href="/notes" variant="soft">{t('notes.title')}</ButtonLink>} /></Page>;
   const mine = row.author_id === me();
   const remove = async () => {
     setBusy(true);
@@ -156,7 +156,7 @@ export function NoteScreen({ id }: { id: string }) {
   };
   return (
     <Page title={d?.ok ? d.value.title || t('notes.untitled') : t('notes.sealed')} back={back}
-      actions={mine && d?.ok ? <ButtonLink href={`/circles/notes/${id}/edit`} variant="secondary" size="sm" icon="edit">{t('notes.edit')}</ButtonLink> : undefined}>
+      actions={mine && d?.ok ? <ButtonLink href={`/notes/${id}/edit`} variant="secondary" size="sm" icon="edit">{t('notes.edit')}</ButtonLink> : undefined}>
       <article className="kn-article">
         <NoteMeta row={row} author={author} date={f.date(new Date(row.created_at), { dateStyle: 'long' })} minutes={d?.ok ? readingMinutes(d.value.body) : 0} />
         {d?.ok ? <NoteBody md={d.value.body} /> : d ? <SealedNote reason={d.reason} /> : null}

@@ -136,7 +136,7 @@ export function NewEventScreen({ circleId }: { circleId?: string }) {
       const id = await createEvent2({ info, invite: ids, circleId: circle ? circle.id : null });
       void qc.invalidateQueries({ queryKey: ['events'] });
       toast({ message: t('events.form.created') });
-      router.replace(`/circles/events/${id}`);
+      router.replace(`/events/${id}`);
     } catch {
       toast({ message: t('circles.ui.error'), tone: 'danger' });
       setBusy(false);
@@ -144,7 +144,7 @@ export function NewEventScreen({ circleId }: { circleId?: string }) {
   };
   if (circleId && circles.isLoading) return <Page title={t('events.create')}><Loading /></Page>;
   return (
-    <Page title={t('events.create')} back={{ href: circleId ? `/circles/${circleId}?tab=events` : '/circles/events', label: t('common.back') }}>
+    <Page title={t('events.create')} back={{ href: circleId ? `/circles/${circleId}?tab=events` : '/events', label: t('common.back') }}>
       <EventForm initial={initial} mode="new" busy={busy} onSubmit={(d, i, c) => void submit(d, i, c)} />
     </Page>
   );
@@ -168,7 +168,7 @@ export function EditEventScreen({ id }: { id: string }) {
     setInitial({ name: info.name, start: utcToZonedInput(info.start, tz), end: info.end ? utcToZonedInput(info.end, tz) : '', tz,
       where: info.where ?? '', description: info.description ?? '', circleId: s?.event.group_id ?? '' });
   }, [info, initial, s]);
-  const back = { href: `/circles/events/${id}`, label: t('common.back') };
+  const back = { href: `/events/${id}`, label: t('common.back') };
   if (q.isLoading) return <Page title={t('events.edit')} back={back}><Loading /></Page>;
   if (!s || !isHost(s.event, s.me)) return <Page title={t('events.edit')} back={back}><NotFound icon="lock" title={t('events.hostsOnly')} /></Page>;
   const submit = async (dr: Draft) => {
@@ -178,7 +178,7 @@ export function EditEventScreen({ id }: { id: string }) {
       await saveEvent(s.event, { ...info, name: dr.name, start: zonedToUtc(dr.start, dr.tz)!, end: dr.end ? zonedToUtc(dr.end, dr.tz)! : undefined, tz: dr.tz, where: dr.where, description: dr.description });
       void qc.invalidateQueries({ queryKey: ['events'] });
       toast({ message: t('events.saved') });
-      router.replace(`/circles/events/${id}`);
+      router.replace(`/events/${id}`);
     } catch { toast({ message: t('circles.ui.error'), tone: 'danger' }); setBusy(false); }
   };
   return (

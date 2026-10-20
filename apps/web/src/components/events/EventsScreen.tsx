@@ -30,7 +30,7 @@ export function EventCard({ s, circleName }: { s: EventSummary; circleName?: str
   const rsvp = s.me?.rsvp ?? null;
   return (
     <li>
-      <Link href={`/circles/events/${s.event.id}`} className="kc-card ke-card" data-cancelled={info?.cancelled || undefined}>
+      <Link href={`/events/${s.event.id}`} className="kc-card ke-card" data-cancelled={info?.cancelled || undefined}>
         <span className="ke-date" aria-hidden>
           {badge ? <><span className="ke-date-m">{badge.month}</span><span className="ke-date-d">{badge.day}</span></> : <Icon name="lock" />}
         </span>
@@ -72,7 +72,7 @@ export function EventsScreen() {
   const list = view === 'upcoming' ? split.upcoming.filter((s) => !needs.includes(s)) : split.past;
   return (
     <Page title={t('events.title')} description={t('events.description')}
-      actions={<ButtonLink href="/circles/events/new" variant="primary" icon="plus" size="sm">{t('events.create')}</ButtonLink>}
+      actions={<ButtonLink href="/events/new" variant="primary" icon="plus" size="sm">{t('events.create')}</ButtonLink>}
       context={<MoreLinks />}>
       {q.isLoading ? <Loading /> : (
         <>
@@ -88,7 +88,7 @@ export function EventsScreen() {
           {list.length ? <EventList items={list} circleNames={names} /> : (
             <Card><EmptyState icon="calendar" title={view === 'upcoming' ? t('events.emptyUpcoming') : t('events.emptyPast')}
               body={view === 'upcoming' ? t('events.emptyBody') : undefined}
-              actions={view === 'upcoming' ? <ButtonLink href="/circles/events/new" variant="primary" icon="plus">{t('events.create')}</ButtonLink> : undefined} /></Card>
+              actions={view === 'upcoming' ? <ButtonLink href="/events/new" variant="primary" icon="plus">{t('events.create')}</ButtonLink> : undefined} /></Card>
           )}
           {split.unknown.length ? (
             <section className="k-stack-sm" aria-labelledby="ke-sealed">
@@ -113,7 +113,7 @@ export function CircleEvents({ circle }: { circle: CircleRow }) {
   return (
     <div className="k-stack">
       <div className="k-row-wrap">
-        <ButtonLink href={`/circles/events/new?circle=${circle.id}`} variant="soft" icon="plus">{t('events.createInCircle')}</ButtonLink>
+        <ButtonLink href={`/events/new?circle=${circle.id}`} variant="soft" icon="plus">{t('events.createInCircle')}</ButtonLink>
       </div>
       {split.upcoming.length || split.unknown.length ? <EventList items={[...split.upcoming, ...split.unknown]} />
         : <Card><EmptyState icon="calendar" title={t('events.emptyUpcoming')} body={t('events.circleEmptyBody')} /></Card>}

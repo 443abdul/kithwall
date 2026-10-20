@@ -31,8 +31,6 @@ function RealtimeBridge() {
         () => { void qc.invalidateQueries({ queryKey: ['notifications'] }); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' },
         () => { void qc.invalidateQueries({ queryKey: ['friends'] }); void qc.invalidateQueries({ queryKey: ['requests'] }); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pokes' },
-        () => { void qc.invalidateQueries({ queryKey: ['pokes'] }); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
         (p) => {
           void qc.invalidateQueries({ queryKey: ['conversations'] });

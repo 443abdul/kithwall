@@ -12,7 +12,7 @@ export function AppGate({ children }: { children: ReactNode }) {
   const path = usePathname() ?? '/home';
   useEffect(() => {
     if (status === 'signed_out') router.replace(`/signin?next=${encodeURIComponent(path)}`);
-    else if (status === 'setup') router.replace('/welcome'); // v1 sign-up finishing (keys not created yet)
+    else if (status === 'setup') router.replace('/setup'); // keys not created yet, or the 6-digit code is still needed
   }, [status, path, router]);
   if (status === 'ready') return <AppShell>{children}</AppShell>;
   if (status === 'locked') return <UnlockScreen />;

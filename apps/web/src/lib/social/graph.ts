@@ -79,10 +79,3 @@ export function readRequestNote(f: FriendshipRow): string | null {
   } catch { return null; }
 }
 
-/** Requests I have sent that are still pending. */
-export async function sentRequests(): Promise<string[]> {
-  const rows = must(await sb().from('friendships').select('*').eq('status', 'pending').eq('requested_by', me())) as FriendshipRow[];
-  const ids = rows.map((r) => (r.user_a === me() ? r.user_b : r.user_a));
-  await people.ensure(ids);
-  return ids;
-}

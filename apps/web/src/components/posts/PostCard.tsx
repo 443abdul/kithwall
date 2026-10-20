@@ -21,7 +21,7 @@ import { useSession } from '@/lib/keys/session';
 import { usePeopleVersion, usePerson } from '@/lib/people';
 import { useFileUrl } from '@/lib/media';
 import type { LikeRow, PostPayload, PostRow } from '@/lib/types';
-import { AudienceTag, RelativeTime, RichText } from './bits';
+import { AudienceTag, NoteText, RelativeTime, RichText } from './bits';
 import { Comments, useComments } from './Comments';
 import { audienceOf, deletePostFully } from './data';
 import { Lightbox, LinkCard, PhotoGrid, VideoPlayer } from './Media';
@@ -40,7 +40,8 @@ export function PostCardSkeleton() {
   );
 }
 
-export function PostCard({ row, onRemoved }: { row: PostRow; onRemoved?: (id: string) => void }) {
+/** `expanded`: the post permalink (/post/[id]) shows the comments open. */
+export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; onRemoved?: (id: string) => void; expanded?: boolean }) {
   const t = useT();
   const toast = useToast();
   const qc = useQueryClient();
@@ -57,7 +58,7 @@ export function PostCard({ row, onRemoved }: { row: PostRow; onRemoved?: (id: st
   const [deleting, setDeleting] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [focusComment, setFocusComment] = useState(0);
-  const [showComments, setShowComments] = useState(false);
+  const [showComments, setShowComments] = useState(expanded);
 
   const likes = useQuery({ queryKey: likesKey('post', row.id), queryFn: () => fetchPostLikes('post', row.id) });
   const comments = useComments(row.id);
@@ -167,7 +168,7 @@ export function PostBody({ payload, onOpenPhoto }: { payload: PostPayload; onOpe
       {payload.note ? (
         <div className="k-post-note">
           <h3 dir="auto">{payload.note.title}</h3>
-          <RichText text={payload.note.body} clamp={500} />
+          <NoteText md={payload.note.body} />
         </div>
       ) : null}
       {text ? <RichText text={text} className="k-post-text" /> : null}

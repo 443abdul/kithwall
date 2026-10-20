@@ -21,9 +21,9 @@ export function MoreLinks() {
   return (
     <Card padding="flush">
       <List label={t('circles.more.title')}>
-        <li><ListItem icon="calendar" title={t('events.title')} subtitle={t('circles.more.events')} href="/circles/events" /></li>
+        <li><ListItem icon="calendar" title={t('events.title')} subtitle={t('circles.more.events')} href="/events" /></li>
         <li><ListItem icon="image" title={t('albums.title')} subtitle={t('circles.more.albums')} href="/albums" /></li>
-        <li><ListItem icon="edit" title={t('notes.title')} subtitle={t('circles.more.notes')} href="/circles/notes" /></li>
+        <li><ListItem icon="edit" title={t('notes.title')} subtitle={t('circles.more.notes')} href="/notes" /></li>
       </List>
     </Card>
   );

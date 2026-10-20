@@ -171,10 +171,3 @@ export async function fetchWall(userId: string, before?: string, pageSize = 20):
   await preparePosts(rows);
   return rows;
 }
-
-/** The friends-audience id of a wall owner (my own, or a friend's when posting on their wall). */
-export async function wallAudienceId(ownerId: string): Promise<string> {
-  if (ownerId === me()) return keyring.friendsAudience!.id;
-  const row = must(await sb().from('audiences').select('id').eq('owner_id', ownerId).eq('kind', 'friends').single()) as { id: string };
-  return row.id;
-}

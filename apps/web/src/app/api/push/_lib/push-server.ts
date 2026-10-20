@@ -80,17 +80,19 @@ export interface PushPayload {
   badge?: number;
 }
 
-/** Where a notification push opens (Kithwall 2 routes; there is no post permalink yet, see components/activity). */
+/** Where a notification push opens (Kithwall 2 routes; mirrors components/activity/activityModel.ts). */
 export function notifUrl(p: Pick<Plan, 'type' | 'object_kind' | 'object_id'>): string {
   const id = p.object_id && UUID_RE.test(p.object_id) ? p.object_id : null;
   if (id) {
     switch (p.object_kind) {
       case 'conversation': return `/messages/${id}`;
       case 'group': return `/circles/${id}`;
-      case 'event': return `/circles/events/${id}`;
+      case 'event': return `/events/${id}`;
+      case 'post': case 'comment': return `/post/${id}`;
     }
   }
   if (p.object_kind === 'recovery_request' || p.type === 'recovery_request' || p.type === 'recovery_trustee') return '/you/settings/security#trusted';
+  if (p.object_kind === 'photo') return '/albums';
   if (p.type === 'friend_request') return '/activity?tab=requests';
   return '/activity';
 }

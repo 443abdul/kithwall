@@ -8,7 +8,7 @@ import { incomingRequests, myFriendIds } from './friends';
 import { fetchNotifications } from './notifications';
 import { listConversations } from './messages';
 import { people } from './people';
-import { sb, must } from './supabase';
+import { sb } from './supabase';
 
 function useReady() { return useSession().status === 'ready'; }
 
@@ -41,19 +41,6 @@ export function useNotifications(limit = 30) {
 export function useConversations() {
   const ready = useReady();
   return useQuery({ queryKey: ['conversations'], enabled: ready, queryFn: () => listConversations() });
-}
-
-export function usePokes() {
-  const ready = useReady();
-  const { userId } = useSession();
-  return useQuery({
-    queryKey: ['pokes'], enabled: ready,
-    queryFn: async () => {
-      const rows = must(await sb().from('pokes').select('*').eq('to_id', userId!)) as { from_id: string; to_id: string; created_at: string }[];
-      await people.ensure(rows.map((r) => r.from_id));
-      return rows;
-    },
-  });
 }
 
 export function useAppSetting(key: 'public_audience_enabled' | 'signups_enabled') {

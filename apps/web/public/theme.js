@@ -29,8 +29,6 @@
   root.setAttribute('data-style', style);
   root.setAttribute('data-mode', resolved);
   root.setAttribute('data-mode-pref', mode);
-  root.setAttribute('data-theme', resolved);    // v1 pages
-  root.setAttribute('data-theme-pref', mode);   // v1 pages
 
   function themeColor() {
     var meta = document.querySelector('meta[name="theme-color"]');
@@ -51,9 +49,6 @@
       if (LOCALES.indexOf(base) >= 0) { locale = base; break; }
     }
   }
-  // v1 pages (deleted in phase 2) are English-only; keep them left-to-right.
-  var v2 = /^\/(?:$|(?:join|signin|home|circles|activity|you|design)(?:\/|$)|messages\/?$)/.test(location.pathname);
-  if (!v2) locale = 'en';
   root.setAttribute('lang', locale === 'zh' ? 'zh-Hans' : locale);
   root.setAttribute('dir', RTL[locale] ? 'rtl' : 'ltr');
   // Hide v2 text until a non-English catalogue has loaded (styles/v2/base.css; cleared by i18n/index.ts).

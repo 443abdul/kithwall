@@ -1,6 +1,6 @@
 'use client';
-// Dev-only (see app/(auth)/design): UI kit gallery + the shell screens rendered without a session.
-import { useState, type ReactElement } from 'react';
+// Dev-only (see app/(auth)/design): UI kit gallery, and the app shell rendered without a session (/design/shell).
+import { useState } from 'react';
 import Link from 'next/link';
 import { useT } from '@/i18n';
 import {
@@ -10,31 +10,21 @@ import {
 import { StylePicker } from '@/components/onboarding/StylePicker';
 import { LanguagePicker } from '@/components/onboarding/LanguagePicker';
 import { PassphraseField } from '@/components/onboarding/PassphraseField';
-import { AppShell } from './AppShell';
-import { ActivityScreen, CirclesScreen, HomeScreen, MessagesScreen, SettingsScreen, YouScreen } from './screens';
+import { AppShell, Page } from './AppShell';
 import { RecoveryNudge } from './Nudges';
 
-function HomeWithNudge() {
+function ShellDemo() {
+  const t = useT();
   return (
-    <>
-      <div className="k-page" style={{ paddingBlockEnd: 0 }}><RecoveryNudge force /></div>
-      <HomeScreen />
-    </>
+    <Page title={t('nav.home')}>
+      <RecoveryNudge force />
+      <Card><EmptyState icon="home" title={t('home.emptyTitle')} body={t('home.emptyBody')} /></Card>
+    </Page>
   );
 }
 
-const SCREENS: Record<string, () => ReactElement> = {
-  home: HomeWithNudge,
-  circles: CirclesScreen,
-  messages: MessagesScreen,
-  activity: ActivityScreen,
-  you: YouScreen,
-  'you/settings': SettingsScreen,
-};
-
 export function DesignPreview({ screen }: { screen: string }) {
-  const S = SCREENS[screen];
-  if (S) return <AppShell base="/design"><S /></AppShell>;
+  if (screen === 'shell') return <AppShell base="/design"><ShellDemo /></AppShell>;
   return <Gallery />;
 }
 
@@ -54,7 +44,7 @@ function Gallery() {
         <LanguagePicker compact />
       </header>
       <nav className="k-row-wrap" aria-label="Shell screens">
-        {Object.keys(SCREENS).map((s) => <ButtonLink key={s} size="sm" variant="soft" href={`/design/${s}`}>{s}</ButtonLink>)}
+        <ButtonLink size="sm" variant="soft" href="/design/shell">shell</ButtonLink>
         <ButtonLink size="sm" variant="soft" href="/">landing</ButtonLink>
         <ButtonLink size="sm" variant="soft" href="/join">join</ButtonLink>
         <ButtonLink size="sm" variant="soft" href="/signin">signin</ButtonLink>

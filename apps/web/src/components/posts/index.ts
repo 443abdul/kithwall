@@ -1,6 +1,6 @@
 // Kithwall 2 post components: the CONTRACT shared by every screen that shows posts
 // (Home, profiles, Circles, events). Owned and implemented by the feed & people work stream;
-// other streams import only from here. Phase 2 stubs until the real components land.
+// other streams import only from here.
 export type FeedScope =
   | { kind: 'home' }                          // connections + circles, chronological
   | { kind: 'profile'; userId: string }        // posts on/by a person

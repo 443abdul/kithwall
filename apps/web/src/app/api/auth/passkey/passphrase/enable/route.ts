@@ -1,0 +1,31 @@
+// POST /api/auth/passkey/passphrase/enable (Bearer) — after a passkey account set a passphrase (for
+// example while recovering on a device without passkeys), mark it as a passphrase account so that
+// sign-in with @handle + passphrase finds it (see ../lookup/route.ts). Only for email-less accounts
+// whose key bundle really has a passphrase wrap; v1 accounts sign in with their email instead.
+import { admin, callerFromRequest, json, needsMfa } from '@/lib/auth/server';
+import { fail } from '@/lib/auth/passkey-server';
+import { isSyntheticEmail } from '@/lib/auth/passkey-shared';
+
+export const dynamic = 'force-dynamic';
+
+export async function POST(req: Request) {
+  const caller = await callerFromRequest(req);
+  if (!caller) return fail('unknown', 401, 'Please sign in again.');
+  if (needsMfa(caller)) return fail('mfa_required', 403, 'Enter your authenticator code first.');
+  const u = caller.user;
+  if (!isSyntheticEmail(u.email)) return json({ ok: false });
+  try {
+    const db = admin();
+    const { data } = await db.from('key_bundles').select('bundle').eq('user_id', u.id).maybeSingle();
+    const hasWrap = typeof (data?.bundle as { amkByPassword?: unknown } | undefined)?.amkByPassword === 'string';
+    if (!hasWrap) return fail('unknown', 409, 'Set a passphrase first.');
+    if (u.app_metadata?.kw_account !== 'passphrase') {
+      const { error } = await db.auth.admin.updateUserById(u.id, { app_metadata: { ...u.app_metadata, kw_account: 'passphrase' } });
+      if (error) throw new Error(error.message);
+    }
+    return json({ ok: true });
+  } catch (e) {
+    console.error('passphrase enable', e);
+    return fail('network', 503, 'Please try again.');
+  }
+}

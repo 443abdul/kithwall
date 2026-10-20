@@ -15,7 +15,7 @@ import { useConversations, useNotifications, useRequests } from '@/lib/hooks';
 import { Icon } from '@/components/ui/Icon';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
-import { IconButton } from '@/components/ui/Button';
+import { AccountNotices } from './AccountNotices';
 import { PullToRefresh } from '@/components/PullToRefresh';
 import { Logo } from './Logo';
 import { NAV, activeNav, type NavKey } from './nav';
@@ -84,7 +84,8 @@ export function AppShell({ children, base = '' }: { children: ReactNode; base?: 
       <header className="k-topbar">
         <Link href={href('/home')} className="k-topbar-brand" aria-label={t('shell.homeLink')}><Logo size={30} /></Link>
         <div className="k-topbar-actions">
-          <IconButton icon="search" label={t('shell.search')} disabled title={t('shell.comingSoon')} />
+          {/* Finding people (by @handle, invite link or QR) lives on Connections; there is no content search (it's encrypted). */}
+          <Link href={href('/people')} className="k-iconbtn" aria-label={t('shell.search')} title={t('shell.search')}><Icon name="search" /></Link>
           <Link href={href('/you/settings')} className="k-iconbtn" aria-label={t('settings.title')} title={t('settings.title')}><Icon name="settings" /></Link>
         </div>
       </header>
@@ -100,7 +101,7 @@ export function AppShell({ children, base = '' }: { children: ReactNode; base?: 
         </div>
       </nav>
 
-      <div className="k-app-body">{children}</div>
+      <div className="k-app-body">{base ? null : <AccountNotices />}{children}</div>
 
       <nav className="k-tabbar" aria-label={t('shell.mainNav')}>
         <ul role="list">{navItems('tabs')}</ul>

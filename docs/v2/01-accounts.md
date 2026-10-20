@@ -1,6 +1,6 @@
 # Kithwall 2: accounts and keys
 
-Status: implemented (phase 1) · 2026-10-21 · see also `00-brief.md` §3 and §5, and `../03-spec.md` §3
+Status: implemented (phase 1; recovery from a @handle added at the end of phase 2) · 2026-10-21 · see also `00-brief.md` §3 and §5, and `../03-spec.md` §3
 
 Kithwall 2 accounts are **passkey-first**. There is no email and no password at sign-up. The account's
 encryption keys are created on the device and wrapped with a secret that only the passkey can produce
@@ -144,6 +144,45 @@ password and key bundle are untouched. Later sign-ins can use the passkey or the
   phrase that no longer works. `confirmRecoverySaved()` sets it again.
 - `accountStatus()`: recovery saved, verified notice email, passkey count, and whether a passphrase exists.
 
+### Recovering an account (`/recover`)
+Recovery starts from the **@handle**, because passkey and passphrase accounts have no email to prove.
+It works the same for v1 email accounts. Server: `app/api/recovery/*` and `lib/auth/recovery-server.ts`;
+browser: `lib/auth/recover-client.ts`; screens: `components/public/RecoverFlow.tsx`; migration
+`20261023000100_handle_recovery.sql`.
+
+1. `POST /api/recovery/account {handle}` returns the account id, a fresh single-use nonce
+   (`key_challenges`, purpose `recover_account`, 5 minutes; only the server can issue this purpose), the
+   **recovery parts** of the key bundle (`amkByRecovery`, `identityEnc`, `rkCommitment` and the public
+   keys, never `amkByPassword`) and how many trusted friends the account has (a count and the threshold,
+   never who they are).
+2. **Recovery key:** the device turns the 24 words into RK, checks it against `rkCommitment`, unwraps the
+   AMK and opens the identity keys. Nothing about the phrase leaves the device.
+   **Trusted friends:** the device makes an ephemeral X25519 key pair, keeps the private half in IndexedDB
+   (wrapped by a non-extractable WebCrypto key) and calls `POST /api/recovery/friends/start {handle, ephPub}`.
+   The service-role RPC `start_handle_recovery` opens the request (same waiting period, 24 h by default,
+   and 72 h expiry as before; at most 3 requests per account per day) and notifies the trusted friends
+   in-app; the owner's notice address gets a content-free email. Both sides see the same **six words**
+   (`verificationPhrase(requestId, ephPub)`); friends approve only after hearing them from the owner by
+   phone or in person. The device polls `POST /api/recovery/friends/status {requestId}` (the random request
+   id is the capability), which returns the friends' shares sealed to the ephemeral key and each friend's
+   signing key. With enough shares it rebuilds RK and opens the keys as above. The request can be cancelled
+   from that device (`/friends/cancel`) or from any device where the owner is signed in.
+3. The device signs the nonce with the identity key (`signChallenge`) and calls
+   `POST /api/recovery/finish {userId, challengeId, signature, requestId?}`. The server verifies the
+   signature against `profiles.sign_pub`, spends the challenge, marks the friends' request completed,
+   sends a content-free "your account was recovered" notice if there is a notice address, and mints a
+   one-time session token exactly like a passkey sign-in. Accounts with an authenticator app start at
+   `aal1` and must enter the 6-digit code before the keys are adopted.
+4. The person then sets a new way in: a new passkey (`addPasskey`), or a new passphrase (a password, for
+   v1 accounts) with `setNewPassword`. Email-less accounts that choose a passphrase are marked as
+   passphrase accounts (`POST /api/auth/passkey/passphrase/enable`, which checks the bundle really has a
+   passphrase wrap) so that @handle + passphrase sign-in finds them. After a trusted-friend recovery the
+   device makes a fresh recovery key and re-splits it to the same friends (spec §3.5 step 5).
+
+v1 accounts can still ask for a password-reset email (`/recover` → "Get a link by email"). The link lands
+on `/recover/reset`, which looks up the account's handle and continues with the same flow. Only there,
+because the link proves email control, is "I've lost everything" (delayed deletion) offered.
+
 ### Notice email (`setNoticeEmail`)
 This is optional and is **not** a sign-in identifier. `POST notice-email {email}` stores a SHA-256 hash of
 a random link token with the address (`notice_email_verifications`, 24 h, at most 5 per day). It then
@@ -163,6 +202,10 @@ one. They are never sent to a synthetic address.
 | `webauthn_challenges` | server only | server | challenge, intent, bound user / future user id / handle / WebAuthn user id, IP tag, expiry, used_at |
 | `account_security` | owner (RLS, MFA policy) | RPC `mark_recovery_saved`; server | recovery_saved_at, verified notice email |
 | `notice_email_verifications` | server only | server | token hash, address, expiry |
+
+Recovery from a @handle (`20261023000100_handle_recovery.sql`) adds the `recover_account` purpose to
+`key_challenges` (server-issued only: `create_key_challenge` refuses it), the `account_recovered` kind to
+`notice_emails`, and the service-role RPC `start_handle_recovery(owner, eph_pub)`.
 
 Server-only RPCs, executable by `service_role` only: `create_passkey_account`, `add_passkey`,
 `passkey_used` (the counter must increase unless it stays 0), `consume_webauthn_challenge` (atomic single
@@ -201,12 +244,35 @@ the authenticator model either.
   `kithwall.com`.
 - Losing every passkey with no recovery phrase saved and no trusted friends set up means the keys are
   gone. `removePasskey` stops people from doing this to themselves, and the UI should keep nudging.
-- Trusted-friend recovery (spec §3.5) begins with "prove email control". Passkey accounts have no email,
-  so for them recovery starts from a fresh sign-up session or the recovery phrase (see the open items
-  below).
 - Session minting relies on admin magic-link tokens. They are single use, expire, and are returned only
   after a verified passkey assertion. Nothing is emailed: synthetic addresses can't receive mail, and
   `generateLink` doesn't send.
+
+**Recovery from a @handle: the trade-off.** v1 recovery began with "prove email control" and only then
+asked for the recovery key or the friends. Email-less accounts can't do that first step, so Kithwall 2
+recovery starts from the public @handle (§3 "Recovering an account"). What changes:
+- **The recovery key alone is now the account.** Anyone holding the 24 words can take the account over
+  without also controlling an email inbox. In exchange, losing the email account (or never having one)
+  no longer locks anyone out, and the phrase is a random 256-bit secret, far stronger than the email
+  password it replaces as the first factor. Mitigations: accounts with an authenticator app still need
+  the 6-digit code; a content-free notice goes to the notice address; the nonce is single use, expires in
+  5 minutes and is rate-limited per IP and per account (12 an hour); the server only ever sees a
+  signature, never the phrase.
+- **The recovery wrap goes to anyone who types a handle.** It is encrypted under RK (256 random bits), so
+  offline guessing is hopeless. The passphrase wrap, protected only by a human-chosen secret, is never
+  returned.
+- **Anyone can start a trusted-friend request for any handle.** Before, an attacker first had to take over
+  the owner's email. Now the protections are the ones that always carried the weight: the waiting period
+  (24 h by default, an admin setting), a warning with a one-tap **cancel** on every device where the owner
+  is signed in (`components/shell/AccountNotices.tsx`) plus the notice email, the six words each friend
+  must hear by voice before approving, the k-of-n threshold, and at most 3 requests per account per day.
+  The cost is possible nuisance: friends may be asked about a request the owner didn't make. The help
+  pages and the friends' screen tell them to call the owner first and to do nothing if in doubt.
+- **The request id is a bearer capability** for reading the sealed responses and cancelling. It is random
+  (122 bits) and known only to the device that started the request, and the responses are useless
+  without that device's ephemeral private key.
+- **Account existence:** `/api/recovery/account` tells whether a handle exists, which the handle
+  availability check already reveals. It doesn't reveal the account type or who the trusted friends are.
 
 ## 6. Configuration
 
@@ -233,10 +299,15 @@ In development without `NEXT_PUBLIC_SITE_URL`, the rpID is the request host. It 
   email, passphrase accounts, v1 migration and ALTCHA single use. Run it with
   `E2E_BASE_URL=http://localhost:3011 npx vitest run src/lib/auth/passkey.e2e.test.ts`; it is skipped
   otherwise.
+- Recovery from a @handle: `apps/web/src/lib/auth/recovery-shared.test.ts` (the handed-out bundle has no
+  passphrase wrap, still opens with the phrase, and the signed proof verifies);
+  `supabase/tests/handle_recovery.test.sql` (server-only recovery challenges, `start_handle_recovery`
+  rights, waiting period, notifications, owner cancel, 3-a-day limit); and
+  `apps/web/src/lib/auth/recovery.e2e.test.ts` against a dev server (wrong and forged proofs refused,
+  session minted, challenge single use, no-trustees and unknown-request errors).
 
 ## 8. Open items
 
-- Trusted-friend recovery for email-less accounts needs a new way to start a request, for example from a
-  fresh passkey sign-up that claims the old handle.
 - Rate limits for unauthenticated routes are counted from the challenge store per IP tag. The handle and
-  lookup routes use per-instance memory. In production, add edge rate limiting (for example Vercel WAF).
+  lookup routes, and the recovery routes (`lib/auth/recovery-server.ts` tooMany), use per-instance memory.
+  In production, add edge rate limiting (for example Vercel WAF).

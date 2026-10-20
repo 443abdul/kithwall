@@ -33,7 +33,14 @@ export type AccountErrorCode =
   /** removePasskey(): it is the only way to unlock; save the recovery key (confirmRecoverySaved) first. */
   | 'last_unlock_method'
   /** The operator has paused sign-ups. */
-  | 'signups_closed';
+  | 'signups_closed'
+  // Account recovery from a @handle (lib/auth/recover-client.ts):
+  /** No account has this handle. */
+  | 'no_account'
+  /** The account has no trusted friends. */
+  | 'no_trustees'
+  /** The recovery key (typed, or rebuilt from friends' shares) doesn't open this account. */
+  | 'bad_recovery_key';
 
 export class AccountError extends Error {
   constructor(public code: AccountErrorCode, message?: string) { super(message ?? code); }

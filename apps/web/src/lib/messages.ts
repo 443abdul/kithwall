@@ -348,15 +348,6 @@ export async function markRead(conv: ConversationRow) {
   if (r.error) { try { localStorage.setItem(READ_KEY + conv.id, now); } catch { /* ignore */ } }
 }
 
-/** Display title: the conversation's name, or the other people's names. */
-export function conversationTitle(c: ConversationSummary, nameOf: (id: string) => string): string {
-  const n = readName(c);
-  if (n.ok && n.value) return n.value;
-  const others = c.members.filter((m) => m !== me());
-  if (!others.length) return 'Only you';
-  const names = others.map(nameOf);
-  return names.length <= 3 ? names.join(', ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} others`;
-}
 
 export { KeyWaitingError };
 

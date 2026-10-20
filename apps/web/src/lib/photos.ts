@@ -2,21 +2,20 @@
 // Albums and photos: each photo row has its own envelope (caption, file keys, tags) under the
 // album's audience (or its own audience). Comments on photos use the photo's content key (see
 // content.ts addComment).
-import { b64u, decryptBlob, decryptFile, deriveVaultKey, extractContentKey, openEnvelope, sealEnvelope, type EnvelopeHeader } from '@kithwall/crypto';
+import { b64u, decryptFile, extractContentKey, openEnvelope, sealEnvelope, type EnvelopeHeader } from '@kithwall/crypto';
 import { sb, must } from './supabase';
-import { amk, getSession, identity, me } from './keys/session';
+import { getSession, identity, me } from './keys/session';
 import { keyring } from './keys/keyring';
 import { people } from './people';
 import { linkMedia, photoPaths, uploadPhoto, deleteMedia } from './media';
 import { myInfo, notify, saveProfileInfo } from './friends';
 import type { Decrypted } from './content';
-import type { AudienceRow, FileRef, PhotoFiles } from './types';
+import type { FileRef, PhotoFiles } from './types';
 
 export interface AlbumRow { id: string; owner_id: string; is_public: boolean; audience_id: string | null; epoch: number | null; envelope: never; created_at: string; updated_at: string }
 export interface PhotoRow { id: string; album_id: string; owner_id: string; position: number; is_public: boolean; audience_id: string | null; epoch: number | null; envelope: never; created_at: string }
 export interface AlbumPayload { name: string; description?: string; location?: string; kind?: 'normal' | 'wall' | 'profile' | 'mobile'; coverId?: string }
 export interface PhotoPayload { files: PhotoFiles; caption?: string; tags: { id: string; x: number; y: number }[]; takenAt?: string }
-export interface TagNotice { photo_id: string; tagged_id: string; tagger_id: string; status: 'pending' | 'approved' | 'removed'; created_at: string }
 
 export type AlbumAudience = { kind: 'friends' } | { kind: 'self' } | { kind: 'audience'; id: string } | { kind: 'public' };
 
@@ -32,13 +31,6 @@ async function audienceFor(a: AlbumAudience) {
   return { audience_id: id, epoch, key, is_public: false };
 }
 
-/** The audience an existing row uses, as an AlbumAudience. */
-export function rowAudience(row: Pick<AlbumRow, 'is_public' | 'audience_id'>): AlbumAudience {
-  if (row.is_public) return { kind: 'public' };
-  if (row.audience_id === keyring.friendsAudience?.id) return { kind: 'friends' };
-  if (row.audience_id === keyring.selfAudience?.id) return { kind: 'self' };
-  return { kind: 'audience', id: row.audience_id! };
-}
 
 export async function createAlbum(payload: AlbumPayload, audience: AlbumAudience = { kind: 'friends' }): Promise<AlbumRow> {
   const id = crypto.randomUUID();
@@ -160,26 +152,9 @@ export async function removeTag(row: PhotoRow, payload: PhotoPayload, friendId: 
   return next;
 }
 
-/** The tagged person approves a pending tag. */
-export async function approveTag(photoId: string) {
-  must(await sb().from('tag_notices').update({ status: 'approved' }).match({ photo_id: photoId, tagged_id: me() }));
-}
 
-export async function tagNotices(photoId: string): Promise<TagNotice[]> {
-  return must(await sb().from('tag_notices').select('*').eq('photo_id', photoId)) as TagNotice[];
-}
 
-/** Tags waiting for my approval (newest first). */
-export async function myPendingTags(limit = 50): Promise<TagNotice[]> {
-  return must(await sb().from('tag_notices').select('*').eq('tagged_id', me()).eq('status', 'pending')
-    .order('created_at', { ascending: false }).limit(limit)) as TagNotice[];
-}
 
-/** Tags that should be shown: in the signed payload and not removed by the tagged person. */
-export function visibleTags(payload: PhotoPayload, notices: TagNotice[]) {
-  const removed = new Set(notices.filter((n) => n.status === 'removed').map((n) => n.tagged_id));
-  return payload.tags.filter((t) => !removed.has(t.id));
-}
 
 export async function deletePhoto(row: PhotoRow, payload?: PhotoPayload) {
   // Files first: the storage delete policy needs the media_objects link (which the photo row's
@@ -209,14 +184,6 @@ export async function deleteAlbum(album: AlbumRow, onProgress?: (msg: string) =>
   must(await sb().from('albums').delete().eq('id', album.id));
 }
 
-/** Save a new photo order (ids in display order). Only rows whose position changed are written. */
-export async function reorderPhotos(rows: PhotoRow[], orderedIds: string[]) {
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  for (let i = 0; i < orderedIds.length; i++) {
-    const r = byId.get(orderedIds[i]!);
-    if (r && r.position !== i) must(await sb().from('photos').update({ position: i }).eq('id', r.id));
-  }
-}
 
 // ---------------------------------------------------------------------------------------
 // Queries (RLS decides what the viewer may see).
@@ -229,12 +196,6 @@ export async function getAlbum(id: string): Promise<AlbumRow | null> {
   return row;
 }
 
-export async function getPhoto(id: string): Promise<PhotoRow | null> {
-  if (!UUID.test(id)) return null;
-  const row = must(await sb().from('photos').select('*').eq('id', id).maybeSingle()) as PhotoRow | null;
-  if (row) await people.ensure([row.owner_id]);
-  return row;
-}
 
 /** Albums I can read, most recently updated first. */
 export async function listAlbums(opts: { ownerId?: string; excludeOwner?: string; limit?: number } = {}): Promise<AlbumRow[]> {
@@ -259,27 +220,7 @@ export async function albumPhotos(albumId: string): Promise<PhotoRow[]> {
   return rows;
 }
 
-/** Cover photo (chosen cover, else the first readable photo) and the number of photos I can see. */
-export async function albumSummary(album: AlbumRow, coverId?: string): Promise<{ cover: PhotoRow | null; count: number }> {
-  const countQ = sb().from('photos').select('id', { count: 'exact', head: true }).eq('album_id', album.id);
-  let cover: PhotoRow | null = null;
-  if (coverId) cover = must(await sb().from('photos').select('*').eq('id', coverId).eq('album_id', album.id).maybeSingle()) as PhotoRow | null;
-  if (!cover) {
-    const first = must(await sb().from('photos').select('*').eq('album_id', album.id).order('position').limit(1)) as PhotoRow[];
-    cover = first[0] ?? null;
-  }
-  const { count } = await countQ;
-  return { cover, count: count ?? 0 };
-}
 
-/** Photos tagged with a user that I can see (via approved/pending tag notices I can read, or my own). */
-export async function taggedPhotos(userId: string, limit = 20): Promise<PhotoRow[]> {
-  const notices = must(await sb().from('tag_notices').select('photo_id').eq('tagged_id', userId).neq('status', 'removed').order('created_at', { ascending: false }).limit(limit)) as { photo_id: string }[];
-  if (!notices.length) return [];
-  const rows = must(await sb().from('photos').select('*').in('id', notices.map((n) => n.photo_id))) as PhotoRow[];
-  await people.ensure(rows.map((r) => r.owner_id));
-  return rows.sort((a, b) => b.created_at.localeCompare(a.created_at));
-}
 
 // ---------------------------------------------------------------------------------------
 // Profile pictures
@@ -292,19 +233,6 @@ export async function setProfilePicture(file: File | Blob): Promise<PhotoFiles> 
   return files;
 }
 
-/**
- * Use an existing photo as my profile picture. My own photos shared with all my friends (or public)
- * are re-used as-is; anything else (an Only-Me/list photo, or a friend's photo of me) is copied
- * into "Profile Pictures" so every friend can see the avatar.
- */
-export async function profilePictureFromPhoto(row: PhotoRow, payload: PhotoPayload): Promise<PhotoFiles> {
-  const shareable = row.owner_id === me() && (row.is_public || row.audience_id === keyring.friendsAudience?.id);
-  if (shareable) {
-    await linkMedia(photoPaths(payload.files), { photoId: row.id, profileAvatar: true });
-    return payload.files;
-  }
-  return setProfilePicture(await decryptedBlob(payload.files.big));
-}
 
 /** Save (or clear) the avatar in my encrypted profile info. */
 export async function saveAvatar(files: PhotoFiles | undefined) {
@@ -315,11 +243,6 @@ export async function saveAvatar(files: PhotoFiles | undefined) {
   await saveProfileInfo(next);
 }
 
-/** True when the given files are my current avatar. */
-export function isMyAvatar(files: PhotoFiles | undefined): boolean {
-  const a = myInfo()?.avatar;
-  return !!a && !!files && a.thumb.path === files.thumb.path;
-}
 
 /**
  * Download + decrypt a file into a Blob. (A blob: URL can't be fetch()ed back under our CSP,
@@ -351,36 +274,6 @@ export async function notifyPhotoOwner(row: PhotoRow, type: 'comment' | 'like', 
   await notify(row.owner_id, type, 'photo', row.id, preview?.slice(0, 120)).catch(() => undefined);
 }
 
-// ---------------------------------------------------------------------------------------
-// Friend lists (custom audiences) as album audiences. List names are vault-encrypted by their
-// owner (decryptBlob(deriveVaultKey(AMK), name_enc.b, aad)). The social work owns list creation;
-// we accept the AADs it may use and fall back to "Custom list".
-const LIST_AADS = (id: string) => [`list-name/${id}`, `audience-name/${id}`, `list/${id}`, `audience/${id}/name`, 'list-name', 'audience-name'];
-
-export function listName(row: Pick<AudienceRow, 'id' | 'owner_id' | 'name_enc'>): string | null {
-  if (!row.name_enc || row.owner_id !== getSession().userId) return null;
-  const enc = row.name_enc as string | { b?: string; blob?: string; name?: string };
-  const blob = typeof enc === 'string' ? enc : enc.b ?? enc.blob ?? null;
-  if (!blob) return null;
-  let vault: Uint8Array;
-  try { vault = deriveVaultKey(amk()); } catch { return null; }
-  for (const aad of LIST_AADS(row.id)) {
-    try {
-      const bytes = decryptBlob(vault, blob, aad);
-      const text = new TextDecoder().decode(bytes);
-      try { const j = JSON.parse(text) as { name?: string }; if (j && typeof j.name === 'string') return j.name; } catch { /* plain text */ }
-      return text;
-    } catch { /* try the next AAD */ }
-  }
-  return null;
-}
-
-/** My custom friend lists (for the album audience picker). */
-export async function myLists(): Promise<{ id: string; name: string }[]> {
-  const rows = must(await sb().from('audiences').select('id, owner_id, name_enc').eq('owner_id', me()).eq('kind', 'list')
-    .order('created_at')) as Pick<AudienceRow, 'id' | 'owner_id' | 'name_enc'>[];
-  return rows.map((r) => ({ id: r.id, name: listName(r) ?? 'Custom list' }));
-}
 
 /** Human label for a row's audience (from the viewer's point of view). */
 export function audienceLabel(row: Pick<AlbumRow, 'is_public' | 'audience_id' | 'owner_id'>, lists: { id: string; name: string }[] = []): string {

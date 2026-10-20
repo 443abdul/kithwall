@@ -22,10 +22,5 @@ export function when(iso: string | number | Date): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}${sameYear ? '' : `, ${d.getFullYear()}`} at ${clock(d)}`;
 }
 
-export function longDate(iso: string | Date): string {
-  const d = new Date(iso);
-  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-}
-
 export const plural = (n: number, word: string, pl?: string) => `${n} ${n === 1 ? word : pl ?? `${word}s`}`;
 export { MONTHS };

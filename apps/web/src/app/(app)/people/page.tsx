@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { PeopleScreen } from '@/components/people/PeopleScreen';
 
-// Connections, requests, invite link + QR, and find-by-handle (/search is still the v1 page).
+// Connections, requests, invite link + QR, and find-by-handle (the top-bar search and v1 /search lead here).
 export const metadata: Metadata = { title: 'Connections' };
 
 export default async function Page({ searchParams }: PageProps<'/people'>) {

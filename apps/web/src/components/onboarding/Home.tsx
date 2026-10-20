@@ -11,7 +11,7 @@ export function Home() {
   const router = useRouter();
   useEffect(() => {
     if (status === 'ready' || status === 'locked') router.replace('/home');
-    else if (status === 'setup') router.replace('/welcome');
+    else if (status === 'setup') router.replace('/setup');
   }, [status, router]);
   if (status === 'signed_out') return <Landing />;
   return <LoadingScreen />;

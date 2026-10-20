@@ -2,7 +2,7 @@
 // Client session: Supabase auth + the user's unlocked keys (held in memory only).
 // See docs/03-spec.md §3.1–3.4 and §3.13.
 import {
-  b64u, createKeyBundle, deriveFromPassword, deriveCacheKey, unlockWithPassword, unlockWithRecoveryPhrase,
+  b64u, createKeyBundle, deriveFromPassword, deriveCacheKey, unlockWithPassword,
   rewrapPassword, rotateRecovery, unlockWithAmk, unlockWithPrf, KithwallCryptoError,
   type Identity, type KeyBundle, type Unlocked,
 } from '@kithwall/crypto';
@@ -199,20 +199,6 @@ function unlockFromAmk(userId: string, bundle: KeyBundle, amkBytes: Uint8Array):
   return unlockWithAmk(userId, bundle, amkBytes);
 }
 
-export interface SignUpInput { email: string; password: string; altcha?: string; inviteCode?: string }
-
-export async function signUp(input: SignUpInput): Promise<{ needsConfirmation: boolean }> {
-  const { authKey } = await deriveFromPassword(input.email, input.password);
-  const redirect = `${location.origin}/welcome${input.inviteCode ? `?invite=${encodeURIComponent(input.inviteCode)}` : ''}`;
-  const res = await sb().auth.signUp({
-    email: input.email,
-    password: authKey,
-    options: { emailRedirectTo: redirect, data: input.altcha ? { altcha: input.altcha } : {} },
-  });
-  if (res.error) throw new Error(res.error.message);
-  return { needsConfirmation: !res.data.session };
-}
-
 export async function signIn(email: string, password: string, remember: boolean): Promise<SessionStatus> {
   set({ error: null });
   const { authKey, passwordKEK } = await deriveFromPassword(email, password);
@@ -267,17 +253,6 @@ export async function completeSetup(args: { password: string; username: string; 
   }
   await becomeReady(userId, email, u, false);
   return recoveryPhrase;
-}
-
-/** Forgot-password path: Supabase recovery session + 24 words → new password. */
-export async function recoverWithPhrase(phrase: string, newPassword: string): Promise<void> {
-  const { data } = await sb().auth.getUser();
-  const user = data.user;
-  if (!user?.email) throw new Error('Open the password reset link from your email first.');
-  const bundle = await fetchBundle(user.id);
-  if (!bundle) throw new Error('No keys found for this account');
-  const u = unlockWithRecoveryPhrase(user.id, bundle, phrase);
-  await setNewPassword(user.id, user.email, bundle, u, newPassword);
 }
 
 /** Used by password change, phrase recovery and trusted-friend recovery. */

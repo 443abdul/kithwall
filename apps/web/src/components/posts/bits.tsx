@@ -7,6 +7,8 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { getGroup, readGroup } from '@/lib/groups';
 import { useKeyringVersion } from '@/lib/hooks';
 import { usePeopleVersion } from '@/lib/people';
+import { renderMarkdown } from '@/components/auth/Markdown';
+import { safeLink } from '@/components/notes/format';
 import { segmentText, whenParts } from './logic';
 import type { AudienceBadge } from './data';
 
@@ -39,6 +41,27 @@ export function RichText({ text, clamp = 700, className }: { text: string; clamp
         <> <button type="button" className="k-linkbtn" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? t('feed.showLess') : t('feed.readMore')}
         </button></>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A note's body (Markdown subset, see components/notes/format.ts) rendered with the safe Markdown
+ * renderer: React elements only, links limited to http(s). Long notes are folded like RichText.
+ */
+export function NoteText({ md, clamp = 700 }: { md: string; clamp?: number }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const long = md.length > clamp;
+  const shown = long && !open ? `${md.slice(0, clamp).replace(/\s+\S*$/, '')}…` : md;
+  return (
+    <div className="k-post-note-body kn-prose" dir="auto">
+      {renderMarkdown(shown, safeLink)}
+      {long ? (
+        <p><button type="button" className="k-linkbtn" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? t('feed.showLess') : t('feed.readMore')}
+        </button></p>
       ) : null}
     </div>
   );

@@ -62,7 +62,7 @@ export async function readJson<T>(req: Request, maxBytes = 16_384): Promise<T | 
   try { return JSON.parse(text) as T; } catch { return null; }
 }
 
-export type ChallengePurpose = 'delete_account' | 'delete_all_posts' | 'change_recovery';
+export type ChallengePurpose = 'delete_account' | 'delete_all_posts' | 'change_recovery' | 'recover_account';
 
 /**
  * Proof-of-key (spec §3.9): the challenge must belong to the caller, match the purpose, be unused
@@ -111,7 +111,7 @@ export async function deleteAccountNow(userId: string): Promise<void> {
 }
 
 /** Records that a notice email was sent; returns false if it already was. */
-export async function claimNotice(kind: 'deletion_scheduled' | 'recovery_started', refId: string, userId: string): Promise<boolean> {
+export async function claimNotice(kind: 'deletion_scheduled' | 'recovery_started' | 'account_recovered', refId: string, userId: string): Promise<boolean> {
   const { error } = await admin().from('notice_emails').insert({ kind, ref_id: refId, user_id: userId });
   if (!error) return true;
   if (error.code === '23505') return false;
