@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { CirclesScreen } from '@/components/shell/screens';
+import { CirclesScreen } from '@/components/circles/CirclesScreen';
 
 export const metadata: Metadata = { title: 'Circles' };
 

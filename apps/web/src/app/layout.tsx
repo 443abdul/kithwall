@@ -5,6 +5,9 @@ import '../styles/v2/base.css';
 import '../styles/v2/components.css';
 import '../styles/v2/shell.css';
 import '../styles/v2/onboarding.css';
+import '../styles/v2/feed.css';
+import '../styles/v2/messages.css';
+import '../styles/v2/circles.css';
 import { Providers } from '@/components/Providers';
 
 export const metadata: Metadata = {

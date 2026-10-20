@@ -118,11 +118,12 @@ export function commentHeader(c: Pick<CommentRow, 'id' | 'author_id' | 'post_id'
   return { v: 1, type: 'comment', id: c.id, author: c.author_id, wall: (c.post_id ?? c.photo_id)!, audience: 'self' };
 }
 
-export async function addComment(parent: { postId?: string; photoId?: string; contentKey: Uint8Array | null }, text: string): Promise<CommentRow> {
+export async function addComment(parent: { postId?: string; photoId?: string; contentKey: Uint8Array | null }, text: string, replyTo?: string): Promise<CommentRow> {
   const id = crypto.randomUUID();
   const base = { id, author_id: me(), post_id: parent.postId ?? null, photo_id: parent.photoId ?? null };
   const header = commentHeader(base);
-  const payload: CommentPayload = { text };
+  // Kithwall 2: the comment it replies to (one level of threading) travels inside the ciphertext.
+  const payload: CommentPayload = replyTo ? { text, replyTo } : { text };
   const envelope = parent.contentKey
     ? sealWithContentKey({ header, payload, contentKey: deriveSubkey(parent.contentKey, 'comment', id), signPriv: identity().signPriv })
     : sealEnvelope({ header: { ...header, audience: 'public' }, payload, signPriv: identity().signPriv });

@@ -25,6 +25,10 @@ export interface EmailPrefs {
 
 export interface Settings {
   chatVisible: boolean;
+  /** Kithwall 2: show/share "Seen" (default off; mirrored to privacy_prefs so the server can enforce it). */
+  readReceipts: boolean;
+  /** Kithwall 2: send and show typing indicators (default off). */
+  typingIndicator: boolean;
   defaultAudience: DefaultAudience;
   email: EmailPrefs;
   language: 'en-US';
@@ -32,6 +36,8 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   chatVisible: true,
+  readReceipts: false,
+  typingIndicator: false,
   defaultAudience: 'friends',
   email: { activity: false, friendRequests: true, messages: false, security: true },
   language: 'en-US',
@@ -50,6 +56,8 @@ function readMirror(): Settings {
     if (typeof m.chatVisible === 'boolean') s.chatVisible = m.chatVisible;
     else if (localStorage.getItem(LEGACY_CHAT) === 'false') s.chatVisible = false;
     if (m.defaultAudience === 'friends' || m.defaultAudience === 'self' || m.defaultAudience === 'public') s.defaultAudience = m.defaultAudience;
+    if (typeof m.readReceipts === 'boolean') s.readReceipts = m.readReceipts;
+    if (typeof m.typingIndicator === 'boolean') s.typingIndicator = m.typingIndicator;
   } catch { /* SSR or storage blocked */ }
   return s;
 }
@@ -57,7 +65,9 @@ function readMirror(): Settings {
 function publish(next: Settings) {
   current = next;
   try {
-    localStorage.setItem(MIRROR, JSON.stringify({ chatVisible: next.chatVisible, defaultAudience: next.defaultAudience }));
+    localStorage.setItem(MIRROR, JSON.stringify({
+      chatVisible: next.chatVisible, defaultAudience: next.defaultAudience, readReceipts: next.readReceipts, typingIndicator: next.typingIndicator,
+    }));
     localStorage.setItem(LEGACY_CHAT, String(next.chatVisible));
   } catch { /* ignore */ }
   listeners.forEach((l) => l());
@@ -131,7 +141,9 @@ export async function loadSettings(force = false): Promise<Settings> {
   if (!force && loadedFor === s.userId) return current;
   const data = await vaultGet<Partial<Settings>>('settings');
   loadedFor = s.userId;
-  publish(merge(data ?? { chatVisible: current.chatVisible, defaultAudience: current.defaultAudience }));
+  publish(merge(data ?? {
+    chatVisible: current.chatVisible, defaultAudience: current.defaultAudience, readReceipts: current.readReceipts, typingIndicator: current.typingIndicator,
+  }));
   return current;
 }
 

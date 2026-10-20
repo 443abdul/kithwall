@@ -80,23 +80,19 @@ export interface PushPayload {
   badge?: number;
 }
 
-function notifUrl(p: Plan): string {
+/** Where a notification push opens (Kithwall 2 routes; there is no post permalink yet, see components/activity). */
+export function notifUrl(p: Pick<Plan, 'type' | 'object_kind' | 'object_id'>): string {
   const id = p.object_id && UUID_RE.test(p.object_id) ? p.object_id : null;
   if (id) {
     switch (p.object_kind) {
-      case 'post': return `/post/${id}`;
-      case 'photo': return `/photos/${id}`;
-      case 'group': return `/groups/${id}`;
-      case 'event': return `/events/${id}`;
       case 'conversation': return `/messages/${id}`;
-      case 'page': return `/pages/${id}`;
+      case 'group': return `/circles/${id}`;
+      case 'event': return `/circles/events/${id}`;
     }
   }
-  if (p.object_kind === 'recovery_request') return '/settings/security#trusted';
-  if (p.type === 'friend_request') return '/requests';
-  if (p.type === 'poke') return '/pokes';
-  if (p.type === 'game') return '/games/kithville';
-  return p.actor.username ? `/${encodeURIComponent(p.actor.username)}` : '/notifications';
+  if (p.object_kind === 'recovery_request' || p.type === 'recovery_request' || p.type === 'recovery_trustee') return '/you/settings/security#trusted';
+  if (p.type === 'friend_request') return '/activity?tab=requests';
+  return '/activity';
 }
 
 /** Build the push for a plan, or null when there's nothing to say. */

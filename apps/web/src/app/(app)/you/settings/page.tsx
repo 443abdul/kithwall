@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import { SettingsScreen } from '@/components/shell/screens';
+import { SettingsIndex } from '@/components/settings/SettingsIndex';
 
 export const metadata: Metadata = { title: 'Settings' };
 
 export default function Page() {
-  return <SettingsScreen />;
+  return <SettingsIndex />;
 }

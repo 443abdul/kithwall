@@ -111,6 +111,11 @@ Scheduled deletions ("I've lost everything", 72-hour wait) are carried out by
 If the web cron never runs, the database job deletes overdue accounts after one extra day (rows and keys
 are gone; the encrypted blobs left in storage are unreadable but should be swept — rerun the cron).
 
+Stories (24 h) expire in the database: expired stories are hidden at once and a `pg_cron` job
+(`kithwall-story-maintenance`, every 10 minutes) deletes the rows. Their encrypted photos stay in the
+bucket, unreadable to everyone but the author, until `GET /api/cron/stories` removes them (daily in
+`vercel.json`; on a Vercel plan with hourly crons, `"30 * * * *"` keeps the bucket tidier).
+
 ### Push notifications (Web Push)
 
 1. Generate the keys once (keep them; rotating the VAPID pair silently breaks every existing

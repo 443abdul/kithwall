@@ -14,7 +14,13 @@ export const NAV: NavItem[] = [
   { key: 'you', href: '/you', icon: 'you', label: 'nav.you' },
 ];
 
+/** Sections without a tab of their own, highlighted under the tab they belong to. */
+export const NAV_SECTIONS: { prefix: string; key: NavKey }[] = [
+  { prefix: '/albums', key: 'you' }, // circles stream: albums live under You (circle albums open from a circle)
+];
+
 export function activeNav(path: string): NavKey | null {
   for (const n of NAV) if (path === n.href || path.startsWith(`${n.href}/`)) return n.key;
+  for (const s of NAV_SECTIONS) if (path === s.prefix || path.startsWith(`${s.prefix}/`)) return s.key;
   return null;
 }

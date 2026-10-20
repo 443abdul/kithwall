@@ -54,11 +54,33 @@ const P: Record<string, ReactElement> = {
   phone: <><rect x="6.5" y="2.5" width="11" height="19" rx="2.5" /><path d="M10.5 18.5h3" /></>,
   layout: <><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M9 4.5v15M9 10h11.5" /></>,
   bolt: <path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z" />,
+  // feed & people (phase 2)
+  video: <><rect x="3" y="6" width="13" height="12" rx="2.5" /><path d="M16 10.5l5-3v9l-5-3" /></>,
+  comment: <path d="M20 11.5c0 4-3.6 7-8 7-1.1 0-2.2-.2-3.1-.5L4 19.5l1.3-3.6C4.5 14.6 4 13.1 4 11.5c0-4 3.6-7 8-7s8 3 8 7z" />,
+  trash: <><path d="M4.5 7h15M10 7V4.5h4V7" /><path d="M6.5 7l1 12.5h9l1-12.5" /><path d="M10 11v5M14 11v5" /></>,
+  flag: <><path d="M5.5 21V4" /><path d="M5.5 4.5h11l-2.5 4 2.5 4h-11" /></>,
+  send: <><path d="M4 12l16-8-6 16-2.5-6.5z" /><path d="M11.5 13.5 20 4" /></>,
+  play: <path d="M8 5.5v13l11-6.5z" />,
+  pause: <path d="M8 5.5v13M16 5.5v13" />,
+  userPlus: <><circle cx="10" cy="8.5" r="4" /><path d="M3 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6" /><path d="M19 7v6M16 10h6" /></>,
+  userCheck: <><circle cx="10" cy="8.5" r="4" /><path d="M3 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6" /><path d="M16 10l2 2 4-4" /></>,
+  block: <><circle cx="12" cy="12" r="8.5" /><path d="M6 18 18 6" /></>,
+  reply: <><path d="M10 6.5 4.5 12l5.5 5.5" /><path d="M4.5 12H14a5.5 5.5 0 0 1 5.5 5.5V19" /></>,
+  clock: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></>,
+  // circles, events, albums & notes (phase 2)
+  download: <><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" /><path d="M5 19.5h14" /></>,
+  mapPin: <><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></>,
+  bold: <path d="M7.5 5h5.5a3.5 3.5 0 0 1 0 7H7.5zM7.5 12h6.5a3.5 3.5 0 0 1 0 7H7.5z" />,
+  italic: <path d="M10.5 5h7M6.5 19h7M14 5l-4 14" />,
+  heading: <path d="M6 5v14M18 5v14M6 12h12" />,
+  listBullet: <><path d="M10 7h10M10 12h10M10 17h10" /><circle cx="5" cy="7" r="1" /><circle cx="5" cy="12" r="1" /><circle cx="5" cy="17" r="1" /></>,
+  quote: <path d="M5 17.5c0-4 1.5-7 5-9M5 12.5h4v5H5zM14 17.5c0-4 1.5-7 5-9M14 12.5h4v5h-4z" />,
+  book: <><path d="M4.5 5.5A2 2 0 0 1 6.5 3.5h12v15h-12a2 2 0 0 0-2 2z" /><path d="M4.5 20.5a2 2 0 0 1 2-2h12v2.5" /><path d="M9 8h6" /></>,
 };
 
 export type IconName = keyof typeof P;
 
-const FLIP = new Set<string>(['back', 'forward', 'logout']);
+const FLIP = new Set<string>(['back', 'forward', 'logout', 'reply', 'send']);
 
 export interface IconProps {
   name: IconName;

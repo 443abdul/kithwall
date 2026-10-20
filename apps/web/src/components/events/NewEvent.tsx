@@ -25,7 +25,7 @@ export function NewEvent() {
         onCancel={() => router.push('/events')}
         onSubmit={async (info) => {
           const id = await createEvent({ info, isPublic: isPublic && !!pub.data, invite });
-          await qc.invalidateQueries({ queryKey: ['events'] });
+          void qc.invalidateQueries({ queryKey: ['events'] });
           router.push(`/events/${id}`);
         }}
         extra={<>

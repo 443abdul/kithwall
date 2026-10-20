@@ -30,7 +30,7 @@ export async function POST(req: Request) {
 
   const r = await sendAll(subs.map((sub) => ({
     sub, urgency: 'high' as const,
-    payload: { v: 1 as const, title: 'Kithwall', kind: 'test' as const, body: 'Push notifications are working on this device.', tag: 'kw-test', url: '/settings/account#push' },
+    payload: { v: 1 as const, title: 'Kithwall', kind: 'test' as const, body: 'Push notifications are working on this device.', tag: 'kw-test', url: '/you/settings/notifications#push' },
   })));
   return json({ ok: true, ...r });
 }

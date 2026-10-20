@@ -12,7 +12,10 @@ import { sb } from '../supabase';
 import { amk, me, useSession } from '../keys/session';
 
 interface VaultDoc { v: 1; messages?: MessagesPrefs; [section: string]: unknown }
-export interface MessagesPrefs { /** conversation id → ISO time it was archived */ hidden?: Record<string, string> }
+export interface MessagesPrefs {
+  /** conversation id → ISO time it was archived */ hidden?: Record<string, string>;
+  /** conversation id → ISO time it was pinned (Kithwall 2) */ pinned?: Record<string, string>;
+}
 
 const aad = (uid: string) => `vault/${uid}`;
 
@@ -82,6 +85,30 @@ export function useSetArchived() {
   const { userId } = useSession();
   return async (convId: string, archived: boolean) => {
     const prefs = await setArchived(convId, archived);
+    qc.setQueryData(['vault', 'messages', userId], prefs);
+  };
+}
+
+/** Pin or unpin a conversation to the top of my list (encrypted in the vault, like archiving). */
+export async function setPinned(convId: string, pinned: boolean): Promise<MessagesPrefs> {
+  const doc = await updateVault((d) => {
+    const pins = { ...(d.messages?.pinned ?? {}) };
+    if (pinned) pins[convId] = new Date().toISOString(); else delete pins[convId];
+    const entries = Object.entries(pins).sort((a, b) => b[1].localeCompare(a[1])).slice(0, 50);
+    return { ...d, v: 1, messages: { ...(d.messages ?? {}), pinned: Object.fromEntries(entries) } };
+  });
+  return doc.messages ?? {};
+}
+
+export function isPinned(prefs: MessagesPrefs | undefined, convId: string): boolean {
+  return !!prefs?.pinned?.[convId];
+}
+
+export function useSetPinned() {
+  const qc = useQueryClient();
+  const { userId } = useSession();
+  return async (convId: string, pinned: boolean) => {
+    const prefs = await setPinned(convId, pinned);
     qc.setQueryData(['vault', 'messages', userId], prefs);
   };
 }

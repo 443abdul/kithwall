@@ -99,7 +99,7 @@ export function MessagesScreen() {
           icon="sealed"
           title={t('messages.emptyTitle')}
           body={t('messages.emptyBody')}
-          actions={<ButtonLink href="/messages/inbox" variant="soft" iconEnd="forward">{t('messages.openClassic')}</ButtonLink>}
+          actions={<ButtonLink href="/messages/new" variant="soft" icon="plus">{t('messages.newChat')}</ButtonLink>}
         />
       </Card>
     </Page>
@@ -160,8 +160,10 @@ export function YouScreen() {
   );
 }
 
+// The live settings index is components/settings/SettingsIndex.tsx; this copy feeds the /design preview.
 export function SettingsScreen() {
   const t = useT();
+  const href = useShellHref();
   useDocumentTitle(t('settings.title'));
   return (
     <Page title={t('settings.title')} back={{ href: '/you', label: t('common.back') }}>
@@ -187,9 +189,9 @@ export function SettingsScreen() {
         <h2 id="account-h" className="k-section-title">{t('settings.account')}</h2>
         <Card padding="flush">
           <List>
-            <li><ListItem icon="shield" title={t('settings.security')} subtitle={t('settings.classicNote')} href="/settings/security" /></li>
-            <li><ListItem icon="eye" title={t('settings.privacy')} subtitle={t('settings.classicNote')} href="/settings/privacy" /></li>
-            <li><ListItem icon="activity" title={t('settings.notifications')} subtitle={t('settings.classicNote')} href="/settings/account" /></li>
+            <li><ListItem icon="key" title={t('settings.security.title')} subtitle={t('settings.security.sub')} href={href('/you/settings/security')} /></li>
+            <li><ListItem icon="eye" title={t('settings.privacy.title')} subtitle={t('settings.privacy.sub')} href={href('/you/settings/privacy')} /></li>
+            <li><ListItem icon="activity" title={t('settings.notifications.title')} subtitle={t('settings.notifications.sub')} href={href('/you/settings/notifications')} /></li>
           </List>
         </Card>
       </section>

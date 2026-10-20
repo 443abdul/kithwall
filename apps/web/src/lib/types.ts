@@ -60,7 +60,7 @@ export interface PostPayload {
   tagged?: Uuid[];
 }
 
-export interface CommentPayload { text: string }
+export interface CommentPayload { text: string; /** Kithwall 2: id of the comment this replies to (one level). */ replyTo?: string }
 
 export interface ProfileInfo {
   name: string;

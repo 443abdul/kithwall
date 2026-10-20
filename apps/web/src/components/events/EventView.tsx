@@ -74,13 +74,13 @@ export function EventView({ id }: { id: string }) {
     if (!e || !mine || maint.current === `${e.id}:${e.envelope_epoch}:${isAdmin}`) return;
     maint.current = `${e.id}:${e.envelope_epoch}:${isAdmin}`;
     void (async () => {
-      if (d && !d.ok && d.reason === 'waiting') { await keyring.load().catch(() => undefined); await qc.invalidateQueries({ queryKey: ['event', id] }); }
+      if (d && !d.ok && d.reason === 'waiting') { await keyring.load().catch(() => undefined); void qc.invalidateQueries({ queryKey: ['event', id] }); }
       if (!isAdmin || e.is_public) return;
       const rotated = await rotateIfNeeded(e.audience_id).catch(() => false);
       if (rotated && info) {
         const fresh = await getEvent(e.id);
         if (fresh) await updateEvent(fresh, info).catch(() => undefined);
-        await qc.invalidateQueries({ queryKey: ['event', id] });
+        void qc.invalidateQueries({ queryKey: ['event', id] });
       }
       await deliverMemberKeys(e.audience_id).catch(() => 0);
     })();
@@ -104,7 +104,7 @@ export function EventView({ id }: { id: string }) {
   const by = (k: Rsvp | null) => guests.filter((g) => g.status === 'active' && (g.rsvp ?? null) === k);
   const rb = (k: Rsvp, label: string) => (
     <button type="button" className={`btn${mine?.rsvp === k ? ' b' : ''}`} aria-pressed={mine?.rsvp === k} disabled={act.busy || !mine}
-      onClick={() => void act.run(async () => { await setRsvp(e.audience_id, k); await refresh(); await qc.invalidateQueries({ queryKey: ['events'] }); })}>{label}</button>
+      onClick={() => void act.run(async () => { await setRsvp(e.audience_id, k); await refresh(); void qc.invalidateQueries({ queryKey: ['events'] }); })}>{label}</button>
   );
   const gl = (title: string, arr: GuestRow[]) => arr.length ? (
     <RightBox title={`${title} (${arr.length})`} key={title}>
@@ -124,7 +124,7 @@ export function EventView({ id }: { id: string }) {
         <>
           <div className="sub"><span>Edit Event</span></div>
           <EventForm initial={ev} submitLabel="Save Changes" isPublic={e.is_public} onCancel={() => setEditing(false)}
-            onSubmit={async (next) => { await updateEvent(e, next); setEditing(false); await refresh(); await qc.invalidateQueries({ queryKey: ['events'] }); }} />
+            onSubmit={async (next) => { await updateEvent(e, next); setEditing(false); await refresh(); void qc.invalidateQueries({ queryKey: ['events'] }); }} />
         </>
       ) : (
         <div className="cm-evhead">
@@ -166,11 +166,11 @@ export function EventView({ id }: { id: string }) {
       {inviting && <InviteDialog e={e} info={ev} guests={guests} onClose={() => setInviting(false)} onDone={() => void refresh()} />}
       {managing && <ManageGuests e={e} info={ev} guests={guests} onClose={() => setManaging(false)} onDone={() => void refresh()} />}
       {ask === 'cancel' && <ConfirmDialog title="Cancel Event" confirmLabel="Cancel Event" onClose={() => setAsk(null)}
-        onConfirm={async () => { await updateEvent(e, { ...ev, cancelled: true }); await refresh(); await qc.invalidateQueries({ queryKey: ['events'] }); }}>
+        onConfirm={async () => { await updateEvent(e, { ...ev, cancelled: true }); await refresh(); void qc.invalidateQueries({ queryKey: ['events'] }); }}>
         Guests will see that <b>{ev.name}</b> has been cancelled.
       </ConfirmDialog>}
       {ask === 'delete' && <ConfirmDialog title="Delete Event" confirmLabel="Delete Event" onClose={() => setAsk(null)}
-        onConfirm={async () => { await deleteEvent(e); await qc.invalidateQueries({ queryKey: ['events'] }); router.push('/events'); }}>
+        onConfirm={async () => { await deleteEvent(e); void qc.invalidateQueries({ queryKey: ['events'] }); router.push('/events'); }}>
         This permanently deletes the event, its guest list and wall for everyone.
       </ConfirmDialog>}
     </AppPage>

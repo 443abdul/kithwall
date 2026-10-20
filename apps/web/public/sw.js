@@ -15,14 +15,27 @@ const BADGE = '/icons/badge-72.png';
 self.addEventListener('install', () => { self.skipWaiting(); });
 self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()); });
 
+/** Kithwall 2 routes for links in pushes queued by older servers (v1 paths). */
+function v2Path(p) {
+  if (p === '/notifications' || p.indexOf('/notifications?') === 0) return '/activity';
+  if (p === '/requests' || p === '/pokes') return '/activity?tab=requests';
+  if (p === '/messages/inbox') return '/messages';
+  if (p.indexOf('/settings/security') === 0) return '/you/settings/security' + p.slice('/settings/security'.length);
+  if (p.indexOf('/settings/account') === 0) return '/you/settings/notifications' + p.slice('/settings/account'.length);
+  if (p.indexOf('/groups/') === 0) return '/circles/' + p.slice('/groups/'.length);
+  if (p.indexOf('/events/') === 0) return '/circles/events/' + p.slice('/events/'.length);
+  if (p.indexOf('/post/') === 0 || p.indexOf('/photos/') === 0) return '/activity';
+  return p;
+}
+
 /** Only same-origin paths may be opened from a notification. */
 function safePath(u) {
   try {
-    const url = new URL(typeof u === 'string' ? u : '/', self.location.origin);
-    if (url.origin !== self.location.origin) return '/';
-    return url.pathname + url.search + url.hash;
+    const url = new URL(typeof u === 'string' ? u : '/activity', self.location.origin);
+    if (url.origin !== self.location.origin) return '/activity';
+    return v2Path(url.pathname + url.search + url.hash);
   } catch (_) {
-    return '/';
+    return '/activity';
   }
 }
 

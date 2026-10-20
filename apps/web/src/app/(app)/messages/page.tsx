@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import { MessagesScreen } from '@/components/shell/screens';
+import { ChatPlaceholder } from '@/components/messages/ChatPlaceholder';
 
 export const metadata: Metadata = { title: 'Messages' };
 
 export default function Page() {
-  return <MessagesScreen />;
+  return <ChatPlaceholder />;
 }

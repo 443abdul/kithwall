@@ -44,7 +44,7 @@ export function EventsHome() {
   const past = readable.filter((x) => isPast(x.d.value, now)).sort((a, b) => Date.parse(b.d.value.start) - Date.parse(a.d.value.start));
   const invites = upcoming.filter((x) => x.m && !x.m.rsvp && x.e.host_id !== userId && !x.d.value.cancelled);
 
-  const rsvp = (e: EventRow, r: Rsvp) => act.run(async () => { await setRsvp(e.audience_id, r); await qc.invalidateQueries({ queryKey: ['events'] }); });
+  const rsvp = (e: EventRow, r: Rsvp) => act.run(async () => { await setRsvp(e.audience_id, r); void qc.invalidateQueries({ queryKey: ['events'] }); });
 
   const row = ({ e, d, m }: { e: EventRow; d: { value: EventInfo }; m?: MemberRow }, actions = true) => (
     <div className="it" key={e.id}>

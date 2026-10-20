@@ -33,6 +33,10 @@ export interface ConversationSummary extends ConversationRow {
   last: MessageRow | null;
   /** When I joined (null for the owner / unknown). */
   joinedAt: string | null;
+  /** 'conversation' for chats; 'group' for a circle's chat (it uses the circle's own audience). */
+  kind: 'conversation' | 'group';
+  /** The circle (groups.id) for a circle chat. */
+  circleId: string | null;
 }
 
 /** Things that happen in a conversation, shown inline ("Alice added Bob."). */
@@ -41,7 +45,13 @@ export type ConversationEvent =
   | { kind: 'added'; ids: string[] }
   | { kind: 'removed'; ids: string[] }
   | { kind: 'left' };
-export interface ChatPayload extends MessagePayload { event?: ConversationEvent }
+export interface ChatPayload extends MessagePayload {
+  event?: ConversationEvent;
+  /** Quoted message (Kithwall 2): the id plus its author, so the quote survives if it scrolls out of the loaded page. */
+  replyTo?: { id: string; author: string };
+  /** Link preview made through the no-log proxy, encrypted with the message (like a post's link). */
+  link?: { url: string; title?: string; description?: string; site?: string; image?: FileRef };
+}
 
 export const MAX_MESSAGE_CHARS = 20_000;
 export const dmKey = (a: string, b: string) => (a < b ? `${a}:${b}` : `${b}:${a}`);
@@ -102,7 +112,7 @@ export async function conversationKey(conv: Pick<ConversationRow, 'audience_id'>
   let row = await audienceRow(conv.audience_id);
   let key = keyring.get(row.id, row.current_epoch);
   if (!key) { await keyring.load(); key = keyring.get(row.id, row.current_epoch); }
-  if (!key && row.owner_id === me()) {
+  if (!key && row.owner_id === me() && row.kind === 'conversation') {
     // The owner is the only key authority: if even the owner has no key for this epoch, nobody
     // does (e.g. an interrupted rotation), so it's safe to move to a fresh epoch.
     if (await rotateConversation(conv)) {
@@ -275,14 +285,19 @@ interface MemberRow { audience_id: string; member_id: string; role: string; stat
 async function summarize(convs: ConversationRow[]): Promise<ConversationSummary[]> {
   if (!convs.length) return [];
   const auds = convs.map((c) => c.audience_id);
-  const [members, audRows, previews] = await Promise.all([
+  const [members, audRows, previews, reads, circles] = await Promise.all([
     sb().from('audience_members').select('audience_id, member_id, role, status, last_read_at, created_at').in('audience_id', auds).eq('status', 'active'),
-    sb().from('audiences').select('id, owner_id, current_epoch, name_enc').in('id', auds),
+    sb().from('audiences').select('id, owner_id, kind, current_epoch, name_enc').in('id', auds),
     sb().rpc('conversation_previews', { conv_ids: convs.map((c) => c.id) }),
+    // My private read markers (migration 20261022000500; co-members can't see them).
+    sb().from('conversation_reads').select('conversation_id, last_read_at').in('conversation_id', convs.map((c) => c.id)),
+    sb().from('groups').select('id, audience_id').in('audience_id', auds),
   ]);
   const ms = must(members) as MemberRow[];
-  const as = must(audRows) as Pick<AudienceRow, 'id' | 'owner_id' | 'current_epoch' | 'name_enc'>[];
+  const as = must(audRows) as Pick<AudienceRow, 'id' | 'owner_id' | 'kind' | 'current_epoch' | 'name_enc'>[];
   const last = new Map((must(previews) as MessageRow[]).map((m) => [m.conversation_id, m]));
+  const readAt = new Map(((reads.data ?? []) as { conversation_id: string; last_read_at: string }[]).map((r) => [r.conversation_id, r.last_read_at]));
+  const circleOf = new Map(((circles.data ?? []) as { id: string; audience_id: string }[]).map((g) => [g.audience_id, g.id]));
   const self = me();
   const out = convs.map((c): ConversationSummary => {
     const mine = ms.filter((m) => m.audience_id === c.audience_id);
@@ -290,8 +305,8 @@ async function summarize(convs: ConversationRow[]): Promise<ConversationSummary[
     const ids = new Set(mine.map((m) => m.member_id));
     if (a) ids.add(a.owner_id);
     const myRow = mine.find((m) => m.member_id === self);
-    // Older conversations have no owner membership row; keep that read marker on this device.
-    const lastReadAt = myRow?.last_read_at ?? localReadAt(c.id);
+    // Private marker first; then the pre-2026-10-22 shared column; then this device's own marker.
+    const lastReadAt = latest(readAt.get(c.id) ?? null, myRow?.last_read_at ?? null, localReadAt(c.id));
     const lm = last.get(c.id) ?? null;
     const unread = !!lm && lm.sender_id !== self && (!lastReadAt || lastReadAt < lm.created_at);
     return {
@@ -299,6 +314,8 @@ async function summarize(convs: ConversationRow[]): Promise<ConversationSummary[
       ownerId: a?.owner_id ?? null, epoch: a?.current_epoch ?? 1, nameEnc: a?.name_enc ?? null, isDm: !!c.dm_key,
       admins: [...new Set([...(a ? [a.owner_id] : []), ...mine.filter((m) => m.role === 'admin').map((m) => m.member_id)])],
       joinedAt: a?.owner_id === self ? null : myRow?.created_at ?? null,
+      kind: a?.kind === 'group' ? 'group' : 'conversation',
+      circleId: circleOf.get(c.audience_id) ?? null,
     };
   });
   await people.ensure(out.flatMap((c) => [...c.members, ...(c.last ? [c.last.sender_id] : [])]));
@@ -317,6 +334,8 @@ export async function getConversation(id: string): Promise<ConversationSummary |
   return (await summarize([c]))[0] ?? null;
 }
 
+const latest = (...xs: (string | null)[]): string | null => xs.reduce<string | null>((a, b) => (b && (!a || b > a) ? b : a), null);
+
 const READ_KEY = 'kw.read.';
 function localReadAt(convId: string): string | null {
   try { return localStorage.getItem(READ_KEY + convId); } catch { return null; }
@@ -324,8 +343,9 @@ function localReadAt(convId: string): string | null {
 
 export async function markRead(conv: ConversationRow) {
   const now = new Date().toISOString();
-  const r = await sb().from('audience_members').update({ last_read_at: now }).match({ audience_id: conv.audience_id, member_id: me() }).select();
-  if (!r.data?.length) { try { localStorage.setItem(READ_KEY + conv.id, now); } catch { /* ignore */ } }
+  // Private read marker (owner-only; shared with co-members only as an opt-in read receipt).
+  const r = await sb().from('conversation_reads').upsert({ conversation_id: conv.id, user_id: me(), last_read_at: now });
+  if (r.error) { try { localStorage.setItem(READ_KEY + conv.id, now); } catch { /* ignore */ } }
 }
 
 /** Display title: the conversation's name, or the other people's names. */

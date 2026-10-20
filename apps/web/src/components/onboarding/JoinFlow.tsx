@@ -83,10 +83,13 @@ export function JoinFlow() {
 
   useDocumentTitle(t('join.docTitle'));
 
-  // Already signed in (and not because we just created the account here): go to the app.
+  // Already signed in (and not because we just created the account here): go to the app. An invite
+  // link opened while signed in goes to Connections, which offers to send the inviter a request.
   useEffect(() => {
-    if (!creating.current && (status === 'ready' || status === 'locked')) router.replace('/home');
-  }, [status, router]);
+    if (!creating.current && (status === 'ready' || status === 'locked')) {
+      router.replace(invite ? `/people?invite=${encodeURIComponent(invite)}` : '/home');
+    }
+  }, [status, router, invite]);
 
   useEffect(() => {
     let live = true;

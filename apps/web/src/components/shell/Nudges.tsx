@@ -32,8 +32,8 @@ export function RecoveryNudge({ force }: { force?: boolean }) {
         <h2>{t('nudge.recoveryTitle')}</h2>
         <p>{t('nudge.recoveryBody')}</p>
         <div className="k-row-wrap">
-          {/* The v1 recovery-key screen until Safety centre lands (phase 3). */}
-          <ButtonLink href="/settings/security#recovery-key" variant="primary" size="sm">{t('nudge.recoveryCta')}</ButtonLink>
+          {/* Settings → Security → Recovery key (Kithwall 2). */}
+          <ButtonLink href="/you/settings/security#recovery-key" variant="primary" size="sm">{t('nudge.recoveryCta')}</ButtonLink>
           <Button variant="ghost" size="sm" onClick={dismissRecoveryNudge}>{t('common.later')}</Button>
         </div>
       </div>
@@ -82,7 +82,7 @@ export function PushNudge() {
             <Button variant="primary" size="sm" busy={busy} onClick={() => void enable()}>{t('nudge.pushCta')}</Button>
             <Button variant="ghost" size="sm" onClick={close}>{t('common.notNow')}</Button>
           </div>
-        ) : <Link href="/settings/account#install">{t('nudge.pushIosHow')}</Link>}
+        ) : <Link href="/you/settings/notifications#install">{t('nudge.pushIosHow')}</Link>}
       </div>
       <IconButton icon="close" size="sm" label={t('common.dismiss')} onClick={close} />
     </Card>
