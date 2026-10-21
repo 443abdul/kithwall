@@ -20,6 +20,6 @@ describe('help content', () => {
   it('links only to Kithwall pages that exist in v2', () => {
     const links = HELP.flatMap((s) => s.items.flatMap((i) => [...en[i.a]!.matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]!)));
     expect(links.length).toBeGreaterThan(10);
-    for (const l of links) expect(l, l).toMatch(/^\/(people|you|activity|circles|home|notes|recover|signin|legal)\b/);
+    for (const l of links) expect(l, l).toMatch(/^\/(people|you|activity|circles|home|notes|recover|signin|legal|donate)\b/);
   });
 });

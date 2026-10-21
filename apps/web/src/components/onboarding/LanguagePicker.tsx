@@ -21,7 +21,9 @@ export function LanguagePicker({ compact, label }: { compact?: boolean; label?: 
         >
           <option value="auto">{compact ? LOCALE_NAMES[locale].native : t('settings.languageAuto')}</option>
           {LOCALES.map((l) => (
-            <option key={l} value={l} lang={l}>{LOCALE_NAMES[l].native}{l !== 'en' ? ` — ${LOCALE_NAMES[l].english}` : ''}</option>
+            // The compact pill shows the selected option's text, so the chosen language is its native name only
+            // ("العربية — Arabic" was cut off at 375 px); the open list keeps the English names as a guide.
+            <option key={l} value={l} lang={l}>{LOCALE_NAMES[l].native}{l !== 'en' && !(compact && l === pref) ? ` — ${LOCALE_NAMES[l].english}` : ''}</option>
           ))}
         </select>
         <Icon name="down" />

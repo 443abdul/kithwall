@@ -244,8 +244,10 @@ device.
 - **Metadata** (section 4.3) is visible to us.
 - **Public** content is not encrypted.
 - **The app is delivered by our servers.** A malicious or compromised version of the app could
-  steal keys. We reduce this risk by loading no third-party scripts and by making the source code
-  available for independent security review on request.
+  steal keys. We reduce this risk by loading no third-party scripts and by publishing the source code:
+  Kithwall is open source under the GNU Affero General Public License v3.0 (AGPL-3.0) at
+  [github.com/443abdul/kithwall](https://github.com/443abdul/kithwall), and the app links to the exact
+  version it is running, so anyone can review what it does.
 - **Your device.** Malware or a browser extension with access to the page can read what you see.
 - **Your friends** can screenshot or copy what you share with them.
 - **No forward secrecy yet.** If someone later steals your main account key, they could decrypt

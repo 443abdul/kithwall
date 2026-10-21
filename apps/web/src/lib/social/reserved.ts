@@ -3,7 +3,7 @@
 // supabase/migrations/20261018000200_social.sql (the database rejects them at sign-up).
 export const RESERVED_USERNAMES: readonly string[] = [
   'about', 'account', 'admin', 'ads', 'advertising', 'album', 'albums', 'api', 'app', 'apps', 'auth',
-  'blog', 'callback', 'careers', 'chat', 'developers', 'edit', 'event', 'events', 'explore',
+  'blog', 'callback', 'careers', 'chat', 'developers', 'donate', 'edit', 'event', 'events', 'explore',
   'favicon.ico', 'feed', 'friend', 'friends', 'game', 'games', 'group', 'groups', 'help', 'home',
   'icon.svg', 'invite', 'invites', 'kithville', 'kithwall', 'legal', 'list', 'lists', 'login', 'logout',
   'mail', 'menu', 'manifest.webmanifest', 'message', 'messages', 'mod', 'moderation', 'moderator', 'new',

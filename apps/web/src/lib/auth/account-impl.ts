@@ -203,11 +203,19 @@ export const accountApi: AccountApi = {
     } catch (e) {
       if (e instanceof KithwallCryptoError || /incorrect|invalid/i.test((e as Error).message)) throw new AccountError('wrong_passphrase', (e as Error).message);
       if (/rate|too many/i.test((e as Error).message)) throw new AccountError('rate_limited');
+      // A v1 sign-up whose email was never confirmed (it never got keys or content): not a network problem.
+      if (/not confirmed/i.test((e as Error).message)) throw new AccountError('unknown', 'This email address was never confirmed.');
       throw new AccountError('network', (e as Error).message);
     }
     if (outcome === 'mfa') return 'mfa';
     if (outcome === 'ready') return 'ready';
-    throw new AccountError('unknown', 'This account has no keys yet. Finish setting it up in Kithwall Classic first.');
+    // Signed in, but the v1 account never created its keys (/welcome was never finished): /setup does that now
+    // (docs/v2/02-cleanup.md §1). A full navigation, so /setup starts from the stored session.
+    if (getSession().status === 'setup') {
+      window.location.assign('/setup');
+      return new Promise<never>(() => undefined);
+    }
+    throw new AccountError('unknown', 'This account is not set up yet.');
   },
 
   async addPasskey(label) {

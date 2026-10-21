@@ -2,6 +2,7 @@
   "name": "@kithwall/mobile",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "Kithwall for Android and iOS: a Capacitor shell around the deployed web app (docs/v2/05-native.md).",
   "scripts": {
     "www": "node scripts/prepare.mjs",

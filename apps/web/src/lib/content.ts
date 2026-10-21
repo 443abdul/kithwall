@@ -43,6 +43,7 @@ export interface CreatePostArgs {
 async function resolveAudience(args: CreatePostArgs): Promise<{ audienceId: string | null; epoch: number | null; key: Uint8Array | null }> {
   const a = args.audience ?? { kind: 'friends' };
   if (a.kind === 'public') return { audienceId: null, epoch: null, key: null };
+  await keyring.whenReady(); // just after sign-in the default audiences are still loading
   let audienceId: string;
   if (a.kind === 'audience') audienceId = a.id;
   else if (a.kind === 'self') audienceId = keyring.selfAudience!.id;

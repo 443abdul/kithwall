@@ -1,7 +1,7 @@
 'use client';
 // Public transparency report (/transparency): requests received, what we can and can't hand over, a
 // dated statement the owner re-checks (lib/transparency/facts.ts, docs/v2/03-transparency.md), where the
-// source code stands, and a static version of the data map. Works signed in or out.
+// source code lives (open source, AGPL-3.0), and a static version of the data map. Works signed in or out.
 import Link from 'next/link';
 import { useFormat, useT } from '@/i18n';
 import { Card } from '@/components/ui/Card';
@@ -11,6 +11,7 @@ import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { useSession } from '@/lib/keys/session';
 import { CATEGORIES, STATIC_MAP, TABLES } from '@/lib/transparency/datamap';
 import { TRANSPARENCY_FACTS as F } from '@/lib/transparency/facts';
+import { COMMIT_SHA, REPO_URL, shortCommit, sourceUrl } from '@/lib/source';
 import { OutsideDatabase } from './PrivacyReport';
 
 export function TransparencyScreen() {
@@ -125,6 +126,10 @@ export function TransparencyScreen() {
           <section id="source" aria-labelledby="source-h" className="k-stack">
             <h2 id="source-h">{t('transparency.page.sourceTitle')}</h2>
             <p>{t('transparency.page.sourceBody')}</p>
+            <ul role="list" className="k-tr-source-links">
+              <li><a href={REPO_URL} target="_blank" rel="noopener noreferrer"><Icon name="code" />{t('transparency.page.sourceRepo')}</a></li>
+              {COMMIT_SHA ? <li><a href={sourceUrl()} target="_blank" rel="noopener noreferrer"><Icon name="link" /><span>{t('transparency.page.sourceVersion')} <span className="k-ltr k-muted" translate="no">({shortCommit()})</span></span></a></li> : null}
+            </ul>
             <p className="k-small k-muted">{t('transparency.page.sourceAudit')}</p>
           </section>
         </div>

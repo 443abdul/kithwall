@@ -2,15 +2,16 @@
 // Settings → Your data (Kithwall 2): what the server knows about me (/you/privacy-report), export
 // everything (decrypted on this device into a ZIP, lib/export.ts) and delete the account (the device signs a
 // one-time server nonce with the identity key, so a stolen session alone can't do it; works the same for
-// passkey, passphrase and v1 accounts).
-import { useState } from 'react';
+// passkey, passphrase and v1 accounts). Accounts from before Kithwall 2 also get "Kithwall Classic data": the
+// v1-only data that Kithwall 2 no longer shows, until those tables are retired (docs/v2/07-launch.md §5).
+import { useEffect, useState } from 'react';
 import { signChallenge } from '@kithwall/crypto';
 import { useFormat, useT, type MessageKey } from '@/i18n';
 import { identity, signOut, useSession } from '@/lib/keys/session';
 import { deviceStore } from '@/lib/keys/device';
 import { sb } from '@/lib/supabase';
 import { authedPost } from '@/lib/auth/api';
-import { buildExport, saveBlob, type ExportStep, type ExportSummary } from '@/lib/export';
+import { buildClassicExport, buildExport, hasClassicData, saveBlob, type ClassicSummary, type ExportStep, type ExportSummary } from '@/lib/export';
 import { Button, ButtonLink } from '@/components/ui/Button';
 import { Callout } from '@/components/ui/Callout';
 import { Dialog } from '@/components/ui/Dialog';
@@ -21,8 +22,12 @@ const STEP: Record<ExportStep, MessageKey> = {
   profile: 'transparency.export.step.profile', posts: 'transparency.export.step.posts', comments: 'transparency.export.step.comments',
   albums: 'transparency.export.step.albums', photos: 'transparency.export.step.photos', stories: 'transparency.export.step.stories',
   circles: 'transparency.export.step.circles', events: 'transparency.export.step.events', messages: 'transparency.export.step.messages',
-  settings: 'transparency.export.step.settings', inventory: 'transparency.export.step.inventory', packaging: 'transparency.export.step.packaging',
+  settings: 'transparency.export.step.settings', inventory: 'transparency.export.step.inventory', classic: 'classic.export.step',
+  packaging: 'transparency.export.step.packaging',
 };
+
+// The day the classic tables are dropped (set at launch, e.g. 2026-12-01); without it the notice has no date.
+const CLASSIC_RETIRES = process.env.NEXT_PUBLIC_CLASSIC_RETIRE_DATE ?? '';
 
 function KnowsSection() {
   const t = useT();
@@ -73,6 +78,44 @@ function ExportSection() {
             {progress.done && progress.total ? t('settings.data.exportProgress', { done: progress.done, total: progress.total }) : t('settings.data.exportPreparing')}
           </span>
         ) : null}
+      </div>
+    </Section>
+  );
+}
+
+function ClassicSection() {
+  const t = useT();
+  const f = useFormat();
+  const [has, setHas] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<ClassicSummary | null>(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    let live = true;
+    hasClassicData().then((v) => { if (live) setHas(v); }, () => undefined);
+    return () => { live = false; };
+  }, []);
+  if (!has) return null;
+  const retires = /^\d{4}-\d{2}-\d{2}$/.test(CLASSIC_RETIRES) ? new Date(`${CLASSIC_RETIRES}T12:00:00Z`) : null;
+  async function go() {
+    setBusy(true); setErr(false); setDone(null);
+    try {
+      const r = await buildClassicExport();
+      saveBlob(r.blob, r.filename);
+      setDone(r.summary);
+    } catch { setErr(true); } finally { setBusy(false); }
+  }
+  return (
+    <Section id="classic" title={t('classic.title')}
+      description={`${t('classic.body')}${retires ? ` ${t('classic.deadline', { date: f.date(retires, { dateStyle: 'long' }) })}` : ''}`}>
+      {err ? <Callout tone="danger">{t('classic.failed')}</Callout> : null}
+      {done ? (
+        <Callout tone="success">
+          {t('classic.done', { pokes: done.pokes, pages: done.pages + done.likedPages, questions: done.questions + done.votes, lists: done.lists })}
+        </Callout>
+      ) : null}
+      <div className="k-row-wrap">
+        <Button variant="secondary" icon="share" busy={busy} onClick={() => void go()}>{t('classic.cta')}</Button>
       </div>
     </Section>
   );
@@ -135,6 +178,7 @@ export function DataSettings() {
     <SettingsPage title={t('settings.data.title')} description={t('settings.data.description')}>
       <KnowsSection />
       <ExportSection />
+      <ClassicSection />
       <DeleteSection />
     </SettingsPage>
   );

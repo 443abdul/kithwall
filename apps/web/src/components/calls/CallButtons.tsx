@@ -1,10 +1,13 @@
 'use client';
-// Voice and video call buttons for a chat header (1:1, group and circle chats up to 8 people).
+// Voice and video call buttons for a chat header (1:1, group and circle chats up to 8 people). In a narrow
+// header (phones, the split view) the two buttons collapse into one "Call" menu so the chat title keeps
+// its room; which one shows is decided by a container query on .k-chat-head (styles/v2/calls.css).
 import { useT } from '@/i18n';
 import type { ConversationSummary } from '@/lib/messages';
 import { calls, MAX_CALL_PEOPLE, useCall } from '@/lib/calls/engine';
 import { isLive } from '@/lib/calls/machine';
 import { useSession } from '@/lib/keys/session';
+import { Menu } from '@/components/posts/Menu';
 import { CallIcon } from './CallIcon';
 
 export function CallButtons({ conversation: c }: { conversation: ConversationSummary }) {
@@ -26,5 +29,22 @@ export function CallButtons({ conversation: c }: { conversation: ConversationSum
       </button>
     );
   };
-  return <span className="k-call-headbtns">{btn(false)}{btn(true)}</span>;
+  const menuLabel = t('calls.callMenu');
+  return (
+    <>
+      <span className="k-call-headbtns">{btn(false)}{btn(true)}</span>
+      <span className="k-call-headcompact">
+        {disabled ? (
+          <button type="button" className="k-iconbtn k-call-headbtn" disabled aria-label={`${menuLabel} (${why})`} title={why ?? menuLabel}>
+            <CallIcon name="phone" />
+          </button>
+        ) : (
+          <Menu label={menuLabel} buttonClassName="k-iconbtn k-call-headbtn" trigger={<CallIcon name="phone" />} items={[
+            { label: t('calls.voiceCall'), iconNode: <CallIcon name="phone" />, onSelect: () => void calls.place(c, false) },
+            { label: t('calls.videoCall'), iconNode: <CallIcon name="video" />, onSelect: () => void calls.place(c, true) },
+          ]} />
+        )}
+      </span>
+    </>
+  );
 }

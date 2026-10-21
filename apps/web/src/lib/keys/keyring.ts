@@ -20,9 +20,36 @@ class Keyring {
   friendsAudience: AudienceRow | null = null;
   selfAudience: AudienceRow | null = null;
   version = 0;
+  /** True once start() has loaded our keys and default audiences (writers need them; see whenReady). */
+  ready = false;
+  private readyWaiters = new Set<() => void>();
+  private readyListeners = new Set<() => void>();
 
   subscribe(l: () => void) { this.listeners.add(l); return () => { this.listeners.delete(l); }; }
   private bump() { this.version++; people.invalidateInfos(); this.listeners.forEach((l) => l()); }
+
+  /**
+   * Resolves once the keyring is ready. The session turns 'ready' a moment before start() has loaded the
+   * keys (and stop() + start() run again on every unlock), so anything that encrypts right after sign-in
+   * waits here instead of failing on a missing audience. Rejects after `timeoutMs`.
+   */
+  whenReady(timeoutMs = 20_000): Promise<void> {
+    if (this.ready) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const done = () => { clearTimeout(timer); this.readyWaiters.delete(done); resolve(); };
+      const timer = setTimeout(() => { this.readyWaiters.delete(done); reject(new Error('Keys are not ready yet')); }, timeoutMs);
+      this.readyWaiters.add(done);
+    });
+  }
+
+  /** Notified when `ready` changes (separate from subscribe(), which also invalidates every query). */
+  subscribeReady(l: () => void) { this.readyListeners.add(l); return () => { this.readyListeners.delete(l); }; }
+
+  private setReady(v: boolean) {
+    this.ready = v;
+    if (v) [...this.readyWaiters].forEach((w) => w());
+    this.readyListeners.forEach((l) => l());
+  }
 
   async start(userId: string, u: Unlocked) {
     this.userId = userId; this.u = u; this.keys.clear();
@@ -31,6 +58,7 @@ class Keyring {
     await this.load();
     await this.ensureOwn(this.friendsAudience!);
     await this.ensureOwn(this.selfAudience!);
+    this.setReady(true);
     await this.deliverPending().catch((e) => console.warn('key delivery', e));
     this.channel = sb().channel(`keys:${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audience_keys', filter: `recipient_id=eq.${userId}` },
@@ -44,6 +72,7 @@ class Keyring {
   }
 
   async stop() {
+    if (this.ready) this.setReady(false);
     if (this.channel) await sb().removeChannel(this.channel);
     if (this.timer) clearInterval(this.timer);
     this.channel = null; this.timer = null; this.keys.clear(); this.u = null; this.userId = null;
@@ -92,6 +121,7 @@ class Keyring {
 
   /** Current key for an audience we can write to (creating it if we own the audience). */
   async current(aud: string): Promise<{ key: Uint8Array; epoch: number }> {
+    await this.whenReady();
     const row = must(await sb().from('audiences').select('*').eq('id', aud).single()) as AudienceRow;
     let key = this.get(aud, row.current_epoch);
     if (!key) {

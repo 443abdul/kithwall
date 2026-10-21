@@ -17,6 +17,11 @@ export function useKeyringVersion(): number {
   return useSyncExternalStore((l) => keyring.subscribe(l), () => keyring.version, () => 0);
 }
 
+/** True once the keyring has loaded this account's keys (shortly after sign-in / unlock). */
+export function useKeyringReady(): boolean {
+  return useSyncExternalStore((l) => keyring.subscribeReady(l), () => keyring.ready, () => false);
+}
+
 export function useRequests() {
   const ready = useReady();
   return useQuery({

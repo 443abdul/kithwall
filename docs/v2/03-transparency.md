@@ -78,8 +78,8 @@ keeps 7 days. Keep that ≥ the longest `kw.rate_limit` window (currently 1 day)
 ## 3. Transparency report (`/transparency`, public)
 
 Requests received (all zero), a dated statement, what we can and can't hand over, a static data map, the
-"outside the database" section and where the source code stands ("not public yet; available on request for
-security review; will be published"). Linked from the public footer and Settings → Your data.
+"outside the database" section and the source code: open source under AGPL-3.0, with links to the repository and
+to the exact commit that is running (`lib/source.ts`, commit inlined at build time from `VERCEL_GIT_COMMIT_SHA`). Linked from the public footer and Settings → Your data.
 
 ### Owner checklist (TODO)
 
@@ -91,9 +91,10 @@ security review; will be published"). Linked from the public footer and Settings
       advice on the statement's wording for your jurisdiction before launch.
 - [ ] Fill `7 days (Supabase Pro plan)` / `1 hour (Vercel Hobby plan runtime logs)` in the privacy policy; the pages say "the short
       period set by our plan" and point there.
-- [ ] When the repository is published or an audit is done, replace the "Source code and audits" text
-      (`transparency.page.sourceBody` / `sourceAudit`) with the real links.
-- [ ] The existing footer tagline says "open source"; make it match the source-code status above.
+- [ ] **Make the GitHub repository public at launch**: the transparency page, footer, Settings → Help & about,
+      privacy policy and /donate all say Kithwall is open source and link to it.
+- [ ] When an independent audit is done, replace `transparency.page.sourceAudit` with a link to its report.
+- [x] Footer tagline, landing, About and this page all say "open source (AGPL-3.0)" (phase 6).
 
 ## 4. Export and delete
 

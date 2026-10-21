@@ -19,7 +19,7 @@ import { clean, linkPostMedia } from '@/lib/feed/feed';
 import { firstUrl } from '@/lib/feed/linkMeta';
 import { loadLinkDraft, normalizeUrl, toPayloadLink, uploadPreparedImage, type LinkDraft } from '@/lib/feed/linkPreview';
 import { getGroup, groupAudience, listGroups, myMemberships, readGroup } from '@/lib/groups';
-import { useKeyringVersion } from '@/lib/hooks';
+import { useKeyringReady, useKeyringVersion } from '@/lib/hooks';
 import { KeyWaitingError } from '@/lib/keys/keyring';
 import { useSession } from '@/lib/keys/session';
 import { deleteMedia, MAX_PHOTO_BYTES, photoPaths, uploadPhoto } from '@/lib/media';
@@ -252,7 +252,9 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
     : audience.kind === 'circle' ? (circles.find((c) => c.id === audience.circleId)?.name ?? t('feed.audienceCircle'))
     : t('feed.audienceEvent');
   const audienceIcon = audience.kind === 'only_me' ? 'lock' : audience.kind === 'circle' ? 'circles' : audience.kind === 'event' ? 'calendar' : 'users';
-  const canPost = !busy && (!!text.trim() || photos.length > 0 || !!video || !!link);
+  // Right after sign-in the keyring is still loading this account's keys: wait instead of failing.
+  const keysReady = useKeyringReady();
+  const canPost = !busy && keysReady && (!!text.trim() || photos.length > 0 || !!video || !!link);
 
   return (
     <Card className="k-composer">
@@ -311,6 +313,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
         ) : null}
         <PostOptionChips value={options} disabled={busy} onChange={setOptions} onOpen={() => setOptionsOpen(true)} />
         {err ? <p className="k-error" role="alert"><Icon name="alert" />{err}</p> : null}
+        {!keysReady ? <p className="k-muted k-small k-composer-wait" role="status"><Icon name="lock" />{t('feed.preparingKeys')}</p> : null}
 
         <div className="k-composer-bar">
           <input ref={photoInput} type="file" accept="image/*" multiple hidden onChange={(e) => addPhotos(e.target.files)} />
@@ -320,14 +323,16 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
           <IconButton icon="clock" label={t('schedule.options')} disabled={busy} aria-haspopup="dialog"
             variant={options.disappear || options.schedule ? 'soft' : 'ghost'} onClick={() => setOptionsOpen(true)} />
           <span className="k-spacer" />
-          {fixedAudience ? (
-            <span className="k-chip" title={t('feed.sharedWith', { audience: audienceLabel })}><Icon name={audienceIcon} />{audienceLabel}</span>
-          ) : (
-            <button type="button" className="k-chip k-chip-btn" aria-haspopup="dialog" onClick={() => setPicking(true)} disabled={busy}
-              aria-label={`${t('feed.audiencePicker')} ${audienceLabel}`}>
-              <Icon name={audienceIcon} /><span>{audienceLabel}</span><Icon name="down" />
-            </button>
-          )}
+          <span className="k-composer-aud">
+            {fixedAudience ? (
+              <span className="k-chip" title={t('feed.sharedWith', { audience: audienceLabel })}><Icon name={audienceIcon} />{audienceLabel}</span>
+            ) : (
+              <button type="button" className="k-chip k-chip-btn" aria-haspopup="dialog" onClick={() => setPicking(true)} disabled={busy}
+                aria-label={`${t('feed.audiencePicker')} ${audienceLabel}`}>
+                <Icon name={audienceIcon} /><span>{audienceLabel}</span><Icon name="down" />
+              </button>
+            )}
+          </span>
           <Button type="submit" variant="primary" size="sm" busy={busy} disabled={!canPost}>{options.schedule ? t('schedule.submit') : t('feed.post')}</Button>
         </div>
       </form>

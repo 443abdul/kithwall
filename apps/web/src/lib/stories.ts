@@ -55,6 +55,7 @@ async function encodePhoto(file: Blob): Promise<{ bytes: Uint8Array; w: number; 
 }
 
 async function resolveAudience(a: StoryAudience): Promise<{ audienceId: string; groupId: string | null }> {
+  await keyring.whenReady();
   if (a.kind === 'connections') return { audienceId: keyring.friendsAudience!.id, groupId: null };
   const g = must(await sb().from('groups').select('id, audience_id').eq('id', a.circleId).single()) as { id: string; audience_id: string };
   return { audienceId: g.audience_id, groupId: g.id };

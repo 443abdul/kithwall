@@ -32,7 +32,7 @@ for themselves with a clear explanation of the trade-off.
 2. **Collect almost nothing.** No phone number. Email optional. No contact upload. No analytics. Short logs.
 3. **Calm, not compulsive.** Chronological feed, no infinite engagement tricks, no public like counts by default, "you're all caught up".
 4. **Safe by default.** Disappearing messages on, read receipts off, profile visible only to connections.
-5. **Prove it.** A live "What Kithwall knows about you" page, one-tap export, source code available for independent review on request, verifiable safety numbers.
+5. **Prove it.** A live "What Kithwall knows about you" page, one-tap export, open source code (AGPL-3.0, linked from the app at the exact running version), verifiable safety numbers.
 6. **Everyone, everywhere.** Accessible (WCAG 2.2 AA), RTL, low-bandwidth mode, installable, native apps.
 
 ## 4. Product structure
@@ -122,7 +122,11 @@ review. Language is auto-detected from the device and can be changed any time.
 
 ## 9. Funding
 
-Donations only. Everything is free, with no supporter tier or paywall.
+Donations only. Everything is free, with no supporter tier or paywall. Kithwall is open source under
+AGPL-3.0-only (owner decision, phase 6).
+- **At launch no donation method is set up.** /donate explains that and lists other ways to help (code,
+  translations, security reports, invites, running your own instance). Methods (Monero, Bitcoin, BTCPay, a
+  fiscal sponsor) appear only when their `NEXT_PUBLIC_DONATE_*` variable is set (`docs/deploy.md`).
 - Donations go through an external processor (e.g. Open Collective, Liberapay, Stripe donation link). No card
   data touches Kithwall.
 - App stores: Apple only allows in-app donation links for registered nonprofits, so on iOS the donate page

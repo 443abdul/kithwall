@@ -218,6 +218,17 @@
 .kw .k-composer-bar > .k-btn { flex: none; }
 .kw .k-composer-bar .k-iconbtn { color: var(--accent-text); }
 .kw .k-composer-bar .k-chip { max-inline-size: 11rem; min-inline-size: 0; flex: 0 1 auto; }
+.kw .k-composer { container-type: inline-size; }
+.kw .k-composer-aud { display: flex; min-inline-size: 0; flex: 0 1 auto; }
+.kw .k-composer-wait { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+.kw .k-composer-wait .k-icon { inline-size: 16px; block-size: 16px; flex: none; }
+/* Narrow composers (phones, side panes): the audience gets its own row above the tools and the Post
+   button, so neither the chip nor the button is squeezed. */
+@container (max-width: 27rem) {
+  .kw .k-composer-bar { flex-wrap: wrap; row-gap: var(--space-2); }
+  .kw .k-composer-aud { order: -1; flex: 1 1 100%; }
+  .kw .k-composer-bar .k-chip { max-inline-size: 100%; }
+}
 .kw .k-aud-opt[aria-pressed="true"] { background: var(--accent-soft); }
 .kw .k-aud-opt .k-item-trail { color: var(--accent-text); }
 

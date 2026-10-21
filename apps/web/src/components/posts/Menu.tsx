@@ -1,12 +1,16 @@
 'use client';
 // A small overflow menu ("⋯"): menu button + popover list (WAI-ARIA menu pattern). Esc / outside click
 // close it and return focus to the button; arrow keys move between items.
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Icon, type IconName } from '@/components/ui/Icon';
 
-export interface MenuItem { label: string; icon?: IconName; onSelect: () => void; danger?: boolean }
+export interface MenuItem { label: string; icon?: IconName; iconNode?: ReactNode; onSelect: () => void; danger?: boolean }
 
-export function Menu({ label, items, icon = 'more' }: { label: string; items: MenuItem[]; icon?: IconName }) {
+export function Menu({ label, items, icon = 'more', trigger, className, buttonClassName = 'k-iconbtn k-iconbtn-sm', title }: {
+  label: string; items: MenuItem[]; icon?: IconName;
+  /** Custom button content instead of `icon`, plus extra classes for the wrapper / button. */
+  trigger?: ReactNode; className?: string; buttonClassName?: string; title?: string;
+}) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const btn = useRef<HTMLButtonElement>(null);
@@ -37,10 +41,10 @@ export function Menu({ label, items, icon = 'more' }: { label: string; items: Me
 
   if (!items.length) return null;
   return (
-    <div className="k-menu">
-      <button ref={btn} type="button" className="k-iconbtn k-iconbtn-sm" aria-label={label} title={label}
+    <div className={className ? `k-menu ${className}` : 'k-menu'}>
+      <button ref={btn} type="button" className={buttonClassName} aria-label={label} title={title ?? label}
         aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>
-        <Icon name={icon} />
+        {trigger ?? <Icon name={icon} />}
       </button>
       {open ? (
         <ul ref={list} id={id} role="menu" aria-label={label} className="k-menu-list" onKeyDown={onKey}>
@@ -48,7 +52,7 @@ export function Menu({ label, items, icon = 'more' }: { label: string; items: Me
             <li key={it.label} role="none">
               <button type="button" role="menuitem" className="k-menu-item" data-danger={it.danger ? '' : undefined}
                 onClick={() => { close(false); it.onSelect(); }}>
-                {it.icon ? <Icon name={it.icon} /> : null}<span>{it.label}</span>
+                {it.iconNode ?? (it.icon ? <Icon name={it.icon} /> : null)}<span>{it.label}</span>
               </button>
             </li>
           ))}

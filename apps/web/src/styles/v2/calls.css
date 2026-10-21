@@ -6,6 +6,17 @@
 /* ------------------------------------------------------------------ header buttons (chat) */
 .kw .k-call-headbtns { display: inline-flex; gap: var(--space-1); }
 .kw .k-call-headbtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.kw .k-call-headcompact { display: none; }
+/* Narrow chat headers (phones, the split view): one "Call" menu instead of two buttons, and the timer
+   button gives way to the title (the timer stays in the subtitle and in chat info). */
+.kw .k-chat-head { container-type: inline-size; }
+@container (max-width: 34rem) {
+  .kw .k-call-headbtns { display: none; }
+  .kw .k-call-headcompact { display: inline-flex; }
+}
+@container (max-width: 25rem) {
+  .kw .k-chat-head .k-eph-headbtn { display: none; }
+}
 
 /* ------------------------------------------------------------------ controls */
 .kw .k-call-ctl {

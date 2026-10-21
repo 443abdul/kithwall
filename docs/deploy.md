@@ -95,8 +95,22 @@ Import the GitHub repo, **Root Directory `apps/web`**, framework Next.js. Enviro
 | `VAPID_PRIVATE_KEY` | server only | Web Push private key |
 | `VAPID_SUBJECT` | server only | `mailto:security@kithwall.com` |
 | `PUSH_DISPATCH_SECRET` | server only | 32+ random characters; must equal `kw.push_config.secret` in the database |
+| `VERCEL_GIT_COMMIT_SHA` | set by Vercel | Inlined at build time as `NEXT_PUBLIC_COMMIT_SHA` (next.config.ts) so the footer and Settings → Help & about link to the exact source of the running build (AGPL-3.0 §13). Outside Vercel, set `NEXT_PUBLIC_COMMIT_SHA` to the deployed commit yourself |
+| `NEXT_PUBLIC_SOURCE_REPO` | all, optional | Forks only: your public repository URL (https). Default `https://github.com/443abdul/kithwall` |
+| `NEXT_PUBLIC_DONATE_MONERO` | all, optional | Monero address (standard 4…/subaddress 8…, 95 chars, or integrated 106). Shows the address, an on-device QR code and a copy button on /donate. **Not set at launch** |
+| `NEXT_PUBLIC_DONATE_BITCOIN` | all, optional | Bitcoin mainnet address (bc1… with valid checksum, or legacy 1…/3…). Address + QR, with a note that Bitcoin payments are public. Not set at launch |
+| `NEXT_PUBLIC_DONATE_BTCPAY_URL` | all, optional | https link to a self-hosted BTCPay payment page (button). Not set at launch |
+| `NEXT_PUBLIC_DONATE_SPONSOR_URL` | all, optional | https link to a fiscal sponsor's donation page (button). Not set at launch |
 
 Turn **off** Vercel Web Analytics and Speed Insights (spec §7). Keep the shortest log retention.
+
+### Donations (/donate)
+
+Kithwall takes no donations yet, so /donate only shows "Other ways to help". Each method appears **only when its
+`NEXT_PUBLIC_DONATE_*` variable is set and passes the format check** in `apps/web/src/lib/donate.ts` (invalid values are
+silently ignored, so check the page after deploying). They are inlined at build time: redeploy after changing them.
+Double-check every address against your wallet; the check is about format, not ownership. In the iOS app the methods
+are replaced by a pointer to the website (App Store rules for donation links).
 
 ### Cron
 

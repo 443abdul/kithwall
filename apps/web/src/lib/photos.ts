@@ -26,6 +26,7 @@ export const photoHeader = (p: Pick<PhotoRow, 'id' | 'album_id' | 'owner_id' | '
 
 async function audienceFor(a: AlbumAudience) {
   if (a.kind === 'public') return { audience_id: null, epoch: null, key: undefined as Uint8Array | undefined, is_public: true };
+  await keyring.whenReady(); // just after sign-in the default audiences are still loading
   const id = a.kind === 'friends' ? keyring.friendsAudience!.id : a.kind === 'self' ? keyring.selfAudience!.id : a.id;
   const { key, epoch } = await keyring.current(id);
   return { audience_id: id, epoch, key, is_public: false };

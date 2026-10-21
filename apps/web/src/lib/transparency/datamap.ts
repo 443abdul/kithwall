@@ -53,6 +53,7 @@ export const TABLES: Record<string, TableInfo> = {
   'public.passkeys': { label: 'transparency.t.passkeys.label', sees: 'transparency.t.passkeys.sees', hidden: 'transparency.t.passkeys.hidden' },
   'public.vault': { label: 'transparency.t.vault.label', sees: 'transparency.t.vault.sees', hidden: 'transparency.t.vault.hidden' },
   'public.push_subscriptions': { label: 'transparency.t.push.label', sees: 'transparency.t.push.sees', hidden: 'transparency.t.push.hidden' },
+  'public.native_push_devices': { label: 'transparency.t.nativePush.label', sees: 'transparency.t.nativePush.sees', hidden: 'transparency.t.nativePush.hidden' },
   'public.safety_checkins': { label: 'transparency.t.checkins.label', sees: 'transparency.t.checkins.sees', hidden: 'transparency.t.checkins.hidden' },
   'public.notifications': { label: 'transparency.t.notifications.label', sees: 'transparency.t.notifications.sees', hidden: 'transparency.t.notifications.hidden' },
   'public.reports': { label: 'transparency.t.reports.label', sees: 'transparency.t.reports.sees' },
@@ -64,7 +65,7 @@ export const STATIC_MAP: { category: Exclude<DataCategory, 'system' | 'legacy' |
   { category: 'content', tables: ['public.posts', 'public.comments', 'public.likes', 'public.stories', 'public.story_views', 'public.albums', 'public.photos', 'public.media_objects'] },
   { category: 'messages', tables: ['public.conversations', 'public.messages', 'public.message_reactions'] },
   { category: 'social', tables: ['public.friendships', 'public.blocks', 'public.audiences', 'public.audience_members', 'public.audience_keys', 'public.groups', 'public.events'] },
-  { category: 'account', tables: ['public.profiles', 'public.profile_info', 'public.key_bundles', 'public.passkeys', 'public.vault', 'public.push_subscriptions', 'public.safety_checkins'] },
+  { category: 'account', tables: ['public.profiles', 'public.profile_info', 'public.key_bundles', 'public.passkeys', 'public.vault', 'public.push_subscriptions', 'public.native_push_devices', 'public.safety_checkins'] },
   { category: 'activity', tables: ['public.notifications', 'public.reports'] },
 ];
 

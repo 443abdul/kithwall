@@ -5,6 +5,7 @@ import { useT } from '@/i18n';
 import { useSession } from '@/lib/keys/session';
 import { Logo } from '@/components/shell/Logo';
 import { ButtonLink } from '@/components/ui/Button';
+import { sourceUrl } from '@/lib/source';
 import { LanguagePicker } from './LanguagePicker';
 
 export type PublicCta = 'signin' | 'join' | 'none' | 'auto';
@@ -40,6 +41,9 @@ export function PublicFooter() {
           <li><Link href="/legal/law-enforcement">{t('footer.lawEnforcement')}</Link></li>
           <li><Link href="/transparency">{t('transparency.footer')}</Link></li>
           <li><Link href="/help">{t('footer.help')}</Link></li>
+          <li><Link href="/donate">{t('footer.donate')}</Link></li>
+          {/* AGPL-3.0 §13: offer the Corresponding Source of exactly this build. */}
+          <li><a href={sourceUrl()} target="_blank" rel="noopener noreferrer">{t('footer.source')}</a></li>
         </ul>
       </nav>
       <p className="k-muted k-small">{t('footer.tagline')}</p>

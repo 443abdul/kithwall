@@ -73,8 +73,9 @@ These are places where the documents need a product change or a decision to be a
    appeals can restore) or immediate hard-delete. Update retention tables either way.
 10. **Ban records.** To stop re-registration you need to keep something (e.g. a hashed email).
     Decide and set retention.
-11. **Open source / build hashes.** The spec cites them as mitigations, but the repo is private.
-    Don't publish that claim until it's true.
+11. **Open source / build hashes.** Decided: Kithwall is open source under AGPL-3.0-only and the privacy
+    policy, footer and transparency page say so. **Make the repository public before these pages go live.**
+    Published build hashes per release are still to do.
 12. **Blocking.** Confirm exact block effects (messages, groups, events, visibility of username)
     and state them in the Community Standards.
 13. **Moderation tooling** lands in R2 (spec). If launching with R1, decide how reports are handled

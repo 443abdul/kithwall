@@ -1,6 +1,7 @@
 'use client';
 // Signed-out home page (kithwall.com): what Kithwall is, the privacy promises, how joining works,
 // the three styles, and how it's funded. Copy follows docs/v2/00-brief.md §1–§5 and §9.
+import Link from 'next/link';
 import { useT, type MessageKey } from '@/i18n';
 import { usePrefs, STYLES } from '@/lib/theme';
 import { ButtonLink } from '@/components/ui/Button';
@@ -93,6 +94,7 @@ export function Landing() {
           <div>
             <h2 id="donate-title">{t('landing.donateTitle')}</h2>
             <p className="k-muted">{t('landing.donateBody')}</p>
+            <p className="k-donate-link"><Link href="/donate">{t('landing.donateLink')}</Link></p>
           </div>
         </section>
 

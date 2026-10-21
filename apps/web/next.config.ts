@@ -23,6 +23,12 @@ const nextConfig: NextConfig = {
   // Local multi-user testing uses localhost and 127.0.0.1 side by side (separate sessions).
   allowedDevOrigins: ['127.0.0.1'],
   transpilePackages: ['@kithwall/crypto'],
+  // AGPL-3.0 §13: the app links to the exact source of the running build (lib/source.ts). Vercel sets
+  // VERCEL_GIT_COMMIT_SHA during builds; elsewhere set NEXT_PUBLIC_COMMIT_SHA yourself (or leave it empty
+  // and the links point at the repository).
+  env: {
+    NEXT_PUBLIC_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_COMMIT_SHA || '',
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

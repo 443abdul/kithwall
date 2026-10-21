@@ -4,6 +4,10 @@
 // until the code is entered: we sign in, ask for the code, then load and unlock the keys.
 import { getSession, initSession, signIn, unlock, type SessionStatus } from '../keys/session';
 import { sb } from '../supabase';
+import { markRecoveryNudge } from '../../components/onboarding/nudges';
+
+/** Same key as components/onboarding/nudges.ts ('show' | 'dismissed'; absent = never offered on this device). */
+const RECOVERY_NUDGE_KEY = 'kw.nudge.recovery';
 
 let pending: { password: string; remember: boolean } | null = null;
 
@@ -63,4 +67,19 @@ export async function afterLogin(): Promise<void> {
     const { data } = await sb().rpc('cancel_account_deletion');
     if (data === true) { sessionStorage.setItem('kw.deletionCancelled', '1'); window.dispatchEvent(new Event('kw:deletion-cancelled')); }
   } catch { /* non-fatal */ }
+  await offerRecoveryNudgeToV1().catch(() => undefined);
+}
+
+/**
+ * Kithwall 2 turns the "save your recovery key" nudge on at sign-up; accounts from Kithwall Classic never pass
+ * through that, and the server has no record that they kept the phrase v1 showed them (account_security is new).
+ * So on their first password sign-in on a device, show the nudge unless it was dismissed or answered before
+ * (docs/v2/07-launch.md §3). Passphrase accounts (synthetic @id.kithwall.invalid address) got it at sign-up.
+ */
+async function offerRecoveryNudgeToV1(): Promise<void> {
+  const email = getSession().email ?? '';
+  if (!email || /@id\.kithwall\.invalid$/i.test(email)) return;
+  if (localStorage.getItem(RECOVERY_NUDGE_KEY) !== null) return;
+  const { data } = await sb().from('account_security').select('recovery_saved_at').maybeSingle();
+  if (!data?.recovery_saved_at) markRecoveryNudge();
 }

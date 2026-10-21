@@ -81,6 +81,7 @@ export async function unblock(userId: string) {
 export function myInfo(): ProfileInfo | null { return people.person(me())?.info ?? null; }
 
 export async function saveProfileInfo(info: ProfileInfo) {
+  await keyring.whenReady();
   const aud = keyring.friendsAudience!.id;
   const { key, epoch } = await keyring.current(aud);
   // Keep my friend list in sync (friends can see who my friends are unless I hide it).

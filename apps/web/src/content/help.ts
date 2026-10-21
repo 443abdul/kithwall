@@ -14,7 +14,7 @@ const SECTIONS = {
   sharing: 3,
   privacy: 3,
   safety: 4,
-  account: 3,
+  account: 4,
 } as const;
 
 type Id = keyof typeof SECTIONS;

@@ -223,7 +223,7 @@ function Thread({ c }: { c: ConversationSummary }) {
         <button type="button" className="k-chat-head-who" onClick={() => setInfo('main')} aria-label={t('messages.info.open', { title })}>
           <ConversationAvatar c={c} size={40} />
           <span className="k-chat-head-text">
-            <span className="k-chat-head-title">{title}{!isGroup && others.length === 1 ? <> <VerifiedBadge userId={others[0]} /></> : null}</span>
+            <span className="k-chat-head-title" dir="auto">{title}{!isGroup && others.length === 1 ? <> <VerifiedBadge userId={others[0]} /></> : null}</span>
             <span className={cx('k-chat-head-sub', typing.length > 0 && 'is-typing')} aria-live="polite">
               {!typing.length && c.disappear_secs
                 ? <><span className="k-eph-sub-base">{subtitle}</span><span className="k-eph-sep" aria-hidden> · </span><TimerHint secs={c.disappear_secs} /></>

@@ -26,7 +26,6 @@ export function YouScreen() {
   const staff = useIsStaff();
   const [editing, setEditing] = useState(false);
   useDocumentTitle(t('nav.you'));
-  const soon = <Badge tone="neutral">{t('common.soon')}</Badge>;
   return (
     <Page title={t('nav.you')}>
       <Card className="k-you-card">
@@ -66,7 +65,7 @@ export function YouScreen() {
           <li><ListItem icon="eye" title={t('transparency.you.title')} subtitle={t('transparency.you.sub')} href="/you/privacy-report" /></li>
           <li><ListItem icon="info" title={t('help.title')} href="/help" /></li>
           {staff.data ? <li><ListItem icon="flag" title={staff.data === 'admin' ? t('mod.titleAdmin') : t('mod.title')} href="/mod" /></li> : null}
-          <li><ListItem icon="gift" title={t('you.donate')} subtitle={t('you.donateSub')} trailing={soon} /></li>
+          <li><ListItem icon="gift" title={t('you.donate')} subtitle={t('you.donateSub')} href="/donate" /></li>
           {/* A full page load after signing out drops every in-memory key and cache. */}
           {/* eslint-disable-next-line @next/next/no-location-assign-relative-destination */}
           <li><ListItem icon="logout" title={t('you.signOut')} onClick={() => void signOut().then(() => { location.href = '/'; })} chevron={false} /></li>
