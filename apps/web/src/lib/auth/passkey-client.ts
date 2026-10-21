@@ -2,6 +2,8 @@
 // Browser side of passkey ceremonies with the WebAuthn PRF extension (docs/v2/01-accounts.md).
 // Every ceremony asks for PRF(credential, PRF_APP_SALT); the 32-byte output stays in this tab and is
 // stripped from the response before anything is sent to the server.
+// Inside the Kithwall app (lib/native) the same ceremonies run through the platform's native passkey API
+// instead of the WebView (docs/v2/05-native.md §3): same rpID, same PRF input, same return shapes.
 import {
   WebAuthnAbortService, browserSupportsWebAuthn, startAuthentication, startRegistration,
   type AuthenticationResponseJSON, type PublicKeyCredentialCreationOptionsJSON,
@@ -9,6 +11,9 @@ import {
 } from '@simplewebauthn/browser';
 import { PRF_APP_SALT } from '@kithwall/crypto';
 import { AccountError, type AccountErrorCode } from './account';
+import { isNative } from '../native';
+
+const nativePasskey = () => import('../native/passkey');
 
 // ---------------------------------------------------------------------------------------------
 // HTTP
@@ -37,11 +42,14 @@ export async function api<T>(path: string, body: unknown, token?: string, method
 // Capabilities
 // ---------------------------------------------------------------------------------------------
 export function webauthnAvailable(): boolean {
+  // The apps require Android 9 / iOS 16, where the platform passkey API always exists.
+  if (isNative()) return true;
   try { return browserSupportsWebAuthn(); } catch { return false; }
 }
 
 /** true/false when the browser can tell (getClientCapabilities), otherwise 'unknown'. */
 export async function prfSupport(): Promise<boolean | 'unknown'> {
+  if (isNative()) return (await (await nativePasskey()).nativePasskeyAvailable()).prf;
   if (!webauthnAvailable()) return false;
   const PKC = window.PublicKeyCredential as unknown as { getClientCapabilities?: () => Promise<Record<string, boolean>> };
   if (typeof PKC.getClientCapabilities !== 'function') return 'unknown';
@@ -99,10 +107,19 @@ export interface CreatedPasskey { response: RegistrationResponseJSON; credential
  */
 export async function createPasskey(options: PublicKeyCredentialCreationOptionsJSON, displayName?: string): Promise<CreatedPasskey> {
   if (!webauthnAvailable()) throw new AccountError('passkey_unsupported');
+  // The person's name stays on the device (the server only ever saw the handle).
+  const user = { ...options.user, displayName: displayName?.trim() || options.user.displayName };
+  if (isNative()) {
+    const made = await (await nativePasskey()).nativeCreate({ ...options, user }, PRF_APP_SALT);
+    let out = made.prf;
+    if (!out && made.enabled) {
+      out = (await evaluatePrf(options.rp.id ?? location.hostname, [{ id: made.response.id, transports: made.response.response.transports }]))?.output ?? null;
+    }
+    if (!out) throw new AccountError('prf_unsupported', 'This passkey can\'t protect your keys on this device.');
+    return { response: made.response, credentialId: made.response.id, prf: out };
+  }
   const opts: PublicKeyCredentialCreationOptionsJSON = {
-    ...options,
-    // The person's name stays on the device (the server only ever saw the handle).
-    user: { ...options.user, displayName: displayName?.trim() || options.user.displayName },
+    ...options, user,
     extensions: { ...(options.extensions ?? {}), ...prfInput() } as PublicKeyCredentialCreationOptionsJSON['extensions'],
   };
   let response: RegistrationResponseJSON;
@@ -130,6 +147,10 @@ export async function evaluatePrf(
     allowCredentials: allow.map((c) => ({ id: c.id, type: 'public-key', transports: c.transports as never })),
     extensions: prfInput() as PublicKeyCredentialRequestOptionsJSON['extensions'],
   };
+  if (isNative()) {
+    const r = await (await nativePasskey()).nativeGet({ ...optionsJSON, extensions: {} }, PRF_APP_SALT);
+    return r.prf ? { output: r.prf, credentialId: r.response.id } : null;
+  }
   let resp: AuthenticationResponseJSON;
   try {
     resp = await startAuthentication({ optionsJSON });
@@ -143,6 +164,10 @@ export interface Assertion { response: AuthenticationResponseJSON; credentialId:
 /** Discoverable-credential assertion (no allow-list) with PRF. */
 export async function getPasskey(options: PublicKeyCredentialRequestOptionsJSON): Promise<Assertion> {
   if (!webauthnAvailable()) throw new AccountError('passkey_unsupported');
+  if (isNative()) {
+    const r = await (await nativePasskey()).nativeGet(options, PRF_APP_SALT);
+    return { response: r.response, credentialId: r.response.id, prf: r.prf };
+  }
   const opts: PublicKeyCredentialRequestOptionsJSON = {
     ...options, extensions: { ...(options.extensions ?? {}), ...prfInput() } as PublicKeyCredentialRequestOptionsJSON['extensions'],
   };
@@ -155,6 +180,7 @@ export async function getPasskey(options: PublicKeyCredentialRequestOptionsJSON)
 }
 
 export function cancelCeremony() {
+  if (isNative()) return;   // the native sheet is dismissed by the person
   try { WebAuthnAbortService.cancelCeremony(); } catch { /* none running */ }
 }
 

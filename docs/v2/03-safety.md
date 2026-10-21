@@ -184,6 +184,9 @@ push subscriptions (with "stop") and the passkeys (managed in Settings → Secur
 
 - Filtering the chat list and the nav unread badge through `useHiddenChats()` belongs to the messages
   screens (`components/messages/ChatList.tsx`, `components/shell/AppShell.tsx` `useBadges`).
-- Screenshot notice and Keychain/Keystore-backed device keys come with the native apps (phase 5).
+- Done in phase 5 (`05-native.md` §4, §6): in the apps the device records live in Keystore/Keychain,
+  optional biometric unlock (real unlock only; the duress PIN stays on the PIN pad), wipe also clears the
+  native stores and push key, "Block screenshots and hide app preview" (off by default) and a local
+  screenshot notice.
 - Hidden contacts (brief §4) are not built; only hidden chats.
 - Daily check-ins repeat at the same UTC offset (a DST change shifts them by an hour).

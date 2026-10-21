@@ -46,7 +46,8 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      source: '/((?!api|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon.svg|sw.js).*)',
+      // .well-known: the app-association JSON files (docs/v2/05-native.md §2) need no page CSP or nonce.
+      source: '/((?!api|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon.svg|sw.js|\\.well-known/).*)',
       missing: [
         { type: 'header', key: 'next-router-prefetch' },
         { type: 'header', key: 'purpose', value: 'prefetch' },

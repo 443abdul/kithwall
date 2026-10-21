@@ -1,0 +1,126 @@
+name: Android
+
+# Builds the Kithwall Android app (apps/mobile, docs/v2/05-native.md §8) in both flavours:
+#   play  → AAB for Google Play + APK
+#   foss  → APK for direct download / F-Droid (no Google libraries)
+# Signing: release builds are signed with the upload key from repository secrets when they exist
+# (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD);
+# otherwise with a throwaway debug key (installable for testing, not for distribution).
+# FCM: the play build gets app/google-services.json from GOOGLE_SERVICES_JSON_BASE64 when set; without
+# it the build still succeeds but push stays unavailable in that build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Which server the app loads
+        type: choice
+        options: [production, staging]
+        default: production
+  push:
+    branches: [main, v2]
+    tags: ['v*']
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/android.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build play + foss
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      KITHWALL_ENV: ${{ inputs.env || 'production' }}
+      KITHWALL_VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      - name: Version name from the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "KITHWALL_VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Bundle the offline page and sync Capacitor
+        working-directory: apps/mobile
+        env:
+          # Staging only: lets the app through Vercel Authentication (docs/v2/05-native.md "Testing against staging").
+          KITHWALL_STAGING_BYPASS: ${{ (inputs.env == 'staging' && secrets.VERCEL_AUTOMATION_BYPASS_SECRET) || '' }}
+        run: node scripts/prepare.mjs && npx cap sync android
+
+      - name: google-services.json (play flavour, optional)
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > apps/mobile/android/app/google-services.json
+            echo "google-services.json written"
+          else
+            echo "::notice::GOOGLE_SERVICES_JSON_BASE64 not set: the play build has no FCM configuration"
+          fi
+
+      - name: Upload keystore (optional)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+            echo "KITHWALL_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+            echo "Release builds will be signed with the upload key"
+          else
+            echo "::notice::ANDROID_KEYSTORE_BASE64 not set: release builds are signed with the debug key (testing only)"
+          fi
+
+      - name: Build
+        working-directory: apps/mobile/android
+        env:
+          KITHWALL_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KITHWALL_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KITHWALL_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assemblePlayRelease bundlePlayRelease assembleFossRelease
+
+      - name: Certificate fingerprints (for ANDROID_CERT_SHA256)
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          for apk in $(find apps/mobile/android/app/build/outputs/apk -name '*.apk'); do
+            echo "$apk"
+            "$apksigner" verify --print-certs "$apk" | grep -i 'SHA-256' || true
+          done
+
+      - name: Remove secrets from the workspace
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks" apps/mobile/android/app/google-services.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kithwall-android-${{ env.KITHWALL_ENV }}-${{ github.run_number }}
+          path: |
+            apps/mobile/android/app/build/outputs/apk/**/*.apk
+            apps/mobile/android/app/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
+          retention-days: 30

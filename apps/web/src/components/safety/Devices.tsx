@@ -7,6 +7,7 @@ import { sb } from '@/lib/supabase';
 import { useSession } from '@/lib/keys/session';
 import { accountApi } from '@/lib/auth/account';
 import { currentSubscription } from '@/lib/push';
+import { isNative } from '@/lib/native';
 import { Section } from '@/components/settings/shared';
 import { Button, ButtonLink } from '@/components/ui/Button';
 import { Callout } from '@/components/ui/Callout';
@@ -18,7 +19,7 @@ import { useToast } from '@/components/ui/Toast';
 import { SafetyPage } from './SafetyCentre';
 
 interface SessionRow { id: string; created_at: string; last_active: string; aal: string; user_agent: string | null; is_current: boolean }
-interface PushRow { id: string; endpoint: string; user_agent: string | null; created_at: string }
+interface PushRow { id: string; endpoint: string; user_agent: string | null; created_at: string; table: 'push_subscriptions' | 'native_push_devices' }
 
 /** "Active now / today / this week / this month / a while ago": deliberately coarse. */
 export function coarseSeen(iso: string | null, now = Date.now()): MessageKey {
@@ -103,13 +104,26 @@ function PushDevices() {
   const [rows, setRows] = useState<PushRow[] | null>(null);
   const [mine, setMine] = useState<string | null>(null);
   const load = useCallback(async () => {
-    const { data } = await sb().from('push_subscriptions').select('id, endpoint, user_agent, created_at').order('created_at', { ascending: false });
-    setRows((data ?? []) as PushRow[]);
-    setMine((await currentSubscription().catch(() => null))?.endpoint ?? null);
+    // Browsers (Web Push) and Kithwall app installs (native push, docs/v2/05-native.md §5).
+    const [web, app] = await Promise.all([
+      sb().from('push_subscriptions').select('id, endpoint, user_agent, created_at'),
+      sb().from('native_push_devices').select('id, token, label, created_at'),
+    ]);
+    const all: PushRow[] = [
+      ...((web.data ?? []) as Omit<PushRow, 'table'>[]).map((r) => ({ ...r, table: 'push_subscriptions' as const })),
+      ...((app.data ?? []) as { id: string; token: string; label: string | null; created_at: string }[])
+        .map((r) => ({ id: r.id, endpoint: r.token, user_agent: r.label, created_at: r.created_at, table: 'native_push_devices' as const })),
+    ].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    setRows(all);
+    const here = isNative()
+      ? await import('@/lib/native/push').then((m) => m.nativeCurrentToken()).catch(() => null)
+      : (await currentSubscription().catch(() => null))?.endpoint ?? null;
+    setMine(here);
   }, []);
   useEffect(() => { if (userId) void load(); }, [userId, load]);
   async function remove(id: string) {
-    const { error } = await sb().from('push_subscriptions').delete().eq('id', id);
+    const table = rows?.find((r) => r.id === id)?.table ?? 'push_subscriptions';
+    const { error } = await sb().from(table).delete().eq('id', id);
     if (error) toast({ message: t('errors.unknown'), tone: 'danger' }); else { toast({ message: t('safety.devices.pushRemoved') }); await load(); }
   }
   return (

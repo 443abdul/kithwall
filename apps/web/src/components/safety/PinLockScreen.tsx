@@ -2,10 +2,14 @@
 // The app lock screen (Safety centre §2). Deliberately anonymous — no name, no avatar — so it looks the
 // same whether the real account or the decoy opens behind it. A real PIN unlocks; a duress PIN opens
 // the decoy (AppGate switches to it); wrong PINs are slowed down and may wipe this device.
+// In the Kithwall app, "Unlock with biometrics" is offered when it was turned on (a real unlock only;
+// the duress PIN stays on the pad, docs/v2/05-native.md §4).
 import { useCallback, useEffect, useState } from 'react';
 import { useT } from '@/i18n';
 import { afterLogin } from '@/lib/auth/login';
 import { pinWait, unlockWithPin } from '@/lib/safety/applock';
+import { biometricOn, unlockWithBiometrics } from '@/lib/safety/biometric';
+import { Button } from '@/components/ui/Button';
 import { V2Root } from '@/components/shell/V2Root';
 import { Logo } from '@/components/shell/Logo';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
@@ -33,7 +37,26 @@ function PinLockInner({ onUseOther }: { onUseOther: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [wait, refreshWait] = useCountdown();
+  const [bio, setBio] = useState(false);
   useDocumentTitle(t('safety.lock.title'));
+  useEffect(() => {
+    let live = true;
+    void biometricOn().then((on) => { if (live) setBio(on); }).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
+
+  async function biometric() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await unlockWithBiometrics({ title: t('safety.bio.prompt'), cancel: t('safety.bio.cancel') });
+      if (r === 'ok') { await afterLogin(); return; }
+      if (r === 'invalidated') { setBio(false); setErr(t('safety.bio.invalidated')); }
+      else if (r === 'lockout') setErr(t('safety.bio.lockout'));
+      else if (r !== 'cancelled') setErr(t('errors.unknown'));
+    } catch {
+      setErr(t('errors.unknown'));
+    } finally { setBusy(false); }
+  }
 
   async function submit(pin: string) {
     setBusy(true); setErr(null);
@@ -67,6 +90,11 @@ function PinLockInner({ onUseOther }: { onUseOther: () => void }) {
             disabled={wait > 0}
             error={wait > 0 ? t('safety.lock.waitFor', { count: wait }) : err}
           />
+          {bio ? (
+            <div className="k-center">
+              <Button variant="secondary" icon="lock" onClick={() => void biometric()} disabled={busy}>{t('safety.bio.unlock')}</Button>
+            </div>
+          ) : null}
           <p className="k-center k-small">
             <button type="button" className="k-linkbtn" onClick={onUseOther}>{t('safety.lock.useOther')}</button>
           </p>

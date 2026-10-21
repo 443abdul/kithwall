@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- docs/v2/05-native.md §2 and §5. Needs the Apple Developer account: Push Notifications and Associated
+     Domains capabilities on the com.kithwall.app App ID. Release builds switch aps-environment to
+     production automatically when exported for the App Store. For a staging build, change the domains to
+     staging.kithwall.com. -->
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>development</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:www.kithwall.com</string>
+		<string>applinks:www.kithwall.com</string>
+	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.kithwall.app.shared</string>
+	</array>
+</dict>
+</plist>

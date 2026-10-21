@@ -12,6 +12,7 @@ import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import type { AccountErrorCode } from './account';
 import { admin, json } from './server';
 import { isSyntheticEmail, syntheticEmailFor } from './passkey-shared';
+import { androidOrigins, parseCertFingerprints } from '../native/association';
 
 export const RP_NAME = 'Kithwall';
 const CHALLENGE_TTL_S = 5 * 60;
@@ -28,8 +29,20 @@ export interface RelyingParty { rpID: string; origins: string[] }
  *  3. outside production only: the request's own host when it is localhost / *.localhost
  *     (WebAuthn does not allow IP addresses such as 127.0.0.1 as an rpID).
  * Returns null when no relying party is configured for this request.
+ *
+ * The Android app (docs/v2/05-native.md §2) signs with the same rpID through Credential Manager, whose
+ * clientDataJSON origin is `android:apk-key-hash:<cert hash>` rather than the web origin: those origins
+ * are accepted for every signing certificate listed in ANDROID_CERT_SHA256 (the same list that
+ * /.well-known/assetlinks.json publishes). iOS reports https://<rpID>, which is already accepted.
  */
 export function relyingParty(req: Request): RelyingParty | null {
+  const rp = webRelyingParty(req);
+  if (!rp) return null;
+  const apps = androidOrigins(parseCertFingerprints(process.env.ANDROID_CERT_SHA256));
+  return apps.length ? { rpID: rp.rpID, origins: [...rp.origins, ...apps] } : rp;
+}
+
+function webRelyingParty(req: Request): RelyingParty | null {
   const envRp = (process.env.PASSKEY_RP_ID || process.env.NEXT_PUBLIC_PASSKEY_RP_ID)?.trim();
   if (envRp) {
     const origins = (process.env.PASSKEY_ORIGINS ?? `https://${envRp}`).split(',').map((s) => s.trim()).filter(Boolean);

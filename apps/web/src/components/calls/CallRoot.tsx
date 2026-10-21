@@ -52,6 +52,17 @@ export function CallRoot() {
     return () => navigator.serviceWorker.removeEventListener('message', onMsg);
   }, [ready]);
 
+  // The same from the native app's notification plugin (components/push/PushManager re-broadcasts it).
+  useEffect(() => {
+    if (!ready) return;
+    const onNav = (e: Event) => {
+      const url = (e as CustomEvent<{ url?: unknown }>).detail?.url;
+      if (typeof url === 'string') probeFrom(url, false);
+    };
+    window.addEventListener('kw:navigate', onNav);
+    return () => window.removeEventListener('kw:navigate', onNav);
+  }, [ready]);
+
   if (!ready || s.m.phase === 'idle') return null;
   return <div className="kw k-call-root"><CallScreens s={s} /></div>;
 }

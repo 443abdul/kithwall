@@ -4,12 +4,15 @@
 //  - Any lock (from here, Settings or elsewhere) reloads the page, so nothing decrypted stays in memory.
 //  - Idle lock and "lock when hidden" (device preferences).
 //  - Quick exit: shield button, triple tap on the logo, or Esc three times.
-import { useEffect } from 'react';
+//  - In the Kithwall app: a local notice when a screenshot or screen recording is taken. Nobody else is
+//    told (docs/v2/05-native.md §6).
+import { useEffect, useState } from 'react';
 import { useT } from '@/i18n';
 import { onLock, useSession } from '@/lib/keys/session';
 import { lockNow, refreshPinState, useAppLock, useExitPrefs, useLockPrefs } from '@/lib/safety/applock';
 import { quickExit } from '@/lib/safety/quickexit';
 import { Icon } from '@/components/ui/Icon';
+import { isNative } from '@/lib/native';
 
 const ACTIVITY = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
 
@@ -19,6 +22,22 @@ export function SafetyRuntime() {
   const { decoy } = useAppLock();
   const lockPrefs = useLockPrefs();
   const exit = useExitPrefs();
+  const [capture, setCapture] = useState<'screenshot' | 'recording' | null>(null);
+
+  // App only: screenshot / recording notice (this component sits outside the toast provider).
+  useEffect(() => {
+    if (!isNative()) return;
+    let off: (() => void) | null = null;
+    let live = true;
+    void import('@/lib/native/shell').then((m) => m.onScreenCapture(setCapture))
+      .then((o) => { if (live) off = o; else o(); }).catch(() => undefined);
+    return () => { live = false; off?.(); };
+  }, []);
+  useEffect(() => {
+    if (!capture) return;
+    const h = setTimeout(() => setCapture(null), 8000);
+    return () => clearTimeout(h);
+  }, [capture]);
 
   useEffect(() => { if (status !== 'loading') void refreshPinState(userId); }, [status, userId]);
 
@@ -68,10 +87,23 @@ export function SafetyRuntime() {
     return () => { document.removeEventListener('click', onClick, true); document.removeEventListener('keydown', onKey, true); };
   }, [exit.enabled, exit.tripleTap]);
 
-  if (!exit.enabled || !exit.button || decoy || status === 'signed_out') return null;
+  const notice = capture ? (
+    <div className="kw">
+      <div className="k-toasts" role="region" aria-live="polite">
+        <div className="k-toast" role="status">
+          <span className="k-toast-msg">{capture === 'recording' ? t('safety.recording.notice') : t('safety.screenshot.notice')}</span>
+          <button type="button" className="k-linkbtn" onClick={() => setCapture(null)}>{t('common.dismiss')}</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+  if (!exit.enabled || !exit.button || decoy || status === 'signed_out') return notice;
   return (
-    <button type="button" className="kw-qx" onClick={quickExit} aria-label={t('safety.exit.button')} title={t('safety.exit.button')}>
-      <Icon name="shield" />
-    </button>
+    <>
+      {notice}
+      <button type="button" className="kw-qx" onClick={quickExit} aria-label={t('safety.exit.button')} title={t('safety.exit.button')}>
+        <Icon name="shield" />
+      </button>
+    </>
   );
 }

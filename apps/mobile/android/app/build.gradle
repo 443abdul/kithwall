@@ -1,0 +1,124 @@
+apply plugin: 'com.android.application'
+
+// Kithwall for Android (docs/v2/05-native.md).
+//
+// Flavours (dimension "distribution"):
+//   play  Google Play. Native push via Firebase Cloud Messaging (needs app/google-services.json, never
+//         committed: CI writes it from the GOOGLE_SERVICES_JSON_BASE64 secret). Passkeys on Android 9–13
+//         through Google Play services.
+//   foss  Direct APK / F-Droid. No Google libraries at all: push through UnifiedPush (the person's own
+//         distributor app, e.g. ntfy), passkeys through the Android 14+ credential provider API.
+//
+// Release signing comes from the environment (CI secrets), never from files in the repository:
+//   KITHWALL_KEYSTORE_FILE, KITHWALL_KEYSTORE_PASSWORD, KITHWALL_KEY_ALIAS, KITHWALL_KEY_PASSWORD
+// Without them, release builds are signed with the debug key (fine for testing, not for distribution).
+// KITHWALL_ENV=staging builds the app for https://staging.kithwall.com (same as `cap sync` with it).
+
+def env = { String k, String d = null -> System.getenv(k) ?: d }
+def kwEnv = env('KITHWALL_ENV', 'production') == 'staging' ? 'staging' : 'production'
+def kwHost = kwEnv == 'staging' ? 'staging.kithwall.com' : 'www.kithwall.com'
+def keystore = env('KITHWALL_KEYSTORE_FILE')
+def hasReleaseKey = keystore != null && file(keystore).exists()
+
+android {
+    namespace = "com.kithwall.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.kithwall.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode Integer.parseInt(env('KITHWALL_VERSION_CODE', '1'))
+        versionName env('KITHWALL_VERSION_NAME', '2.0.0')
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders = [kwHost: kwHost]
+        buildConfigField "String", "KW_ENV", "\"${kwEnv}\""
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildFeatures {
+        buildConfig = true
+    }
+    signingConfigs {
+        release {
+            if (hasReleaseKey) {
+                storeFile file(keystore)
+                storePassword env('KITHWALL_KEYSTORE_PASSWORD')
+                keyAlias env('KITHWALL_KEY_ALIAS')
+                keyPassword env('KITHWALL_KEY_PASSWORD')
+            }
+        }
+    }
+    flavorDimensions = ["distribution"]
+    productFlavors {
+        play {
+            dimension "distribution"
+        }
+        foss {
+            dimension "distribution"
+            versionNameSuffix "-foss"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    // F-Droid and reproducible builds: no Google-encrypted dependency metadata in the APK / bundle.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+    lint {
+        abortOnError false
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.core:core:$androidxCoreVersion"
+    implementation project(':capacitor-android')
+
+    // Native passkeys (Credential Manager) and biometric unlock.
+    implementation "androidx.credentials:credentials:$androidxCredentialsVersion"
+    playImplementation "androidx.credentials:credentials-play-services-auth:$androidxCredentialsVersion"
+    implementation "androidx.biometric:biometric:$androidxBiometricVersion"
+
+    // Push: FCM in the play build only, UnifiedPush in the foss build only.
+    playImplementation "com.google.firebase:firebase-messaging:$firebaseMessagingVersion"
+    fossImplementation "org.unifiedpush.android:connector:$unifiedPushConnectorVersion"
+    // The connector's Java-facing API uses kotlin.Unit / Function1 (Gradle resolves to the newest version requested).
+    fossImplementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.21"
+
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+// google-services.json is a per-project configuration file (not a secret, but kept out of the repository
+// so forks don't send pushes through our Firebase project). Only the play flavour uses it; its tasks are
+// switched off for foss so that build stays free of any Firebase configuration.
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+    afterEvaluate {
+        tasks.matching { it.name.toLowerCase().contains('foss') && it.name.contains('GoogleServices') }.configureEach { enabled = false }
+    }
+} else {
+    logger.info("google-services.json not found: the play build has no FCM configuration and push stays unavailable")
+}

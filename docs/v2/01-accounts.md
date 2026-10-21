@@ -281,6 +281,7 @@ recovery starts from the public @handle (§3 "Recovering an account"). What chan
 | `NEXT_PUBLIC_SITE_URL` | rpID = its hostname. Accepted origins are that origin and its `www.` twin. |
 | `PASSKEY_RP_ID` / `NEXT_PUBLIC_PASSKEY_RP_ID` (optional) | Override the rpID, for example `kithwall.com` while serving from `www.kithwall.com`. Set the public one too, so the browser's local unlock uses the same rpID. |
 | `PASSKEY_ORIGINS` (optional) | Comma-separated accepted origins when `PASSKEY_RP_ID` is set (default `https://<rpID>`). |
+| `ANDROID_CERT_SHA256` (optional) | Android app signing-certificate fingerprints: `relyingParty()` also accepts their `android:apk-key-hash:` origins (native passkeys, `05-native.md` §2). The rpID stays `www.kithwall.com`. |
 | `ALTCHA_HMAC_KEY` | Already required for sign-up. Also keys the IP tags and the passphrase decoys. |
 | `SMTP_URL`, `MAIL_FROM` | Notice-email verification links. Without them, the link isn't sent. |
 

@@ -5,6 +5,12 @@
 import { useSyncExternalStore } from 'react';
 import { sb, must } from './supabase';
 import { authedPost } from './auth/api';
+import { isNative, nativePlatform } from './native';
+
+// Inside the Kithwall app, push goes through the native provider instead of the service worker
+// (lib/native/push.ts, docs/v2/05-native.md §5). Loaded only there.
+const nativePush = () => import('./native/push');
+let nativePermission: NotificationPermission = 'default';
 
 export const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? '';
 const SW_URL = '/sw.js';
@@ -37,6 +43,7 @@ export function isStandalone(): boolean {
 
 export function pushSupport(): PushSupport {
   if (typeof window === 'undefined') return { supported: false, iosNeedsInstall: false, ios: false, standalone: false, permission: 'unsupported' };
+  if (isNative()) return { supported: true, iosNeedsInstall: false, ios: nativePlatform() === 'ios', standalone: true, permission: nativePermission };
   const ios = isIos();
   const standalone = isStandalone();
   const apis = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
@@ -64,6 +71,7 @@ let regPromise: Promise<ServiceWorkerRegistration> | null = null;
 
 /** Register /sw.js (no caching, push only). Safe to call repeatedly. */
 export function registerServiceWorker(): Promise<ServiceWorkerRegistration> | null {
+  if (isNative()) return null;   // the app delivers pushes natively; no service worker in the WebView
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
   regPromise ??= navigator.serviceWorker.register(SW_URL, { scope: '/', updateViaCache: 'none' })
     .then(async (reg) => { await navigator.serviceWorker.ready; return reg; })
@@ -137,7 +145,20 @@ async function store(sub: PushSubscription) {
  * Turn push on for this device. Call from a click/tap handler: browsers only show the permission
  * prompt in response to a user gesture.
  */
+async function nativeRefreshPermission(): Promise<void> {
+  const before = nativePermission;
+  nativePermission = await (await nativePush()).refreshNativePermission();
+  if (before !== nativePermission) changed();
+}
+
 export async function enablePush(userId: string): Promise<void> {
+  if (isNative()) {
+    const n = await nativePush();
+    try { await n.nativeEnablePush(); } finally { await nativeRefreshPermission(); }
+    rememberEnabled(userId, true);
+    changed();
+    return;
+  }
   const s = pushSupport();
   if (s.iosNeedsInstall) throw new Error('On iPhone and iPad, add Kithwall to your Home Screen first, then turn on notifications from there.');
   if (!s.supported) throw new Error('This browser doesn’t support push notifications.');
@@ -162,6 +183,12 @@ export async function enablePush(userId: string): Promise<void> {
 
 /** Turn push off for this device: forget the subscription on the server and in the browser. */
 export async function disablePush(userId: string): Promise<void> {
+  if (isNative()) {
+    await (await nativePush()).nativeDisablePush();
+    rememberEnabled(userId, false);
+    changed();
+    return;
+  }
   const sub = await currentSubscription();
   if (sub) {
     const { error } = await sb().from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
@@ -174,6 +201,11 @@ export async function disablePush(userId: string): Promise<void> {
 
 /** Is push on for this device and this account? (browser subscription + our row). */
 export async function pushEnabledHere(): Promise<boolean> {
+  if (isNative()) {
+    const on = await (await nativePush()).nativePushEnabledHere();
+    await nativeRefreshPermission();
+    return on;
+  }
   if (!pushSupport().supported || Notification.permission !== 'granted') return false;
   const sub = await currentSubscription();
   if (!sub) return false;
@@ -187,6 +219,12 @@ export async function pushEnabledHere(): Promise<boolean> {
  * Never prompts.
  */
 export async function syncPush(userId: string): Promise<void> {
+  if (isNative()) {
+    await (await nativePush()).nativeSyncPush();
+    await nativeRefreshPermission();
+    changed();
+    return;
+  }
   if (!pushSupport().supported || Notification.permission !== 'granted' || !wasEnabled(userId)) return;
   const reg = await registerServiceWorker();
   if (!reg) return;
@@ -204,12 +242,14 @@ export async function syncPush(userId: string): Promise<void> {
  * dead endpoint next time and the server removes it then.)
  */
 export async function dropDeviceSubscription(): Promise<void> {
+  if (isNative()) { await (await nativePush()).nativeDropDevice().catch(() => undefined); changed(); return; }
   const sub = await currentSubscription().catch(() => null);
   if (sub) await sub.unsubscribe().catch(() => undefined);
   changed();
 }
 
 export async function sendTestPush(): Promise<{ sent: number }> {
+  if (isNative()) return authedPost<{ sent: number }>('/api/push/test', { nativeToken: await (await nativePush()).nativeCurrentToken() });
   const sub = await currentSubscription();
   return authedPost<{ sent: number }>('/api/push/test', { endpoint: sub?.endpoint });
 }
@@ -278,6 +318,7 @@ export function listenForInstallPrompt(): void {
 }
 
 export function installState(): { canPrompt: boolean; installed: boolean } {
+  if (isNative()) return { canPrompt: false, installed: true };
   return { canPrompt: !!deferredInstall, installed: installedNow || isStandalone() };
 }
 

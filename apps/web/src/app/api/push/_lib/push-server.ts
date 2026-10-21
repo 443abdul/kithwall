@@ -6,6 +6,7 @@ import 'server-only';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import webpush, { WebPushError, type PushSubscription } from 'web-push';
 import { admin } from '@/lib/auth/server';
+import type { NativeDevice } from '@/lib/push/native-server';
 
 const PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? '';
 const PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? '';
@@ -67,7 +68,7 @@ export interface Plan {
   group: boolean;
   created_at: string;
   actor: { username: string | null; display: string | null };
-  targets: { user_id: string; badge: number; prefs: Partial<Record<PushCategory, boolean>> | null; subs: StoredSub[] | null }[];
+  targets: { user_id: string; badge: number; prefs: Partial<Record<PushCategory, boolean>> | null; subs: StoredSub[] | null; native?: NativeDevice[] | null }[];
 }
 export interface StoredSub { id: string; endpoint: string; p256dh: string; auth: string }
 

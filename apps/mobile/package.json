@@ -1,0 +1,22 @@
+{
+  "name": "@kithwall/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kithwall for Android and iOS: a Capacitor shell around the deployed web app (docs/v2/05-native.md).",
+  "scripts": {
+    "www": "node scripts/prepare.mjs",
+    "sync": "node scripts/prepare.mjs && cap sync",
+    "sync:staging": "node -e \"process.env.KITHWALL_ENV='staging';require('child_process').execSync('node scripts/prepare.mjs && npx cap sync',{stdio:'inherit'})\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "typescript": "^5",
+    "@types/node": "^20"
+  }
+}

@@ -6,10 +6,13 @@
 //  - Handles "kw:navigate" from the service worker (notification clicks) with in-app navigation,
 //    so the tab keeps its unlocked keys.
 //  - Clears the installed app's icon badge while Kithwall is on screen.
+//  - In the Kithwall app: notification taps arrive from the native push plugin instead; they get the
+//    same in-app navigation and are re-broadcast as a 'kw:navigate' window event (CallRoot listens).
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/keys/session';
 import { clearAppBadge, dropDeviceSubscription, listenForInstallPrompt, registerServiceWorker, syncPush } from '@/lib/push';
+import { isNative } from '@/lib/native';
 
 export function PushManager() {
   const router = useRouter();
@@ -35,6 +38,17 @@ export function PushManager() {
     };
     navigator.serviceWorker.addEventListener('message', onMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [router]);
+
+  useEffect(() => {
+    if (!isNative()) return;
+    let off: (() => void) | null = null;
+    let live = true;
+    void import('@/lib/native/push').then((m) => m.onNativeOpen((url) => {
+      router.push(url);
+      window.dispatchEvent(new CustomEvent('kw:navigate', { detail: { url } }));
+    })).then((o) => { if (live) off = o; else o(); }).catch(() => undefined);
+    return () => { live = false; off?.(); };
   }, [router]);
 
   useEffect(() => { listenForInstallPrompt(); }, []);

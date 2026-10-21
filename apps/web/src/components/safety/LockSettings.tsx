@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import { SafetyPage } from './SafetyCentre';
 import { PinDialog } from './PinDialog';
+import { NativeProtectionSections } from './NativeProtection';
 
 type T = (k: MessageKey, v?: Record<string, string | number>) => string;
 
@@ -297,6 +298,7 @@ export function LockSettings() {
       <AppPinSection />
       <AutoLockSection />
       <DuressSection />
+      <NativeProtectionSections />
       <QuickExitSection />
     </SafetyPage>
   );

@@ -23,7 +23,7 @@ describe('resealEnvelope', () => {
     expect(v2.wk).toBe(v1.wk);
     expect(v2.ct).not.toBe(v1.ct);
     const ck2 = extractContentKey({ header, envelope: v2, audienceKey, signPub: author.signPub });
-    expect(Buffer.from(ck2).equals(Buffer.from(ck))).toBe(true);
+    expect(Array.from(ck2)).toEqual(Array.from(ck));
     expect(openWithContentKey({ header: commentHeader, envelope: comment, contentKey: deriveSubkey(ck2, 'comment', 'c-1'), signPub: mallory.signPub })).toEqual({ text: 'nice' });
   });
 

@@ -7,3 +7,12 @@ coverage/
 playwright-report/
 supabase/.temp/
 
+
+# Native app secrets (docs/v2/05-native.md): never commit signing keys or provider credentials.
+google-services.json
+GoogleService-Info.plist
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
