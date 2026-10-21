@@ -12,7 +12,10 @@ import '../styles/v2/public.css';
 import '../styles/v2/transparency.css';
 import '../styles/v2/safety.css';
 import '../styles/v2/ephemeral.css';
+import '../styles/v2/voice.css';
+import '../styles/v2/calls.css';
 import { Providers } from '@/components/Providers';
+import { CallRoot } from '@/components/calls/CallRoot';
 
 export const metadata: Metadata = {
   title: { default: 'Kithwall', template: '%s · Kithwall' },
@@ -40,7 +43,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script src="/theme.js" nonce={nonce} />
       </head>
       <body>
-        <Providers nonce={nonce}>{children}</Providers>
+        <Providers nonce={nonce}>{children}<CallRoot /></Providers>
       </body>
     </html>
   );

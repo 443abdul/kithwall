@@ -32,7 +32,7 @@ for themselves with a clear explanation of the trade-off.
 2. **Collect almost nothing.** No phone number. Email optional. No contact upload. No analytics. Short logs.
 3. **Calm, not compulsive.** Chronological feed, no infinite engagement tricks, no public like counts by default, "you're all caught up".
 4. **Safe by default.** Disappearing messages on, read receipts off, profile visible only to connections.
-5. **Prove it.** A live "What Kithwall knows about you" page, one-tap export, open-source code, verifiable safety numbers.
+5. **Prove it.** A live "What Kithwall knows about you" page, one-tap export, source code available for independent review on request, verifiable safety numbers.
 6. **Everyone, everywhere.** Accessible (WCAG 2.2 AA), RTL, low-bandwidth mode, installable, native apps.
 
 ## 4. Product structure

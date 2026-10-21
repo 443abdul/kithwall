@@ -54,7 +54,8 @@ function Row({ c, active, pinned, filter }: { c: ConversationSummary; active: bo
   let preview = '';
   if (c.last) {
     const d = readMessage(c, c.last);
-    const body = d.ok && d.value.event ? t('messages.preview.event') : previewText(d, t);
+    const ev = d.ok ? d.value.event : undefined;
+    const body = ev?.kind === 'call' ? t(ev.video ? 'calls.videoCall' : 'calls.voiceCall') : ev ? t('messages.preview.event') : previewText(d, t);
     preview = c.last.sender_id === userId ? t('messages.preview.you', { text: body })
       : c.isDm || c.members.length <= 2 ? body : t('messages.preview.from', { name: nameOf(c.last.sender_id).split(' ')[0] ?? '', text: body });
   } else preview = t('messages.preview.empty');

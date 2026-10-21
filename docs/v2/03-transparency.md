@@ -89,7 +89,7 @@ security review; will be published"). Linked from the public footer and Settings
       the statement is still true: no request for user data, no order forbidding disclosure, no demand to
       weaken encryption. If any of that stops being true and you may not say so, do not re-date it. Get legal
       advice on the statement's wording for your jurisdiction before launch.
-- [ ] Fill `[SUPABASE LOG RETENTION]` / `[VERCEL LOG RETENTION]` in the privacy policy; the pages say "the short
+- [ ] Fill `7 days (Supabase Pro plan)` / `1 hour (Vercel Hobby plan runtime logs)` in the privacy policy; the pages say "the short
       period set by our plan" and point there.
 - [ ] When the repository is published or an audit is done, replace the "Source code and audits" text
       (`transparency.page.sourceBody` / `sourceAudit`) with the real links.

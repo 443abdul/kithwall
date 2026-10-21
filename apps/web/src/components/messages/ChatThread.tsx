@@ -27,6 +27,7 @@ import { buildThread, dayBucket, isEmojiOnly, snippet, tallyReactions, type Chat
 import { ConversationAvatar, useConversationTitle, useNameOf, PersonAvatar } from './look';
 import { MessageText, eventLine, previewText } from './content';
 import { ChatAttachments, LinkCard } from './ChatMedia';
+import { VoiceNote, voiceOf } from './VoiceNote';
 import { ChatComposer, type ReplyTarget } from './ChatComposer';
 import { MessageActions } from './MessageActions';
 import { ChatInfo } from './ChatInfo';
@@ -34,6 +35,7 @@ import { ChatIcon } from './ChatIcon';
 import { sendDraft, SendError, type Draft } from './send';
 import { useSwipeBack, useVisualViewportHeight } from './runtime';
 import { OldChatSuggestion, TimerHint } from './Ephemeral';
+import { CallButtons } from '@/components/calls/CallButtons';
 
 interface Line extends ChatLine { row: MessageRow; payload: ChatPayload | null }
 interface Pending { tempId: string; draft: Draft; status: 'sending' | 'failed'; progress: number; error?: string }
@@ -229,6 +231,7 @@ function Thread({ c }: { c: ConversationSummary }) {
             </span>
           </span>
         </button>
+        <CallButtons conversation={c} />
         <IconButton icon="clock" label={t('ephemeral.chat.title')} onClick={() => setInfo('timer')} className={c.disappear_secs ? 'k-eph-headbtn is-on' : 'k-eph-headbtn'} />
         <IconButton icon="info" label={t('messages.info.title')} onClick={() => setInfo('main')} />
       </header>
@@ -271,10 +274,11 @@ function Thread({ c }: { c: ConversationSummary }) {
                 <div className="k-chat-bubble">
                   {p.draft.text ? <p className="k-chat-text"><MessageText text={p.draft.text} /></p> : null}
                   {p.draft.files.length ? <p className="k-chat-text">{t('messages.preview.photo', { count: p.draft.files.length })}</p> : null}
+                  {p.draft.voice ? <p className="k-chat-text">{previewText({ ok: true, value: { text: '', voice: { duration: p.draft.voice.duration, peaks: '' } } }, t)}</p> : null}
                 </div>
                 <div className="k-chat-meta">
                   {p.status === 'sending'
-                    ? <span>{p.draft.files.length && p.progress < 1 ? t('messages.sendingProgress', { percent: Math.round(p.progress * 100) }) : t('messages.sending')}</span>
+                    ? <span>{(p.draft.files.length || p.draft.voice) && p.progress < 1 ? t('messages.sendingProgress', { percent: Math.round(p.progress * 100) }) : t('messages.sending')}</span>
                     : (
                       <span className="k-chat-failed" role="alert">
                         <Icon name="alert" /> {p.error}
@@ -321,6 +325,7 @@ function Bubble({ l, c, first, last, mine, isGroup, replyTo, reactions, seen, re
   const nameOf = useNameOf();
   const p = l.payload;
   const d = readMessage(c, l.row);
+  const voice = voiceOf(p);
   const beforeJoin = !d.ok && d.reason === 'waiting' && !!c.joinedAt && l.at < c.joinedAt;
   const text = p?.text ?? '';
   const big = !!p && !p.attachments?.length && !p.link && !p.replyTo && isEmojiOnly(text);
@@ -340,7 +345,7 @@ function Bubble({ l, c, first, last, mine, isGroup, replyTo, reactions, seen, re
       <div className="k-chat-stack">
         {!mine && isGroup && first ? <span className="k-chat-author">{nameOf(l.sender)}</span> : null}
         <div className="k-chat-bubble-row">
-          <div className={cx('k-chat-bubble', !d.ok && 'is-sealed', d.ok && !!p?.attachments?.length && !text && !p.replyTo && !p.link && 'is-media')}>
+          <div className={cx('k-chat-bubble', !d.ok && 'is-sealed', d.ok && !!p?.attachments?.length && !voice && !text && !p.replyTo && !p.link && 'is-media', voice && 'is-voice')}>
             {p?.replyTo ? (
               <button type="button" className="k-chat-quote" onClick={() => onJump(p.replyTo!.id)}>
                 <span className="k-chat-quote-who">{quoteAuthor}</span>
@@ -349,6 +354,7 @@ function Bubble({ l, c, first, last, mine, isGroup, replyTo, reactions, seen, re
             ) : null}
             {d.ok ? (
               <>
+                {voice ? <VoiceNote file={voice.file} meta={voice.meta} messageId={l.id} mine={mine} /> : null}
                 {p?.attachments?.length ? <ChatAttachments files={p.attachments} /> : null}
                 {text ? <p className="k-chat-text" dir="auto"><MessageText text={text} /></p> : null}
                 {p?.link ? <LinkCard link={p.link} /> : null}

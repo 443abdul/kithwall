@@ -41,7 +41,7 @@ Markers used in the drafts: `[PLACEHOLDER]` = fill in a fact · `[OWNER: …]` /
 - [ ] Contracting entities for Supabase, Vercel, Spaceship; DPAs signed and dated; sub-processor list links
 - [ ] Transfer mechanisms per provider (SCCs, UK IDTA, DPF certification status)
 - [ ] Spacemail data location
-- [ ] `[SUPABASE LOG RETENTION]` (auth + API gateway logs, per plan), `[VERCEL LOG RETENTION]`,
+- [ ] `7 days (Supabase Pro plan)` (auth + API gateway logs, per plan), `1 hour (Vercel Hobby plan runtime logs)`,
       `[SPACEMAIL LOG RETENTION]`
 
 **Numbers & periods**

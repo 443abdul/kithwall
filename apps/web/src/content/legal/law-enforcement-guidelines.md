@@ -32,7 +32,7 @@ and log data. Content a user marks **Public** (not available at launch) is unenc
 | Category | Details | How long it exists |
 |---|---|---|
 | Basic subscriber information | Email address, username, display name (if stored unencrypted), account creation date, last sign-in time, whether MFA is on | Until account deletion |
-| IP address records | From our hosting providers' authentication, API and request logs (sign-in, sign-up, password reset, API calls, page requests) | Short: [SUPABASE LOG RETENTION] (Supabase), [VERCEL LOG RETENTION] (Vercel). Our own app tables store no IP addresses |
+| IP address records | From our hosting providers' authentication, API and request logs (sign-in, sign-up, password reset, API calls, page requests) | Short: 7 days (Supabase Pro plan) (Supabase), 1 hour (Vercel Hobby plan runtime logs) (Vercel). Our own app tables store no IP addresses |
 | Public keys | Current keys and key-change history | Until account deletion |
 | Social graph | Friendships and friend requests (with dates), blocks, membership of friend lists (not list names), group and event membership and roles, RSVPs, page likes, trusted-friend recovery contacts | Until removed by the user or account deletion |
 | Activity metadata | Who posted to whose wall and when, item sizes; who commented/liked/voted on which item and when (not what they said or how they voted); pokes; that a user was tagged in an item | Until removed or account deletion |

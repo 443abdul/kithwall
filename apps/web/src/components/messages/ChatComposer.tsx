@@ -2,7 +2,8 @@
 // Message composer (Kithwall 2): grows with the text, keeps the keyboard open after sending, Enter sends
 // on devices with a keyboard (Shift+Enter = new line; on touch screens Enter is a new line), photos and
 // videos, reply-to, and a link preview made by our no-log proxy (encrypted with the message).
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+// Phase 4: voice notes — the mic replaces the send button while the box is empty (VoiceRecorder.tsx).
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useT } from '@/i18n';
 import { useSettings } from '@/lib/settings';
 import { signals } from '@/lib/chat/signals';
@@ -14,6 +15,9 @@ import { useToast } from '@/components/ui/Toast';
 import { ChatIcon } from './ChatIcon';
 import { firstUrl, snippet } from './chatModel';
 import { MAX_ATTACHMENTS, MAX_CHAT_VIDEO_BYTES, type Draft } from './send';
+import { useVoiceRecorder, type VoiceErrorCode } from '@/lib/chat/voiceRecorder';
+import type { VoiceDraft } from '@/lib/chat/voice';
+import { VoiceMicButton, VoicePanel } from './VoiceRecorder';
 
 export interface ReplyTarget { id: string; author: string; authorName: string; text: string }
 
@@ -56,6 +60,12 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
   const [dismissed, setDismissed] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const voiceError = useCallback((code: VoiceErrorCode) => {
+    toast({ message: t(`voice.error.${code}`), tone: code === 'too_short' ? 'default' : 'danger' });
+  }, [toast, t]);
+  const voice = useVoiceRecorder(voiceError);
+  const [drag, setDrag] = useState(0);
+  const recording = voice.state !== 'idle';
 
   // Refocus after a send / when a reply is chosen (keeps the on-screen keyboard up).
   useEffect(() => { if (focusKey) area.current?.focus({ preventScroll: true }); }, [focusKey]);
@@ -115,6 +125,12 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
     area.current?.focus({ preventScroll: true });
   }
 
+  function sendVoice(v: VoiceDraft) {
+    if (disabled) return;
+    onSend({ text: '', files: [], voice: v, ...(reply ? { replyTo: { id: reply.id, author: reply.author } } : {}) });
+    setTimeout(() => area.current?.focus({ preventScroll: true }), 0);
+  }
+
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
     const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -153,6 +169,7 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
         </ul>
       ) : null}
       <div className="k-chat-composer-row">
+        {recording ? <VoicePanel rec={voice} drag={drag} onSend={sendVoice} /> : <>
         <button type="button" className="k-iconbtn" aria-label={t('messages.composer.attach')} title={t('messages.composer.attach')}
           disabled={!!disabled || files.length >= MAX_ATTACHMENTS} onClick={() => picker.current?.click()}>
           <ChatIcon name="attach" />
@@ -174,10 +191,15 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
           onBlur={() => { if (typingOn) signals.stopTyping(convId, members); }}
           onPaste={(e) => { if (e.clipboardData.files.length) { e.preventDefault(); addFiles(e.clipboardData.files); } }}
         />
-        <button type="submit" className="k-chat-send" aria-label={t('messages.composer.send')} title={t('messages.composer.send')}
-          disabled={!canSend} onPointerDown={(e) => e.preventDefault()}>
-          <ChatIcon name="send" />
-        </button>
+        </>}
+        {canSend || (recording && voice.mode === 'locked') || voice.state === 'preview' ? (
+          recording ? null : (
+            <button type="submit" className="k-chat-send" aria-label={t('messages.composer.send')} title={t('messages.composer.send')}
+              disabled={!canSend} onPointerDown={(e) => e.preventDefault()}>
+              <ChatIcon name="send" />
+            </button>
+          )
+        ) : <VoiceMicButton rec={voice} disabled={!!disabled} onDrag={setDrag} />}
       </div>
     </form>
   );

@@ -1,0 +1,153 @@
+/* Kithwall 2 calls (components/calls/**). Tokens only, logical properties only (RTL just works).
+   Phone first: full-screen call at 375px; on wider screens the call is a centred panel over the app. */
+
+.kw.k-call-root { position: relative; z-index: 60; }
+
+/* ------------------------------------------------------------------ header buttons (chat) */
+.kw .k-call-headbtns { display: inline-flex; gap: var(--space-1); }
+.kw .k-call-headbtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ------------------------------------------------------------------ controls */
+.kw .k-call-ctl {
+  display: inline-grid; place-items: center; inline-size: 52px; block-size: 52px; flex: none;
+  border: 0; border-radius: var(--radius-pill); cursor: pointer;
+  background: var(--surface-2); color: var(--text);
+  box-shadow: var(--shadow-1);
+  transition: transform var(--dur-1) var(--ease-standard), background var(--dur-1) var(--ease-standard);
+}
+.kw .k-call-ctl .k-icon { inline-size: 24px; block-size: 24px; }
+.kw .k-call-ctl:hover { background: var(--surface-3); }
+.kw .k-call-ctl:active { transform: scale(var(--press-scale)); }
+.kw .k-call-ctl.is-on { background: var(--text); color: var(--bg); }
+.kw .k-call-ctl.is-danger { background: var(--danger); color: var(--danger-contrast); }
+.kw .k-call-ctl.is-accept { background: var(--accent); color: var(--accent-contrast); }
+.kw .k-call-ctl.is-big { inline-size: 68px; block-size: 68px; }
+.kw .k-call-ctl.is-big .k-icon { inline-size: 30px; block-size: 30px; }
+.kw .k-call-ctl:focus-visible, .kw .k-call-topbtn:focus-visible, .kw .k-call-pip:focus-visible, .kw .k-call-bar-main:focus-visible {
+  outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset);
+}
+
+/* ------------------------------------------------------------------ incoming */
+.kw .k-call-incoming, .kw .k-call-screen {
+  position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text);
+  padding: calc(var(--space-4) + var(--safe-top)) calc(var(--space-4) + var(--safe-right)) calc(var(--space-6) + var(--safe-bottom)) calc(var(--space-4) + var(--safe-left));
+  animation: k-call-in var(--dur-3) var(--ease-emphasized);
+}
+@keyframes k-call-in { from { opacity: 0; transform: translateY(12px); } }
+@media (prefers-reduced-motion: reduce) { .kw .k-call-incoming, .kw .k-call-screen { animation: none; } }
+
+.kw .k-call-incoming { justify-content: space-between; align-items: center; text-align: center; }
+.kw .k-call-incoming-who { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); margin-block-start: 12vh; }
+.kw .k-call-incoming-who .k-avatar { animation: k-call-pulse 1.6s ease-in-out infinite; border-radius: var(--avatar-radius, 50%); }
+@keyframes k-call-pulse { 50% { box-shadow: 0 0 0 14px var(--accent-soft); } }
+@media (prefers-reduced-motion: reduce) { .kw .k-call-incoming-who .k-avatar { animation: none; } }
+.kw .k-call-masked { display: grid; place-items: center; inline-size: 96px; block-size: 96px; border-radius: var(--radius-pill); background: var(--surface-2); }
+.kw .k-call-masked .k-icon { inline-size: 40px; block-size: 40px; }
+.kw .k-call-name { font-size: var(--text-2xl); font-family: var(--font-display); overflow-wrap: anywhere; }
+.kw .k-call-sub { color: var(--text-muted); }
+.kw .k-call-sealed { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--text-muted); }
+.kw .k-call-sealed .k-icon { inline-size: 14px; block-size: 14px; }
+.kw .k-call-incoming-actions { display: flex; justify-content: space-around; inline-size: min(100%, 360px); }
+.kw .k-call-action { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+
+/* ------------------------------------------------------------------ in call */
+.kw .k-call-screen { gap: var(--space-3); padding-inline: calc(var(--space-2) + var(--safe-left)) calc(var(--space-2) + var(--safe-right)); }
+@media (min-width: 900px) {
+  .kw .k-call-screen, .kw .k-call-incoming {
+    inset: var(--space-6); margin-inline: auto; max-inline-size: 1100px;
+    border-radius: var(--radius-xl); box-shadow: var(--shadow-3); border: 1px solid var(--border);
+  }
+}
+.kw .k-call-top { display: flex; align-items: center; gap: var(--space-2); }
+.kw .k-call-top-text { flex: 1; min-inline-size: 0; text-align: center; }
+.kw .k-call-title { font-size: var(--text-lg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw .k-call-status { font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; min-block-size: 1.5em; }
+.kw .k-call-topbtn {
+  display: grid; place-items: center; inline-size: 44px; block-size: 44px; border: 0; border-radius: var(--radius-pill);
+  background: transparent; color: var(--text); cursor: pointer;
+}
+.kw .k-call-topbtn:hover { background: var(--surface-2); }
+.kw .k-call-topbtn:disabled { visibility: hidden; }
+.kw .k-call-lock { color: var(--accent-text); }
+
+.kw .k-call-stage { position: relative; flex: 1; min-block-size: 0; display: flex; }
+.kw .k-call-waiting { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); }
+
+.kw .k-call-tile {
+  position: relative; flex: 1; min-inline-size: 0; min-block-size: 0; overflow: hidden;
+  display: grid; place-items: center; border-radius: var(--radius-lg); background: var(--surface-3);
+}
+.kw .k-call-tile.is-waiting { opacity: 0.7; }
+.kw .k-call-tile-avatar { display: grid; place-items: center; }
+.kw .k-call-video { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; background: var(--surface-3); }
+.kw .k-call-tile.is-big .k-call-video { object-fit: contain; }
+.kw .k-call-video.is-mirror { transform: scaleX(-1); }
+.kw .k-call-audio { display: none; }
+.kw .k-call-tile-name {
+  position: absolute; inset-block-end: var(--space-2); inset-inline-start: var(--space-2); max-inline-size: calc(100% - var(--space-4));
+  display: inline-flex; align-items: center; gap: var(--space-1); padding: 2px var(--space-2);
+  border-radius: var(--radius-pill); background: var(--surface); color: var(--text); font-size: var(--text-xs);
+  box-shadow: var(--shadow-1);
+}
+.kw .k-call-tile-name > span[dir] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw .k-call-tile-muted { display: inline-flex; color: var(--danger); }
+
+.kw .k-call-grid { display: grid; gap: var(--space-2); grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; }
+.kw .k-call-grid.n-2 { grid-template-columns: 1fr; }
+@media (min-width: 700px) {
+  .kw .k-call-grid.n-2 { grid-template-columns: 1fr 1fr; }
+  .kw .k-call-grid:is(.n-5, .n-6, .n-7, .n-8, .n-9) { grid-template-columns: repeat(3, 1fr); }
+}
+
+.kw .k-call-pip {
+  position: absolute; inset-block-end: var(--space-3); inset-inline-end: var(--space-3); z-index: 2;
+  inline-size: clamp(88px, 26vw, 180px); aspect-ratio: 3 / 4; padding: 0; overflow: hidden;
+  border: 2px solid var(--surface); border-radius: var(--radius-md); background: var(--surface-3); cursor: pointer;
+  box-shadow: var(--shadow-2);
+}
+.kw .k-call-pip.is-start { inset-inline-end: auto; inset-inline-start: var(--space-3); }
+@media (min-width: 700px) { .kw .k-call-pip { aspect-ratio: 4 / 3; } }
+
+.kw .k-call-quality { display: inline-flex; align-items: flex-end; gap: 2px; block-size: 12px; margin-inline-start: var(--space-1); }
+.kw .k-call-quality i { inline-size: 3px; border-radius: 1px; background: var(--border-strong); }
+.kw .k-call-quality i:nth-child(1) { block-size: 5px; }
+.kw .k-call-quality i:nth-child(2) { block-size: 8px; }
+.kw .k-call-quality i:nth-child(3) { block-size: 12px; }
+.kw .k-call-quality.is-good i.is-on { background: var(--success); }
+.kw .k-call-quality.is-fair i.is-on { background: var(--warning); }
+.kw .k-call-quality.is-poor i.is-on { background: var(--danger); }
+
+.kw .k-call-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-3); padding-block: var(--space-2); }
+.kw .k-call-screen.is-ended .k-call-stage { opacity: 0.55; }
+
+/* ------------------------------------------------------------------ encryption panel */
+.kw .k-call-code { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-2); }
+.kw .k-call-code-who { font-weight: var(--weight-bold); }
+.kw .k-call-emoji { display: flex; gap: var(--space-3); font-size: 2.25rem; line-height: 1.2; font-family: var(--font-emoji); }
+.kw .k-call-digits { font-family: var(--font-mono); font-size: var(--text-xl); letter-spacing: 0.2em; direction: ltr; text-align: start; unicode-bidi: isolate; }
+.kw .k-call-facts { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-sm); }
+.kw .k-call-facts li { display: flex; gap: var(--space-2); align-items: flex-start; }
+.kw .k-call-facts .k-icon { flex: none; inline-size: 18px; block-size: 18px; margin-block-start: 2px; color: var(--accent-text); }
+
+/* ------------------------------------------------------------------ minimised bar */
+.kw .k-call-bar {
+  position: fixed; z-index: 60; inset-block-start: calc(var(--space-2) + var(--safe-top)); inset-inline: var(--space-2);
+  margin-inline: auto; max-inline-size: 520px;
+  display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1);
+  border-radius: var(--radius-pill); background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); box-shadow: var(--shadow-3);
+}
+.kw .k-call-bar .k-call-ctl { inline-size: 40px; block-size: 40px; box-shadow: none; }
+.kw .k-call-bar .k-call-ctl .k-icon { inline-size: 20px; block-size: 20px; }
+.kw .k-call-bar-main {
+  flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-pill); background: transparent; color: inherit;
+  font: inherit; text-align: start; cursor: pointer;
+}
+.kw .k-call-bar-main:hover { background: var(--surface-2); }
+.kw .k-call-bar-dot { inline-size: 10px; block-size: 10px; flex: none; border-radius: 50%; background: var(--success); animation: k-call-blink 1.6s ease-in-out infinite; }
+@keyframes k-call-blink { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .kw .k-call-bar-dot { animation: none; } }
+.kw .k-call-bar-who { font-weight: var(--weight-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw .k-call-bar-time { color: var(--text-muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; flex: none; }

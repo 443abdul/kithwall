@@ -9,6 +9,9 @@
  * - Hidden chats (Safety centre, docs/v2/03-safety.md): the app keeps salted SHA-256 hashes of the
  *   hidden conversation ids in IndexedDB ("kithwall-sw"); pushes for those chats are shown as a
  *   generic "new activity" notice, without the sender or a link into the chat.
+ * - Calls: "Dan is calling" opens /messages/<chat>?call=<id>; the app then asks the caller's device whether
+ *   it is still ringing. Call pushes expire after 45 s and stay up until tapped or dismissed. A call from a
+ *   hidden chat gets the same generic notice as any other hidden-chat push.
  */
 'use strict';
 
@@ -123,6 +126,12 @@ async function handlePush(event) {
     if (watching) return;
   }
 
+  // A call (docs/v2/04-calls.md §6): an open, visible Kithwall tab is already ringing in the app.
+  if (data.kind === 'call') {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (wins.some((c) => c.visibilityState === 'visible')) return;
+  }
+
   await self.registration.showNotification(title, {
     body,
     tag,
@@ -131,6 +140,7 @@ async function handlePush(event) {
     badge: BADGE,
     lang: 'en-US',
     timestamp: Date.now(),
+    ...(data.kind === 'call' ? { requireInteraction: true, vibrate: [300, 150, 300, 150, 300] } : {}),
     data: { url: path, kind: data.kind || 'notification' },
   });
 }

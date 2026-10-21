@@ -5,6 +5,7 @@ import type { ChatPayload } from '@/lib/messages';
 import type { Decrypted } from '@/lib/content';
 import { durationKey } from '@/lib/chat/ephemeral';
 import { linkify, snippet } from './chatModel';
+import { clockParts, readVoiceMeta } from '@/lib/chat/voice';
 
 export function MessageText({ text }: { text: string }) {
   return (
@@ -31,6 +32,10 @@ export function eventLine(p: ChatPayload, actor: string, nameOf: (id: string) =>
     case 'timer': return e.secs
       ? t('ephemeral.event.set', { name: actor, duration: t(durationKey(e.secs)) })
       : t('ephemeral.event.off', { name: actor });
+    case 'call':
+      if (e.state === 'ringing') return t('calls.event.ringing', { name: actor });
+      if (e.state === 'missed') return e.mine ? t('calls.event.noAnswer', { name: actor }) : t(e.video ? 'calls.event.missedVideo' : 'calls.event.missedVoice', { name: actor });
+      return t(e.video ? 'calls.event.video' : 'calls.event.voice', { name: actor });
     default: return null;
   }
 }
@@ -41,6 +46,11 @@ export function previewText(d: Decrypted<ChatPayload>, t: TFunction): string {
   const v = d.value;
   const atts = v.attachments ?? [];
   if (v.text?.trim()) return snippet(v.text);
+  const voice = readVoiceMeta(v.voice);
+  if (voice) {
+    const { m, s } = clockParts(voice.duration);
+    return t('voice.preview', { duration: `${m}:${String(s).padStart(2, '0')}` });
+  }
   if (atts.length) {
     const videos = atts.filter((a) => isVideo(a.mime)).length;
     if (videos && videos === atts.length) return t('messages.preview.video', { count: videos });

@@ -1,6 +1,7 @@
 'use client';
 // Sending a Kithwall 2 chat message. Order that keeps attachments readable (see lib/chat/attach.ts):
 //   1. photos are re-encoded on this device (drops EXIF/GPS), videos encrypted in parts; uploaded unlinked
+//      voice notes (phase 4) are recorded on this device and encrypted as they are (no transcoding)
 //   2. the link preview image (fetched by our no-log proxy) is re-encoded and uploaded the same way
 //   3. the message is sealed and inserted
 //   4. every uploaded object is linked to the message row (readers retry until then)
@@ -10,6 +11,7 @@ import { prepareAttachment, MAX_ATTACHMENTS } from '@/lib/chat/attach';
 import { uploadPreparedImage, type LinkDraft } from '@/lib/feed/linkPreview';
 import { KeyWaitingError, markRead, MAX_MESSAGE_CHARS, sendMessage, type ChatPayload, type ConversationRow } from '@/lib/messages';
 import type { FileRef } from '@/lib/types';
+import { MAX_VOICE_BYTES, MAX_VOICE_SECS, voiceMeta, type VoiceDraft } from '@/lib/chat/voice';
 
 export { MAX_ATTACHMENTS };
 export const MAX_CHAT_VIDEO_BYTES = MAX_VIDEO_BYTES;
@@ -19,6 +21,8 @@ export interface Draft {
   files: File[];
   replyTo?: { id: string; author: string };
   link?: LinkDraft | null;
+  /** A recorded voice note (sent on its own, without text or other files). */
+  voice?: VoiceDraft;
 }
 
 export type SendErrorCode = 'key_waiting' | 'too_long' | 'video_too_big' | 'bad_file' | 'rate_limited' | 'not_allowed' | 'failed';
@@ -63,11 +67,20 @@ export async function sendDraft(conv: ConversationRow, draft: Draft, onProgress?
     if (f.type.startsWith('video/') && f.size > MAX_CHAT_VIDEO_BYTES) throw new SendError('video_too_big');
     if (!f.type.startsWith('video/') && !f.type.startsWith('image/')) throw new SendError('bad_file');
   }
+  const voice = draft.voice;
+  if (voice && (voice.blob.size > MAX_VOICE_BYTES || !(voice.duration > 0) || voice.duration > MAX_VOICE_SECS + 1)) throw new SendError('bad_file');
   const refs: FileRef[] = [];
   let preview: FileRef | undefined;
-  const total = files.reduce((n, f) => n + f.size, 0) || 1;
+  const total = files.reduce((n, f) => n + f.size, 0) + (voice?.blob.size ?? 0) || 1;
   let done = 0;
   try {
+    if (voice) {
+      const bytes = new Uint8Array(await voice.blob.arrayBuffer());
+      refs.push(await uploadLargeEncrypted(bytes, voice.mime, {
+        onProgress: (loaded, all) => onProgress?.(Math.min(0.99, ((loaded / Math.max(1, all)) * voice.blob.size) / total)),
+      }));
+      done += voice.blob.size;
+    }
     for (const f of files) {
       if (f.type.startsWith('video/')) {
         const dims = await videoSize(f);
@@ -88,6 +101,7 @@ export async function sendDraft(conv: ConversationRow, draft: Draft, onProgress?
     const payload: ChatPayload = {
       text,
       ...(refs.length ? { attachments: refs } : {}),
+      ...(voice ? { voice: voiceMeta(voice) } : {}),
       ...(draft.replyTo ? { replyTo: draft.replyTo } : {}),
       ...(p ? {
         link: {

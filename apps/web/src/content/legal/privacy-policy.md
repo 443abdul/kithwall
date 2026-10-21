@@ -244,8 +244,8 @@ device.
 - **Metadata** (section 4.3) is visible to us.
 - **Public** content is not encrypted.
 - **The app is delivered by our servers.** A malicious or compromised version of the app could
-  steal keys. We reduce this risk by loading no third-party scripts and [publishing the source code
-  and build hashes for each release — OWNER: confirm before launch].
+  steal keys. We reduce this risk by loading no third-party scripts and by making the source code
+  available for independent security review on request.
 - **Your device.** Malware or a browser extension with access to the page can read what you see.
 - **Your friends** can screenshot or copy what you share with them.
 - **No forward secrecy yet.** If someone later steals your main account key, they could decrypt
@@ -354,8 +354,8 @@ unreadable to us and our providers. Metadata and account data are readable.
 | Recovery requests | 7 days after they close |
 | Trusted-friend recovery shares | Until you change your trusted friends or delete your account |
 | Reports and moderation decisions | 1 year after resolution (longer if legally required, e.g. child safety preservation) |
-| Supabase authentication and API logs (incl. IP addresses) | [SUPABASE LOG RETENTION — per plan, e.g. N days] |
-| Vercel request logs | [VERCEL LOG RETENTION — per plan] |
+| Supabase authentication and API logs (incl. IP addresses) | 7 days (Supabase Pro plan) |
+| Vercel request logs | 1 hour (Vercel Hobby plan runtime logs) |
 | Spacemail delivery logs | [SPACEMAIL LOG RETENTION] |
 | Link-preview requests | Not stored by us |
 | Support emails | [SUPPORT EMAIL RETENTION, e.g. 2 years after the conversation ends] |

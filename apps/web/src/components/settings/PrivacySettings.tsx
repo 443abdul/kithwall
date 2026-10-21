@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { PersonAvatar } from '@/components/messages/look';
 import { SettingsPage, Section } from './shared';
+import { loadCallPrefs, saveCallPrefs, useCallPrefs } from '@/lib/calls/prefs';
 
 function useSaver() {
   const t = useT();
@@ -54,6 +55,21 @@ function MessagesPrivacy() {
         onChange={(v) => void save(() => saveSettings({ typingIndicator: v }))} />
       <Switch checked={s.chatVisible} label={t('settings.privacy.online')} description={t('settings.privacy.onlineBody')}
         onChange={(v) => setChatVisible(v)} />
+    </Section>
+  );
+}
+
+// Calls (phase 4, docs/v2/04-calls.md §2): relay-only by default, so the people you call never see your IP.
+function CallsPrivacy() {
+  const t = useT();
+  const p = useCallPrefs();
+  const { status } = useSession();
+  const save = useSaver();
+  useEffect(() => { if (status === 'ready') void loadCallPrefs().catch(() => undefined); }, [status]);
+  return (
+    <Section id="calls" title={t('calls.settings.title')}>
+      <Switch checked={p.relay} label={t('calls.settings.relay')} description={t('calls.settings.relayBody')}
+        onChange={(v) => void save(() => saveCallPrefs({ relay: v }))} />
     </Section>
   );
 }
@@ -162,6 +178,7 @@ export function PrivacySettings() {
   return (
     <SettingsPage title={t('settings.privacy.title')} description={t('settings.privacy.description')}>
       <MessagesPrivacy />
+      <CallsPrivacy />
       <ConnectionsPrivacy />
       <PostsPrivacy />
       <Blocked />

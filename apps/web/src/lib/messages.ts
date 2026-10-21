@@ -14,6 +14,7 @@ import { keyring, KeyWaitingError } from './keys/keyring';
 import { people } from './people';
 import type { AudienceRow, FileRef, MessagePayload, MessageRow } from './types';
 import type { Decrypted } from './content';
+import type { VoiceMeta } from './chat/voice';
 
 export interface ConversationRow {
   id: string; audience_id: string; created_by: string; dm_key: string | null; last_message_at: string; created_at: string;
@@ -50,13 +51,17 @@ export type ConversationEvent =
   | { kind: 'removed'; ids: string[] }
   | { kind: 'left' }
   /** Server notice (phase 3): someone changed the disappearing-messages timer (null = off). */
-  | { kind: 'timer'; secs: number | null };
+  | { kind: 'timer'; secs: number | null }
+  /** Server notice (phase 4): a voice/video call. state: still ringing, someone answered, or nobody did. */
+  | { kind: 'call'; video: boolean; state: 'ringing' | 'answered' | 'missed'; mine: boolean };
 export interface ChatPayload extends MessagePayload {
   event?: ConversationEvent;
   /** Quoted message (Kithwall 2): the id plus its author, so the quote survives if it scrolls out of the loaded page. */
   replyTo?: { id: string; author: string };
   /** Link preview made through the no-log proxy, encrypted with the message (like a post's link). */
   link?: { url: string; title?: string; description?: string; site?: string; image?: FileRef };
+  /** Voice note (phase 4): length and waveform; the audio itself is the audio/* file in `attachments`. */
+  voice?: VoiceMeta;
 }
 
 export const MAX_MESSAGE_CHARS = 20_000;
@@ -306,6 +311,12 @@ function readNotice(row: MessageRow): Decrypted<ChatPayload> {
   const n = row.notice as { kind?: unknown; secs?: unknown } | null | undefined;
   if (n && n.kind === 'timer' && (n.secs === null || (typeof n.secs === 'number' && Number.isFinite(n.secs)))) {
     return { ok: true, value: { text: '', event: { kind: 'timer', secs: n.secs as number | null } } };
+  }
+  const c = row.notice as { kind?: unknown; video?: unknown; ans?: unknown } | null | undefined;
+  if (c && c.kind === 'call') {
+    // Calls ring for 45 s (lib/calls/engine.ts); after that, an unanswered call is a missed call.
+    const state = c.ans === true ? 'answered' : Date.now() - Date.parse(row.created_at) < 50_000 ? 'ringing' : 'missed';
+    return { ok: true, value: { text: '', event: { kind: 'call', video: c.video === true, state, mine: row.sender_id === me() } } };
   }
   return { ok: false, reason: 'unverified' };
 }

@@ -77,7 +77,7 @@ export interface PushPayload {
   body: string;
   tag: string;
   url: string;
-  kind: 'message' | 'notification' | 'test';
+  kind: 'message' | 'notification' | 'test' | 'call';
   conversation?: string;
   badge?: number;
 }
@@ -132,6 +132,26 @@ export function describe(p: Plan): { category: PushCategory; payload: Omit<PushP
   };
 }
 
+/** A ringing call is only worth a push while it can still be answered. */
+export const CALL_TTL_SECONDS = 45;
+
+/**
+ * Phase 4 calls: "Dan is calling" (who + what only; voice or video is not said). Opens the chat with
+ * ?call=<id>, which asks the caller's device whether it is still ringing (docs/v2/04-calls.md §6).
+ */
+export function describeCall(p: Plan, callId: string): { category: PushCategory; payload: Omit<PushPayload, 'badge'>; urgency: 'high' } | null {
+  if (!p.conversation_id || !UUID_RE.test(callId)) return null;
+  const who = (p.actor.display?.trim() || p.actor.username || 'Someone').slice(0, 80);
+  return {
+    category: 'messages', urgency: 'high',
+    payload: {
+      v: 1, title: 'Kithwall', kind: 'call', conversation: p.conversation_id,
+      body: p.group ? `${who} is calling a group conversation` : `${who} is calling`,
+      tag: `call:${p.conversation_id}`, url: `/messages/${p.conversation_id}?call=${callId}`,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------------------
 // Sending.
 export interface SendResult { sent: number; removed: number; failed: number }
@@ -140,17 +160,17 @@ export interface SendResult { sent: number; removed: number; failed: number }
  * Send one payload per subscription, in parallel. Subscriptions the push service reports as gone
  * (404/410) are deleted; successful ones get last_success_at. Errors are logged by status only.
  */
-export async function sendAll(jobs: { sub: StoredSub; payload: PushPayload; urgency: 'high' | 'normal' }[]): Promise<SendResult> {
+export async function sendAll(jobs: { sub: StoredSub; payload: PushPayload; urgency: 'high' | 'normal'; ttl?: number }[]): Promise<SendResult> {
   if (!jobs.length) return { sent: 0, removed: 0, failed: 0 };
   const ok: string[] = [];
   const gone: string[] = [];
   let failed = 0;
-  await Promise.all(jobs.map(async ({ sub, payload, urgency }) => {
+  await Promise.all(jobs.map(async ({ sub, payload, urgency, ttl }) => {
     if (!isPushEndpoint(sub.endpoint)) { gone.push(sub.id); return; }
     const target: PushSubscription = { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } };
     try {
       await webpush.sendNotification(target, JSON.stringify(payload), {
-        TTL: TTL_SECONDS, urgency, timeout: 8000,
+        TTL: ttl ?? TTL_SECONDS, urgency, timeout: 8000,
         vapidDetails: { subject: SUBJECT, publicKey: PUBLIC_KEY, privateKey: PRIVATE_KEY },
       });
       ok.push(sub.id);
