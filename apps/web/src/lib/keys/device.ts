@@ -1,8 +1,10 @@
 'use client';
 // "Keep me logged in" (spec §3.13): the account master key is stored in IndexedDB,
 // encrypted with a NON-EXTRACTABLE WebCrypto AES-GCM key that also lives in IndexedDB.
-// Script on this origin can use the key but cannot export it, so a copied database file
-// from another machine is useless. Logging out deletes both.
+// Script on this origin can use the key but cannot export it. That is NOT protection at rest (security
+// review C1): Chromium and Firefox store the raw bytes of non-extractable keys in the profile's
+// IndexedDB files, so anyone with the device or a copy of its disk can recover the AMK while "keep me
+// unlocked" is on. The UI says so (keys.rememberedBody). Logging out deletes both.
 //
 // Safety centre (docs/v2/03-safety.md): the app-PIN record ('pin') sits in the same database, again
 // under its own non-extractable key, with the local attempt counter ('pin-attempts'). While an app PIN

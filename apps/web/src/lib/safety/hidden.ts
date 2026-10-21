@@ -104,6 +104,18 @@ async function update(fn: (ids: Set<string>) => void): Promise<void> {
 export async function hideChat(id: string): Promise<void> {
   if (!canHideChats()) throw new Error('app_pin_required');
   await update((ids) => { ids.add(id); });
+  forgetLocalTraces(id);
+}
+
+/**
+ * Plaintext per-chat markers this device may have written before the chat was hidden (security review L10):
+ * the old-chat suggestion and the offline read marker. Hidden chats never write them again.
+ */
+export function forgetLocalTraces(id: string) {
+  try {
+    localStorage.removeItem(`kw.eph.suggest.${id}`);
+    localStorage.removeItem(`kw.read.${id}`);
+  } catch { /* storage blocked */ }
 }
 export async function unhideChat(id: string): Promise<void> {
   await update((ids) => { ids.delete(id); });

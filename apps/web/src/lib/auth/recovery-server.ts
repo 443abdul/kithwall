@@ -5,21 +5,39 @@ import 'server-only';
 // identity key by signing a fresh, single-use nonce.
 import type { KeyBundle } from '@kithwall/crypto';
 import { admin } from './server';
-import { clientIp, ipTag } from './passkey-server';
+import { ipTag } from './passkey-server';
+import { clientOverLimit, overLimit, rateKey } from './anon-limit';
+import { parsePayload, verifyPayload } from './altcha-server';
 import { HANDLE_RE, normalizeHandle } from './passkey-shared';
 
-/** Per-instance limiter for the unauthenticated recovery routes (production adds edge limits). */
-const hits = new Map<string, { n: number; reset: number }>();
-export function tooMany(req: Request, scope: string, max: number, windowMs: number): boolean {
-  let tag: string;
-  try { tag = ipTag(req); } catch { tag = clientIp(req); }
-  const key = `${scope}:${tag}`;
-  const now = Date.now();
-  const h = hits.get(key);
-  if (!h || h.reset < now) hits.set(key, { n: 1, reset: now + windowMs });
-  else if (++h.n > max) return true;
-  if (hits.size > 10_000) for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
-  return false;
+/**
+ * Rate limit for the unauthenticated recovery routes, per client (daily IP tag), shared by every
+ * instance through the database (security review L6/W4; lib/auth/anon-limit.ts).
+ */
+export function tooMany(req: Request, scope: string, max: number, windowMs: number): Promise<boolean> {
+  return clientOverLimit(req, scope, max, Math.ceil(windowMs / 1000));
+}
+
+/**
+ * Per-account limits on recovery-key challenges (security review W4): at most 12 an hour for one
+ * account from one client, and a generous 200 an hour for the account overall, so one person
+ * hammering a handle can't lock its owner out of their own recovery.
+ */
+export async function accountTooMany(req: Request, userId: string): Promise<boolean> {
+  return (await overLimit(rateKey('recover-account-target-client', userId, ipTag(req)), 12, 3600))
+      || (await overLimit(rateKey('recover-account-target', userId), 200, 3600));
+}
+
+/** A valid, unexpired, unused ALTCHA proof-of-work (spent here, so it can't be replayed). */
+export async function proofOfWorkOk(raw: unknown): Promise<boolean> {
+  const pow = parsePayload(raw);
+  if (!pow || !(await verifyPayload(pow))) return false;
+  const spent = await admin().from('altcha_spent').insert({ signature: pow.challenge.signature });
+  if (spent.error) {
+    if (spent.error.code === '23505') return false;
+    throw new Error(spent.error.message);
+  }
+  return true;
 }
 
 export interface Target { userId: string; bundle: KeyBundle }
@@ -44,15 +62,6 @@ export async function trustedSummary(userId: string): Promise<{ count: number; t
   if (error) throw new Error(error.message);
   if (!data?.length) return null;
   return { count: data.length, threshold: Math.min(...data.map((r) => Number(r.threshold))) };
-}
-
-/** Recovery challenges issued for an account in the last hour (a per-account limit on top of the IP one). */
-export async function recentRecoveryChallenges(userId: string): Promise<number> {
-  const since = new Date(Date.now() - 3600_000).toISOString();
-  const { count, error } = await admin().from('key_challenges').select('id', { count: 'exact', head: true })
-    .eq('user_id', userId).eq('purpose', 'recover_account').gt('created_at', since);
-  if (error) throw new Error(error.message);
-  return count ?? 0;
 }
 
 export async function issueRecoveryChallenge(userId: string): Promise<{ id: string; nonce: string }> {

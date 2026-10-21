@@ -62,7 +62,7 @@ export async function readJson<T>(req: Request, maxBytes = 16_384): Promise<T | 
   try { return JSON.parse(text) as T; } catch { return null; }
 }
 
-export type ChallengePurpose = 'delete_account' | 'delete_all_posts' | 'change_recovery' | 'recover_account';
+export type ChallengePurpose = 'delete_account' | 'delete_all_posts' | 'change_recovery' | 'recover_account' | 'add_credential' | 'rotate_identity';
 
 /**
  * Proof-of-key (spec §3.9): the challenge must belong to the caller, match the purpose, be unused
@@ -111,13 +111,20 @@ export async function deleteAccountNow(userId: string): Promise<void> {
 }
 
 /** Records that a notice email was sent; returns false if it already was. */
-export async function claimNotice(kind: 'deletion_scheduled' | 'recovery_started' | 'account_recovered', refId: string, userId: string): Promise<boolean> {
+export async function claimNotice(kind: 'deletion_scheduled' | 'recovery_started' | 'account_recovered' | 'credential_added' | 'identity_key_changed', refId: string, userId: string): Promise<boolean> {
   const { error } = await admin().from('notice_emails').insert({ kind, ref_id: refId, user_id: userId });
   if (!error) return true;
   if (error.code === '23505') return false;
   throw new Error(error.message);
 }
 
+/**
+ * The site's own origin for links in notices. In production it must be configured: the request's Host
+ * header is attacker-controlled on some deployments (security review L8).
+ */
 export function siteOrigin(req: Request): string {
-  return process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin;
+  const configured = process.env.NEXT_PUBLIC_SITE_URL;
+  if (configured) return new URL(configured).origin;
+  if (process.env.NODE_ENV === 'production') throw new Error('NEXT_PUBLIC_SITE_URL is not set');
+  return new URL(req.url).origin;
 }

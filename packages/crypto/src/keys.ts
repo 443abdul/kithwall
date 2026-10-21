@@ -4,6 +4,9 @@
  *   amkByPassword = wrap(passwordKEK, AMK,  aad "kithwall/v1/wrap/amk-password/<userId>")
  *   amkByRecovery = wrap(recoveryKEK, AMK,  aad "kithwall/v1/wrap/amk-recovery/<userId>")
  *   identityEnc   = wrap(identityKey, signPriv ‖ kxPriv, aad "kithwall/v1/wrap/identity/<userId>")
+ *   prevKxEnc     = wrap(identityKey, kxPriv₁ ‖ kxPriv₂ ‖ …, aad "kithwall/v1/wrap/identity-prev/<userId>")
+ *                   (optional: the X25519 keys of earlier identities after a signed identity-key rotation,
+ *                   kept only so keys sealed to them before the rotation still open; newest first)
  *   recoveryKEK   = HKDF(RK,  "kithwall/v1/recovery-kek")
  *   identityKey   = HKDF(AMK, "kithwall/v1/identity-key")
  *   vaultKey      = HKDF(AMK, "kithwall/v1/vault")
@@ -40,14 +43,23 @@ export interface KeyBundle {
   amkByRecovery: string;
   identityEnc: string;
   rkCommitment: string;
+  /** Earlier X25519 private keys (after rotateIdentityBundle); absent for accounts that never rotated. */
+  prevKxEnc?: string;
 }
+
+export interface PreviousKx { kxPub: Uint8Array; kxPriv: Uint8Array }
 
 export interface Unlocked {
   amk: Uint8Array;
   identity: Identity;
+  /** X25519 keys of earlier identities, newest first (empty unless the identity key was rotated). */
+  previousKx?: PreviousKx[];
 }
 
-type WrapPurpose = 'amk-password' | 'amk-recovery' | 'identity';
+/** At most this many earlier key-exchange keys are kept in a bundle. */
+export const MAX_PREVIOUS_KX = 16;
+
+type WrapPurpose = 'amk-password' | 'amk-recovery' | 'identity' | 'identity-prev';
 
 /** Associated data for key wraps: "kithwall/v1/wrap/<purpose>/<userId>". */
 export function wrapAad(purpose: WrapPurpose, userId: string): Uint8Array {
@@ -172,6 +184,32 @@ function validateBundle(bundle: KeyBundle): void {
     if (typeof bundle[f] !== 'string') invalid(`bundle.${f} must be a string`);
   }
   if (bundle.amkByPassword !== undefined && typeof bundle.amkByPassword !== 'string') invalid('bundle.amkByPassword must be a string');
+  if (bundle.prevKxEnc !== undefined && typeof bundle.prevKxEnc !== 'string') invalid('bundle.prevKxEnc must be a string');
+}
+
+function openPreviousKx(userId: string, bundle: KeyBundle, amk: Uint8Array): PreviousKx[] {
+  if (bundle.prevKxEnc === undefined) return [];
+  const key = identityKey(amk);
+  let pt: Uint8Array;
+  try {
+    pt = packDecrypt(key, bundle.prevKxEnc, wrapAad('identity-prev', userId));
+  } finally {
+    wipe(key);
+  }
+  if (pt.length === 0 || pt.length % KEY_LEN !== 0 || pt.length > MAX_PREVIOUS_KX * KEY_LEN) fail('decrypt_failed', 'malformed previous keys');
+  const out: PreviousKx[] = [];
+  for (let i = 0; i < pt.length; i += KEY_LEN) {
+    const kxPriv = pt.slice(i, i + KEY_LEN);
+    out.push({ kxPriv, kxPub: xPublicKey(kxPriv) });
+  }
+  wipe(pt);
+  return out;
+}
+
+function unlocked(userId: string, bundle: KeyBundle, amk: Uint8Array): Unlocked {
+  const identity = openIdentity(userId, bundle, amk);
+  const previousKx = openPreviousKx(userId, bundle, amk);
+  return previousKx.length ? { amk, identity, previousKx } : { amk, identity };
 }
 
 /**
@@ -218,7 +256,7 @@ export function unlockWithPassword(userId: string, bundle: KeyBundle, passwordKE
     throw e;
   }
   if (amk.length !== KEY_LEN) fail('decrypt_failed', 'malformed AMK');
-  return { amk, identity: openIdentity(userId, bundle, amk) };
+  return unlocked(userId, bundle, amk);
 }
 
 export function unlockWithRecoveryPhrase(userId: string, bundle: KeyBundle, phrase: string): Unlocked {
@@ -249,7 +287,7 @@ export function unlockWithRecoveryKey(userId: string, bundle: KeyBundle, rk: Uin
     wipe(kek);
   }
   if (amk.length !== KEY_LEN) fail('decrypt_failed', 'malformed AMK');
-  return { amk, identity: openIdentity(userId, bundle, amk) };
+  return unlocked(userId, bundle, amk);
 }
 
 /**
@@ -261,7 +299,7 @@ export function unlockWithAmk(userId: string, bundle: KeyBundle, amk: Uint8Array
   assertString(userId, 'userId');
   assertBytes(amk, 'amk', KEY_LEN);
   validateBundle(bundle);
-  return { amk: new Uint8Array(amk), identity: openIdentity(userId, bundle, amk) };
+  return unlocked(userId, bundle, new Uint8Array(amk));
 }
 
 /** New `amkByPassword` (password change, email change, or after recovery). */
@@ -280,4 +318,42 @@ export function rotateRecovery(userId: string, amk: Uint8Array): { recoveryPhras
   assertString(userId, 'userId');
   assertBytes(amk, 'amk', KEY_LEN);
   return newRecovery(userId, amk);
+}
+
+/**
+ * Signed identity-key rotation (security review K2): a fresh identity for the same AMK. The new bundle
+ * keeps the old X25519 private key (wrapped under the AMK) so keys sealed to it before the rotation still
+ * open. The caller signs a KeyChange with the OLD signing key (signKeyChange) and submits both to the
+ * server, which only accepts the change when that signature verifies against the published key.
+ */
+export function rotateIdentityBundle(userId: string, bundle: KeyBundle, current: Unlocked): { bundle: KeyBundle; unlocked: Unlocked } {
+  assertString(userId, 'userId');
+  validateBundle(bundle);
+  assertBytes(current.amk, 'amk', KEY_LEN);
+  // The bundle must really be the one the current identity came from.
+  const check = unlocked(userId, bundle, new Uint8Array(current.amk));
+  if (!ctEqual(check.identity.signPub, current.identity.signPub) || !ctEqual(check.identity.kxPub, current.identity.kxPub)) {
+    fail('decrypt_failed', 'bundle does not match the unlocked identity');
+  }
+  const identity = generateIdentity();
+  const previousKx: PreviousKx[] = [
+    { kxPub: current.identity.kxPub, kxPriv: new Uint8Array(current.identity.kxPriv) },
+    ...(check.previousKx ?? []),
+  ].slice(0, MAX_PREVIOUS_KX);
+  const key = identityKey(current.amk);
+  const pt = concat(...previousKx.map((p) => p.kxPriv));
+  let prevKxEnc: string;
+  try {
+    prevKxEnc = packEncrypt(key, pt, wrapAad('identity-prev', userId));
+  } finally {
+    wipe(key, pt);
+  }
+  const next: KeyBundle = {
+    ...bundle,
+    signPub: b64u.encode(identity.signPub),
+    kxPub: b64u.encode(identity.kxPub),
+    identityEnc: encryptIdentity(userId, current.amk, identity),
+    prevKxEnc,
+  };
+  return { bundle: next, unlocked: { amk: new Uint8Array(current.amk), identity, previousKx } };
 }

@@ -62,8 +62,13 @@ public class MainActivity extends BridgeActivity {
         if (intent == null) return null;
         String extra = intent.getStringExtra(Notifier.EXTRA_URL);
         if (extra != null) {
-            Notifier.cancel(this, intent.getStringExtra(Notifier.EXTRA_TAG));
+            // Only our own notification taps carry the per-install token (security review L15): another app
+            // sending kw_url / kw_tag to this exported activity is ignored.
+            boolean ours = Notifier.fromOurNotification(this, intent);
             intent.removeExtra(Notifier.EXTRA_URL);
+            intent.removeExtra(Notifier.EXTRA_TOKEN);
+            if (!ours) return null;
+            Notifier.cancel(this, intent.getStringExtra(Notifier.EXTRA_TAG));
             return Notifier.safePath(extra);
         }
         Uri data = intent.getData();

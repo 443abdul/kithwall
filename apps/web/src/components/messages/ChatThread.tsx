@@ -4,6 +4,7 @@
 // Phase 3: disappearing messages (timer in the header, expired messages leave the screen at once, timer
 // notices inline, a one-time suggestion in older chats), edits ("edited") and live unsend.
 import { VerifiedBadge } from '@/lib/transparency/verified';
+import { isHiddenChat } from '@/lib/safety/hidden';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -36,6 +37,7 @@ import { sendDraft, SendError, type Draft } from './send';
 import { useSwipeBack, useVisualViewportHeight } from './runtime';
 import { OldChatSuggestion, TimerHint } from './Ephemeral';
 import { CallButtons } from '@/components/calls/CallButtons';
+import { ChatKeyNotices } from '@/components/verify/ChatKeyNotices';
 
 interface Line extends ChatLine { row: MessageRow; payload: ChatPayload | null }
 interface Pending { tempId: string; draft: Draft; status: 'sending' | 'failed'; progress: number; error?: string }
@@ -238,6 +240,7 @@ function Thread({ c }: { c: ConversationSummary }) {
 
       <div ref={scroller} className="k-chat-scroll" onScroll={onScroll} role="log" aria-label={t('messages.threadLabel', { title })} aria-live="polite" aria-relevant="additions">
         <div className="k-chat-sealed k-small"><Icon name="lock" /> {t('messages.sealedBanner')}</div>
+        <ChatKeyNotices audienceId={c.audience_id} peer={!isGroup && others.length === 1 ? others[0]! : null} name={title} />
         {msgs.isFetchingNextPage ? <div className="k-chat-center k-chat-older"><Spinner /></div> : null}
         {msgs.hasOlder && !msgs.isFetchingNextPage ? (
           <div className="k-chat-center k-chat-older"><Button size="sm" variant="ghost" onClick={() => void msgs.loadOlder()}>{t('messages.loadOlder')}</Button></div>
@@ -354,7 +357,7 @@ function Bubble({ l, c, first, last, mine, isGroup, replyTo, reactions, seen, re
             ) : null}
             {d.ok ? (
               <>
-                {voice ? <VoiceNote file={voice.file} meta={voice.meta} messageId={l.id} mine={mine} /> : null}
+                {voice ? <VoiceNote file={voice.file} meta={voice.meta} messageId={l.id} mine={mine} persist={!isHiddenChat(c.id)} /> : null}
                 {p?.attachments?.length ? <ChatAttachments files={p.attachments} /> : null}
                 {text ? <p className="k-chat-text" dir="auto"><MessageText text={text} /></p> : null}
                 {p?.link ? <LinkCard link={p.link} /> : null}

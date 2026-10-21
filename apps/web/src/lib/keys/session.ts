@@ -71,6 +71,11 @@ export function amk(): Uint8Array {
   if (!unlocked) throw new Error('Kithwall is locked');
   return unlocked.amk;
 }
+/** Everything unlocked (identity, AMK, earlier key-exchange keys). For lib/keys only. */
+export function unlockedKeys(): Unlocked {
+  if (!unlocked) throw new Error('Kithwall is locked');
+  return unlocked;
+}
 
 async function loadProfile(userId: string): Promise<ProfileRow | null> {
   const { data } = await sb().from('profiles').select('*').eq('id', userId).maybeSingle();

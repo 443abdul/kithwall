@@ -21,6 +21,7 @@ export const ACCOUNT_ERROR_KEYS: Record<AccountErrorCode, MessageKey> = {
   no_account: 'errors.no_account',
   no_trustees: 'errors.no_trustees',
   bad_recovery_key: 'errors.bad_recovery_key',
+  email_unconfirmed: 'security.emailUnconfirmed',
 };
 
 export function errorCode(e: unknown): AccountErrorCode {

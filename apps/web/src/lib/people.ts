@@ -30,6 +30,9 @@ class People {
 
   get(id: string): ProfileRow | undefined { return this.rows.get(id); }
 
+  /** Drop cached rows (e.g. after an identity-key change) so the next ensure() reads them fresh. */
+  forget(ids: Iterable<string>) { for (const id of ids) { this.rows.delete(id); this.infos.delete(id); } this.bump(); }
+
   person(id: string): Person | null {
     const row = this.rows.get(id);
     if (!row) return null;
@@ -64,10 +67,22 @@ class People {
     }
   }
 
+  /**
+   * Find someone by their exact handle. Profiles are only listable by connections (security review D3),
+   * so strangers are found through find_profile(), which returns just that one person's public routing
+   * data (no account age or moderation status). Once connected, the row comes from the table as usual.
+   */
   async byUsername(username: string): Promise<ProfileRow | null> {
-    for (const r of this.rows.values()) if (r.username === username.toLowerCase()) return r;
-    const row = (await sb().from('profiles').select('*').eq('username', username.toLowerCase()).maybeSingle()).data as ProfileRow | null;
-    if (row) { this.rows.set(row.id, row); await this.refreshInfo(row.id); }
+    const h = username.trim().toLowerCase();
+    for (const r of this.rows.values()) if (r.username === h) return r;
+    const { data, error } = await sb().rpc('find_profile', { p_handle: h });
+    if (error) throw new Error(error.message);
+    const found = ((data ?? []) as Pick<ProfileRow, 'id' | 'username' | 'discoverable' | 'display_name_public' | 'sign_pub' | 'kx_pub' | 'key_version'>[])[0];
+    if (!found) return null;
+    const full = (await sb().from('profiles').select('*').eq('id', found.id).maybeSingle()).data as ProfileRow | null;
+    const row: ProfileRow = full ?? { ...found, status: 'active', suspended_until: null, created_at: '' };
+    this.rows.set(row.id, row);
+    await this.refreshInfo(row.id);
     return row;
   }
 

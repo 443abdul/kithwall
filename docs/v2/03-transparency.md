@@ -52,6 +52,14 @@ survived account deletion and were never pruned. The migration deletes orphans, 
 `rate_events_user_fk … on delete cascade`, and a pg_cron job (`kithwall-transparency-maintenance`, hourly)
 keeps 7 days. Keep that ≥ the longest `kw.rate_limit` window (currently 1 day).
 
+**Added by the security review fixes** (`20261028010500_authz_recovery.sql`, classified in the map):
+`kw.anon_rate_events` (`key` hashed: a SHA-256 of the action and the daily-rotating keyed IP tag, never an
+address; `at`), the database-backed limits for pages used without an account (passphrase lookup, account
+recovery), pruned after 2 days by `kithwall-recovery-notify`; and on `public.recovery_requests`,
+`requester_tag` (hashed, the same daily IP tag, for per-requester recovery limits) and `friends_notified_at`
+(time). The transparency page now says "a keyed hash that changes daily" instead of "never store IP
+addresses" (security review P1).
+
 ## 2. Safety numbers (`/u/<handle>/verify`)
 
 - `packages/crypto/src/safety.ts`: `safetyNumber` (existing, Signal-style, 5200 × SHA-512, order-independent),

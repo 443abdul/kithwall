@@ -140,7 +140,7 @@ select throws_ok($$ update public.reports set stored_meta = '{}' where target_id
 select lives_ok($$ update public.reports set status = 'dismissed', decision_note = 'ok' where target_id = '10000000-0000-0000-0000-0000000a0001' $$,
   'staff resolve reports');
 
-select pg_temp.su();
+select pg_temp.su(); select set_config('request.jwt.claims', '', true);
 insert into public.audiences (id, owner_id, kind) values ('20000000-0000-0000-0000-0000000a0001', pg_temp.uid('ann'), 'conversation');
 insert into public.audience_members (audience_id, member_id) values ('20000000-0000-0000-0000-0000000a0001', pg_temp.uid('ben'));
 insert into public.conversations (id, audience_id, created_by) values ('30000000-0000-0000-0000-0000000a0001', '20000000-0000-0000-0000-0000000a0001', pg_temp.uid('ann'));

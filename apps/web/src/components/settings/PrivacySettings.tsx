@@ -53,6 +53,8 @@ function MessagesPrivacy() {
         })} />
       <Switch checked={s.typingIndicator} label={t('settings.privacy.typing')} description={t('settings.privacy.typingBody')}
         onChange={(v) => void save(() => saveSettings({ typingIndicator: v }))} />
+      <Switch checked={s.chatLinkPreviews} label={t('security.chatLinkPreviews')} description={t('security.chatLinkPreviewsBody')}
+        onChange={(v) => void save(() => saveSettings({ chatLinkPreviews: v }))} />
       <Switch checked={s.chatVisible} label={t('settings.privacy.online')} description={t('settings.privacy.onlineBody')}
         onChange={(v) => setChatVisible(v)} />
     </Section>

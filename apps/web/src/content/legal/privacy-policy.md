@@ -129,7 +129,7 @@ people, our servers can see:
 
 | Data | Who holds it | Notes |
 |---|---|---|
-| IP address, time, and request details of sign-in, sign-up and password reset | Supabase (authentication logs) | Our app tables do not store IP addresses or user agents |
+| IP address, time, and request details of sign-in, sign-up and password reset | Supabase (authentication logs) | Our app tables do not store IP addresses or user agents. For spam limits on sign-in, sign-up and account-recovery pages we keep a keyed hash of your IP address that changes every day (it can't be turned back into the address without our key), deleted within two days |
 | IP address and request details of API calls from your browser | Supabase (platform/API gateway logs) | Kept per Supabase's log retention (section 10) |
 | IP address, user agent, page address requested (which can include a username, e.g. /alice) | Vercel (hosting/CDN request logs) | Vercel Web Analytics is **off**. Kept per Vercel's log retention (section 10) |
 | Proof-of-work captcha challenge result at sign-up | Our server (self-hosted ALTCHA) | No third party, no cookies, not stored after the check |
@@ -158,11 +158,14 @@ encrypted.** Please don't send us sensitive content unless you need to.
 
 ### 4.8 Link previews
 
-When you add a link to a post, your device asks our **link-preview proxy** to fetch the page's title
+When you add a link to a post, or tap **Add link preview** under a link in a chat, your device asks our
+**link-preview proxy** to fetch the page's title
 and image, so the linked website sees our server's address instead of yours or your friends'. To do
 this, **the link address passes through our server in readable form for a moment.** Our proxy code
 does not log or store it. [OWNER: confirm the hosting provider's request logs do not capture the URL,
-e.g. by sending it in the request body.] The finished preview is encrypted with your post.
+e.g. by sending it in the request body.] The finished preview is encrypted with your post or message.
+In chats nothing is fetched while you type: a link is only sent to the proxy when you tap **Add link preview**,
+and you can remove that button in Settings → Privacy.
 
 ### 4.9 Push notifications (optional)
 

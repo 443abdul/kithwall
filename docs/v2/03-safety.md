@@ -33,7 +33,7 @@ screen and decoy gating), `lib/keys/session.ts` (`onLock`, `unlockWithDeviceAmk`
 | Value | Definition |
 |---|---|
 | `salt` | 16 random bytes per device, kept across PIN changes |
-| `pinKey` | `deriveFromPassword("kithwall/v1/app-pin/<salt>", PIN)` → `passwordKEK` (Argon2id m=64 MiB, t=3, then HKDF) |
+| `pinKey` | `deriveFromPassword("kithwall/v1/app-pin/<salt>", PIN)` → `passwordKEK` (Argon2id m=128 MiB, t=3 for PINs set up since the security review (`PIN_KDF`; older records keep the m=64 MiB they were made with until the PIN is set up again), then HKDF) |
 | `amk` | `encryptBlob(pinKey, AMK, "kithwall/v1/app-pin/amk/<userId>")` (XChaCha20-Poly1305) |
 | `duress` | `encryptBlob(duressKey, "duress", "kithwall/v1/app-pin/duress/<userId>")`, or the same under a **random** key when no duress PIN is set, so the record looks the same either way |
 | outer | AES-GCM-256 under a fresh non-extractable key, AAD `kithwall/v1/device-pin/<userId>`; also holds the duress action, decoy name, public @handle and wipe-after-N |
@@ -150,11 +150,26 @@ push subscriptions (with "stop") and the passkeys (managed in Settings → Secur
   a malicious browser extension; a malicious server serving modified JavaScript (the web-E2EE limit from
   `01-accounts.md` §5); anyone who learns the passkey, passphrase or recovery key (the account still
   exists on the server, and a duress PIN only affects this device).
-- **App PIN strength:** the PIN is useless off the device (it opens a wrap that is itself encrypted under
-  a non-extractable key). On the device, an attacker who can run script in the browser profile can use
-  that key, reset the attempt counter and guess offline at roughly one Argon2id (≈0.5–2 s) per guess: a
-  6-digit PIN falls in days to weeks, not years. Hence the minimum of 6 digits, the trivial-pattern
-  check, and the advice to also use the OS screen lock.
+- **Data at rest on a seized or copied device (security review C1).** "Non-extractable" WebCrypto keys only
+  stop *script* from exporting them. Chromium and Firefox keep their raw bytes in the profile's IndexedDB
+  files, so anyone with the device itself or an image of its disk can use them. Concretely:
+  - With **"keep me unlocked"** on (web), the AMK can be recovered directly: the account is open to whoever
+    has the disk. The settings screen says so (`keys.rememberedBody`).
+  - With an **app PIN**, the outer layer can be removed, the attempt limiter and wipe-after-N do not apply,
+    and the PIN can be guessed offline. The cost per guess is one Argon2id run (128 MiB, t=3 for new PINs,
+    roughly twice the account default). That slows a guesser down; it does not make a short PIN safe. Six
+    digits are 10^6 candidates, which a many-core machine works through in hours to days; every extra
+    digit multiplies that by ten. The UI recommends 8 or more digits (`PIN_RECOMMENDED`).
+  - The **duress PIN** is only deniable against someone who doesn't image the device: offline, the
+    attacker can tell which PIN opens the real AMK.
+  - The **native apps** keep these records in Keystore / Keychain-backed storage (hardware-bound where
+    the device supports it), which is the recommendation for people whose device may be taken. The
+    Safety centre's "Honest limits" note (`keys.limits`) and the PIN description (`keys.pinBody`) say this
+    in plain words.
+  - Not done (yet): a server-assisted PIN limiter (a server-held pepper released only after a
+    rate-limited proof) and binding the PIN wrap to a passkey's PRF output. Both would add a second factor
+    that a disk image alone doesn't have; both change the unlock flow and need native support, so they are
+    left for a later release.
 - **Duress:** the duress record is indistinguishable from a no-duress record without the PIN, but the
   decoy's existence is only plausible deniability against a non-expert. A coercer who forces the
   "passkey or passphrase" path bypasses it.

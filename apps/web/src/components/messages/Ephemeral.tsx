@@ -3,6 +3,7 @@
 // gentle one-time suggestion in chats from before disappearing messages existed (their timer is "off"
 // because the migration never deletes history; new chats start at 4 weeks).
 import { useState } from 'react';
+import { isHiddenChat } from '@/lib/safety/hidden';
 import { useQueryClient } from '@tanstack/react-query';
 import { useT } from '@/i18n';
 import { useSession } from '@/lib/keys/session';
@@ -88,10 +89,15 @@ export function TimerHint({ secs }: { secs: number | null | undefined }) {
 }
 
 const DISMISS_KEY = 'kw.eph.suggest.';
+const dismissedInMemory = new Set<string>();
 function dismissed(convId: string): boolean {
+  if (dismissedInMemory.has(convId)) return true;
   try { return localStorage.getItem(DISMISS_KEY + convId) === '1'; } catch { return false; }
 }
 function dismiss(convId: string) {
+  dismissedInMemory.add(convId);
+  // A hidden chat's id never goes into plaintext storage (security review L10).
+  if (isHiddenChat(convId)) return;
   try { localStorage.setItem(DISMISS_KEY + convId, '1'); } catch { /* private mode: it just shows again */ }
 }
 

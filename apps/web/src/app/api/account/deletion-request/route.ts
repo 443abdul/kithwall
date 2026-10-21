@@ -15,6 +15,8 @@ export async function POST(req: Request) {
   const { data, error } = await asUser(caller.jwt).rpc('request_account_deletion');
   if (error) {
     const limited = error.code === 'P0429';
+    // Accounts with an authenticator app must pass the two-step check first (security review L7).
+    if (error.code === '42501') return json({ error: 'Enter the code from your authenticator app first.', code: 'mfa_required' }, 403);
     return json({ error: limited ? 'Too many requests. Try again tomorrow.' : 'We couldn\'t schedule the deletion.' }, limited ? 429 : 500);
   }
   const executeAfter = String(data);

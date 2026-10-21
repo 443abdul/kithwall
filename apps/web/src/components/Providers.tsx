@@ -43,8 +43,18 @@ function RealtimeBridge() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' },
         () => { void qc.invalidateQueries({ queryKey: ['likes'] }); })
       .subscribe();
+    // Deletes are not published through postgres_changes (Realtime can't apply RLS to them, security
+    // review D1): the database sends a content-free "something of yours changed" on db:<my id>, a private
+    // topic only I can receive (supabase/migrations/20261028010100_authz_realtime.sql).
+    const db = sb().channel(`db:${userId}`, { config: { private: true } })
+      .on('broadcast', { event: 'change' }, ({ payload }) => {
+        const t = (payload as { t?: unknown } | undefined)?.t;
+        if (t === 'friendships') { void qc.invalidateQueries({ queryKey: ['friends'] }); void qc.invalidateQueries({ queryKey: ['requests'] }); }
+        else if (t === 'likes') void qc.invalidateQueries({ queryKey: ['likes'] });
+      })
+      .subscribe();
     const unsub = keyring.subscribe(() => { void qc.invalidateQueries(); });
-    return () => { unsub(); void sb().removeChannel(ch); };
+    return () => { unsub(); void sb().removeChannel(ch); void sb().removeChannel(db); };
   }, [status, userId, qc]);
   return null;
 }

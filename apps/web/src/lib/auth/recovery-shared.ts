@@ -17,7 +17,8 @@ export function recoveryBundleOf(b: KeyBundle): RecoveryBundle {
 }
 
 /** POST /api/recovery/account */
-export interface RecoverAccountReq { handle: string }
+/** `altcha`: a solved proof-of-work payload (lib/auth/altcha.ts), required since security review W4. */
+export interface RecoverAccountReq { handle: string; altcha?: string }
 export interface RecoverAccountRes {
   userId: string;
   /** key_challenges row (purpose 'recover_account') and its nonce, signed with the identity key. */
@@ -33,7 +34,7 @@ export interface RecoverFinishReq { userId: string; challengeId: string; signatu
 export interface RecoverFinishRes { tokenHash: string }
 
 /** POST /api/recovery/friends/start */
-export interface FriendsStartReq { handle: string; ephPub: string }
+export interface FriendsStartReq { handle: string; ephPub: string; altcha?: string }
 export interface FriendsStartRes { requestId: string; notBefore: string; expiresAt: string; threshold: number; trustees: number }
 
 /** POST /api/recovery/friends/status and /cancel */

@@ -201,7 +201,7 @@ select is((select count(*)::int from public.recovery_requests), 0, 'non-trustees
 -- ---------------------------------------------------------------------------
 select throws_ok($$ insert into public.reports (reporter_id, target_kind, target_id, reason)
   values (pg_temp.uid('carol'), 'post', '10000000-0000-0000-0000-000000000001', 'spam') $$,
-  'P0001', null, 'cannot report what you cannot see');
+  '42501', null, 'cannot report what you cannot see');
 select pg_temp.login('bob');
 select lives_ok($$ insert into public.reports (reporter_id, target_kind, target_id, reason, disclosed)
   values (pg_temp.uid('bob'), 'post', '10000000-0000-0000-0000-000000000001', 'spam', '{"text":"x"}') $$, 'friend reports a post');

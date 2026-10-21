@@ -114,11 +114,18 @@ export function readPhoto(row: PhotoRow): Decrypted<PhotoPayload> {
   catch { return { ok: false, reason: 'unverified' }; }
 }
 
-/** Content key for photo comments (null for public photos). */
+/**
+ * Content key for photo comments (null for public photos, or when the photo doesn't verify). The owner's
+ * signature is checked first, like every other envelope (security review L11).
+ */
 export function photoContentKey(row: PhotoRow): Uint8Array | null {
   if (row.is_public) return null;
   const key = keyring.get(row.audience_id!, row.epoch!);
-  return key ? extractContentKey({ header: photoHeader(row), envelope: row.envelope, audienceKey: key }) : null;
+  const owner = people.get(row.owner_id);
+  if (!key || !owner) return null;
+  try {
+    return extractContentKey({ header: photoHeader(row), envelope: row.envelope, audienceKey: key, signPub: b64u.decode(owner.sign_pub) });
+  } catch { return null; }
 }
 
 /** Owner re-signs the photo with updated caption/tags. */

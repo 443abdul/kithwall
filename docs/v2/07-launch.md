@@ -20,9 +20,9 @@ Rollback = Vercel instant rollback; the database stays on v2.
 | | |
 |---|---|
 | Migrations | `20261021000100_passkeys` … `20261026000100_native_push` (10, already on staging) **plus** `20261027000100_classic_export` (new in phase 6, **not yet on staging**: two caller-only read functions for the Classic export, no tables or columns). Production is at `20261020000100_push`. |
-| pg_cron | Adds `kithwall-passkey-maintenance` (hourly), `kithwall-story-maintenance` (10 min), `kithwall-ephemeral` (every minute), `kithwall-safety-checkins` (every minute), `kithwall-transparency-maintenance` (hourly). `kithwall-auth-maintenance` exists already. |
+| pg_cron | Adds `kithwall-passkey-maintenance` (hourly), `kithwall-story-maintenance` (10 min), `kithwall-ephemeral` (every minute), `kithwall-safety-checkins` (every minute), `kithwall-transparency-maintenance` (hourly), `kithwall-recovery-notify` (10 min: tells trusted friends about a recovery request once its waiting period is over, security review W4). `kithwall-auth-maintenance` exists already. |
 | Storage | No new bucket. Everything still goes to the private `media` bucket (30 MiB per object; videos are split). |
-| Realtime | `message_reactions` and `posts` join the `supabase_realtime` publication. |
+| Realtime | `message_reactions` and `posts` join the `supabase_realtime` publication. Security review D1 (`20261028010100_authz_realtime`): the publication **stops publishing DELETE events** (Realtime can't apply RLS to them) and `pokes` leaves it; deletes a client cares about arrive as content-free broadcasts on the private `db:<user id>` topic. **Also turn on Realtime → Settings → "Private channels only" in production** (every Kithwall channel is already private). |
 | Web | `main` becomes the v2 app. `vercel.json` crons are unchanged and all daily (§6). |
 
 ## 2. Migration safety (done in phase 6)
@@ -160,7 +160,11 @@ checked locally. The restore runs with `session_replication_role = replica`.
 | `NEXT_PUBLIC_COMMIT_SHA` | n/a | automatic from `VERCEL_GIT_COMMIT_SHA` | none |
 | `ANDROID_CERT_SHA256`, `APPLE_TEAM_ID`, `FCM_SERVICE_ACCOUNT_JSON`, `APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_KEY_P8`/`APNS_BUNDLE_ID` | not set | native apps only (05-native.md owner checklist). Until set: `assetlinks.json` is `[]`, AASA is 404, there is no native push. **The web launch doesn't need them.** | later |
 
+| `TRUSTED_PROXY_HOPS` | n/a | optional, new (security review L6): how many proxies append to `X-Forwarded-For` in front of the app. Default 1 (Vercel, or one nginx/Caddy when self-hosting); on Vercel the platform's `x-real-ip` is used. Only change it for self-hosting behind several proxies. | none |
+
 `NEXT_PUBLIC_*` values are baked in at build time. After changing any of them, redeploy.
+
+`NEXT_PUBLIC_SITE_URL` is also **required for mail** in production (security review L8): without it, notice emails are not sent rather than linking to whatever host the request named. `ALTCHA_HMAC_KEY` (or `SUPABASE_SECRET_KEY`) must be set: the passphrase lookup now fails closed without a secret for its decoys (W3), and the recovery routes require a proof-of-work (W4).
 
 ### 4.2 Passkey rpID: confirm before launch, it cannot change later
 

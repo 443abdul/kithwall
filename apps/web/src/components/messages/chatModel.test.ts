@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildThread, dayBucket, firstUrl, fold, isEmojiOnly, linkify, matches, orderConversations, safeHref, snippet, tallyReactions } from './chatModel';
+import { buildThread, dayBucket, firstUrl, fold, isEmojiOnly, linkify, matches, orderConversations, previewOffer, safeHref, snippet, tallyReactions } from './chatModel';
 
 const at = (h: number, m = 0, d = 20) => new Date(2026, 9, d, h, m).toISOString();
 
@@ -73,5 +73,18 @@ describe('misc', () => {
   it('tallies reactions by count then picker order', () => {
     expect(tallyReactions([{ userId: 'a', emoji: '👍' }, { userId: 'b', emoji: '❤️' }, { userId: 'c', emoji: '👍' }, { userId: 'c', emoji: '👍' }], ['❤️', '👍']))
       .toEqual([{ emoji: '👍', users: ['a', 'c'] }, { emoji: '❤️', users: ['b'] }]);
+  });
+});
+
+describe('previewOffer (security review C2: previews only on request)', () => {
+  it('offers the first link, but only as an offer', () => {
+    expect(previewOffer('see https://example.org/a and https://b.example', { hasFiles: false, enabled: true })).toBe('https://example.org/a');
+  });
+  it('offers nothing with attachments, with the setting off, or once dismissed', () => {
+    const text = 'https://example.org/a';
+    expect(previewOffer(text, { hasFiles: true, enabled: true })).toBeNull();
+    expect(previewOffer(text, { hasFiles: false, enabled: false })).toBeNull();
+    expect(previewOffer(text, { hasFiles: false, enabled: true, dismissed: 'https://example.org/a' })).toBeNull();
+    expect(previewOffer('no links here', { hasFiles: false, enabled: true })).toBeNull();
   });
 });

@@ -31,7 +31,7 @@ for themselves with a clear explanation of the trade-off.
 1. **We can't see it.** Content, names, photos, circle names, reactions, call media: encrypted on device.
 2. **Collect almost nothing.** No phone number. Email optional. No contact upload. No analytics. Short logs.
 3. **Calm, not compulsive.** Chronological feed, no infinite engagement tricks, no public like counts by default, "you're all caught up".
-4. **Safe by default.** Disappearing messages on, read receipts off, profile visible only to connections.
+4. **Safe by default.** Disappearing messages on, read receipts off, profile details visible only to connections (anyone else can find you only by typing your exact @handle).
 5. **Prove it.** A live "What Kithwall knows about you" page, one-tap export, open source code (AGPL-3.0, linked from the app at the exact running version), verifiable safety numbers.
 6. **Everyone, everywhere.** Accessible (WCAG 2.2 AA), RTL, low-bandwidth mode, installable, native apps.
 

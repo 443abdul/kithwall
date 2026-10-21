@@ -112,6 +112,11 @@ describe('UnifiedPush endpoint validation (SSRF)', () => {
     ]) expect(isPublicAddress(ip), ip).toBe(false);
   });
 
+  it('only accepts global unicast IPv6 (security review I5)', () => {
+    for (const ip of ['::7f00:1', '::a00:1', '3fff::1', '3fff:fff::1', '4000::1', 'e000::1']) expect(isPublicAddress(ip), ip).toBe(false);
+    expect(isPublicAddress('2001:4860:4860::8888')).toBe(true);
+  });
+
   it('refuses to connect when a name resolves to any private address (DNS rebinding)', async () => {
     const lookupWith = (addrs: { address: string; family: number }[]) => publicOnlyLookup((_h, cb) => cb(null, addrs));
     const run = (fn: ReturnType<typeof publicOnlyLookup>, all: boolean) => new Promise<{ err: NodeJS.ErrnoException | null; addr: unknown }>((resolve) => {

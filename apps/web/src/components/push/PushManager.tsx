@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/keys/session';
 import { clearAppBadge, dropDeviceSubscription, listenForInstallPrompt, registerServiceWorker, syncPush } from '@/lib/push';
 import { isNative } from '@/lib/native';
+import { safePath } from '@/lib/auth/next';
 
 export function PushManager() {
   const router = useRouter();
@@ -32,9 +33,9 @@ export function PushManager() {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     const onMessage = (e: MessageEvent) => {
       const d = e.data as { type?: unknown; url?: unknown } | null;
-      if (!d || d.type !== 'kw:navigate' || typeof d.url !== 'string') return;
-      if (!d.url.startsWith('/') || d.url.startsWith('//')) return; // same-origin paths only
-      router.push(d.url);
+      if (!d || d.type !== 'kw:navigate') return;
+      const url = safePath(d.url); // same-origin paths only (security review W1)
+      if (url) router.push(url);
     };
     navigator.serviceWorker.addEventListener('message', onMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
@@ -44,7 +45,9 @@ export function PushManager() {
     if (!isNative()) return;
     let off: (() => void) | null = null;
     let live = true;
-    void import('@/lib/native/push').then((m) => m.onNativeOpen((url) => {
+    void import('@/lib/native/push').then((m) => m.onNativeOpen((raw) => {
+      const url = safePath(raw);
+      if (!url) return;
       router.push(url);
       window.dispatchEvent(new CustomEvent('kw:navigate', { detail: { url } }));
     })).then((o) => { if (live) off = o; else o(); }).catch(() => undefined);

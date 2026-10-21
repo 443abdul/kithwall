@@ -3,6 +3,8 @@
 // keys (packages/crypto safety.ts), as twelve groups of five and as a QR code. Two people compare it
 // in person or on a call they trust: scan each other's code, or read the digits aloud / paste them.
 // "Verified" is stored only in my encrypted vault (lib/transparency/verified.ts).
+import { acceptIdentityChange } from '@/lib/keys/pins';
+import { keyring } from '@/lib/keys/keyring';
 import { useQuery } from '@tanstack/react-query';
 import { b64u, formatSafetyNumber, parseSafetyQr, safetyNumber, safetyNumbersMatch, safetyQrPayload } from '@kithwall/crypto';
 import { useEffect, useMemo, useState } from 'react';
@@ -89,6 +91,8 @@ function Verify({ id, handle, back }: { id: string; handle: string; back: { href
       const now = safetyNumber({ userId: me.userId, signPub: b64u.decode(mine.sign_pub) }, { userId: id, signPub: b64u.decode(fresh.sign_pub) });
       if (now !== sn.number) { setErr(t('verify.keyMoved')); return; }
       await markVerified(id, fresh.sign_pub, via);
+      // The verified keys are also this device's pinned keys for them (lib/keys/pins.ts): sharing resumes.
+      await acceptIdentityChange(id, fresh.sign_pub, fresh.kx_pub).then(() => keyring.deliverPending()).catch(() => undefined);
       toast({ message: t('verify.markedToast', { name }) });
     } catch {
       setErr(t('verify.saveFailed'));

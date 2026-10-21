@@ -9,7 +9,7 @@ import { UUID_RE, type FriendsStatusReq } from '@/lib/auth/recovery-shared';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  if (tooMany(req, 'recover-cancel', 30, 60 * 60_000)) return fail('rate_limited', 429, 'Too many requests.');
+  if (await tooMany(req, 'recover-cancel', 30, 60 * 60_000)) return fail('rate_limited', 429, 'Too many requests.');
   const body = await readJson<FriendsStatusReq>(req, 512);
   const id = String(body?.requestId ?? '');
   if (!UUID_RE.test(id)) return fail('unknown', 400, 'Bad request.');

@@ -5,7 +5,8 @@
 //                                         see "Testing against staging" in docs/v2/05-native.md; set
 //                                         KITHWALL_STAGING_BYPASS to the project's "Protection Bypass for
 //                                         Automation" secret so the first load sets Vercel's bypass cookie.
-//                                         Internal test builds only: the secret ends up in the app.)
+//                                         Local, internal test builds only: the secret ends up in the app,
+//                                         so CI refuses to embed it (security review N2).)
 // Only the bundled offline page (www/offline.html) ships inside the app. No remote code is loaded from
 // anywhere but the origin; other links open in the system browser (Capacitor's default navigation
 // policy, tightened by the KithwallShell plugin).
@@ -19,7 +20,9 @@ const ORIGINS = {
 type Env = keyof typeof ORIGINS;
 const env: Env = process.env.KITHWALL_ENV === 'staging' ? 'staging' : 'production';
 const origin = ORIGINS[env];
-const bypass = env === 'staging' ? process.env.KITHWALL_STAGING_BYPASS?.trim() : undefined;
+const bypass = env === 'staging' ? process.env.KITHWALL_STAGING_BYPASS?.trim() || undefined : undefined;
+// CI artifacts are downloadable by anyone once the repository is public: never bake the bypass into them.
+if (bypass && process.env.CI) throw new Error('KITHWALL_STAGING_BYPASS must not be used in CI builds (the secret would ship inside a public artifact).');
 
 const config: CapacitorConfig = {
   appId: 'com.kithwall.app',

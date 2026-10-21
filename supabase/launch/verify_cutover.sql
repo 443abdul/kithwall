@@ -97,8 +97,8 @@ select is((select coalesce(array_agg(conrelid::regclass::text || '.' || conname 
 
 -- Jobs: the v2 cron jobs exist.
 select is((select array_agg(jobname order by jobname) from cron.job where jobname like 'kithwall-%'),
-  array['kithwall-auth-maintenance', 'kithwall-ephemeral', 'kithwall-passkey-maintenance', 'kithwall-safety-checkins',
-        'kithwall-story-maintenance', 'kithwall-transparency-maintenance'], 'all six pg_cron jobs are scheduled');
+  array['kithwall-auth-maintenance', 'kithwall-ephemeral', 'kithwall-passkey-maintenance', 'kithwall-recovery-notify',
+        'kithwall-safety-checkins', 'kithwall-story-maintenance', 'kithwall-transparency-maintenance'], 'all seven pg_cron jobs are scheduled');
 
 -- ---------------------------------------------------------------------------------------------
 -- 2. The first cron runs after cutover don't touch v1 data

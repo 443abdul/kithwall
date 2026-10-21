@@ -67,6 +67,7 @@ export function activityHref(g: Pick<ActivityGroup, 'type' | 'objectKind' | 'obj
     case 'group_invite': case 'group_request': return '/circles';
     case 'event_invite': return '/events';
     case 'key_waiting': return '/home';
+    case 'security_notice': return '/you/settings/security';
   }
   return actorHandle && /^[a-z0-9.]{1,30}$/.test(actorHandle) ? `/u/${actorHandle}` : null;
 }
@@ -84,6 +85,7 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
     case 'share': return 'share';
     case 'key_waiting': return 'lock';
     case 'post_published': return 'clock';
+    case 'security_notice': return 'key';
     default: return 'activity';
   }
 }
@@ -92,5 +94,5 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
 export const ACTIVITY_TYPES = [
   'friend_request', 'friend_accept', 'wall_post', 'comment', 'like', 'tag', 'poke', 'group_invite', 'group_request',
   'event_invite', 'mention', 'share', 'question_vote', 'checkin_tag', 'relationship', 'recovery_request', 'recovery_trustee',
-  'game', 'key_waiting', 'post_published',
+  'game', 'key_waiting', 'post_published', 'security_notice',
 ] as const;

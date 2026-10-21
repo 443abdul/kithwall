@@ -28,3 +28,10 @@ export async function onScreenCapture(fn: (kind: 'screenshot' | 'recording') => 
 export async function exitApp(url: string): Promise<void> {
   await (await nativePlugin('KithwallShell')).exit({ url });
 }
+
+
+/** Panic wipe: the WebView's own cookies, caches and storage (lib/safety/wipe.ts). */
+export async function clearWebData(): Promise<void> {
+  if (!isNative()) return;
+  await (await nativePlugin('KithwallShell')).clearWebData();
+}

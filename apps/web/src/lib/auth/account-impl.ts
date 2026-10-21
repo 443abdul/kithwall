@@ -18,6 +18,7 @@ import {
 } from '../keys/session';
 import { AccountError, type AccountApi, type Capabilities } from './account';
 import { afterLogin, logIn, mfaRequired } from './login';
+import { addPasskeyProof } from '../keys/proof';
 import { passwordStrength } from './password';
 import { api, createPasskey, getPasskey, prfSupport, webauthnAvailable } from './passkey-client';
 import {
@@ -201,10 +202,11 @@ export const accountApi: AccountApi = {
     try {
       outcome = await logIn(email, password, true);
     } catch (e) {
+      if (e instanceof AccountError) throw e;   // e.g. email_unconfirmed from lib/auth/login.ts
       if (e instanceof KithwallCryptoError || /incorrect|invalid/i.test((e as Error).message)) throw new AccountError('wrong_passphrase', (e as Error).message);
       if (/rate|too many/i.test((e as Error).message)) throw new AccountError('rate_limited');
       // A v1 sign-up whose email was never confirmed (it never got keys or content): not a network problem.
-      if (/not confirmed/i.test((e as Error).message)) throw new AccountError('unknown', 'This email address was never confirmed.');
+      if (/not confirmed/i.test((e as Error).message)) throw new AccountError('email_unconfirmed', 'This email address was never confirmed.');
       throw new AccountError('network', (e as Error).message);
     }
     if (outcome === 'mfa') return 'mfa';
@@ -231,6 +233,8 @@ export const accountApi: AccountApi = {
     await api<AddVerifyRes>(`${BASE}/add/verify`, {
       challengeId: start.challengeId, response: made.response, label: label?.trim() || deviceLabel(navigator.userAgent),
       prfSalt, amkWrap,
+      // Proof that this unlocked device holds the identity key, not just an access token (security review W2).
+      keyProof: addPasskeyProof(start.options.challenge),
     }, await accessToken());
   },
 

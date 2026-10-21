@@ -124,10 +124,11 @@ can produce the PRF output. `unlockOptions()` reports whether the account has pa
 
 ### Sign-in with a passphrase (`signInWithPassphrase(handle, passphrase)`)
 `POST passphrase/lookup {handle}` returns the account's synthetic address. Then the v1 login path runs:
-Argon2id, `signInWithPassword(authKey)` and unlock. For handles that are not passphrase accounts (unknown,
-passkey or v1), the route returns a deterministic **decoy** address of the same shape. The response
-therefore doesn't reveal which kind of account a handle has, and the sign-in simply fails with
-`wrong_passphrase`.
+Argon2id, `signInWithPassword(authKey)` and unlock. The answer never depends on the account type (security
+review W3): every existing handle gets the synthetic address of its own id (for passkey and v1 accounts the
+sign-in then simply fails with `wrong_passphrase`), and an unknown handle gets a deterministic **decoy** that is
+a version-4 UUID derived from an HMAC of the handle (`lib/auth/passphrase-decoy.ts`), exactly the shape of a real
+one. Both paths make the same single query; without `ALTCHA_HMAC_KEY`/`SUPABASE_SECRET_KEY` the route fails closed.
 
 ### v1 migration (`signInLegacy` → `addPasskey`)
 `signInLegacy(email, password)` runs the v1 `logIn()`. It returns `'mfa'` for TOTP accounts, and the UI
@@ -160,8 +161,11 @@ browser: `lib/auth/recover-client.ts`; screens: `components/public/RecoverFlow.t
    **Trusted friends:** the device makes an ephemeral X25519 key pair, keeps the private half in IndexedDB
    (wrapped by a non-extractable WebCrypto key) and calls `POST /api/recovery/friends/start {handle, ephPub}`.
    The service-role RPC `start_handle_recovery` opens the request (same waiting period, 24 h by default,
-   and 72 h expiry as before; at most 3 requests per account per day) and notifies the trusted friends
-   in-app; the owner's notice address gets a content-free email. Both sides see the same **six words**
+   and 72 h expiry as before). Security review W4: the route needs an ALTCHA proof-of-work; limits are per
+   requester (a daily IP tag: 2 per account and 4 overall a day) and at most 10 OPEN requests per account, so
+   junk the owner cancels never blocks them. The owner's devices and notice address hear about it at once;
+   the trusted friends are told only when the waiting period is over and the request is still open
+   (`kithwall-recovery-notify`, once per account per 12 h), and only then can they see it. Both sides see the same **six words**
    (`verificationPhrase(requestId, ephPub)`); friends approve only after hearing them from the owner by
    phone or in person. The device polls `POST /api/recovery/friends/status {requestId}` (the random request
    id is the capability), which returns the friends' shares sealed to the ephemeral key and each friend's
@@ -256,7 +260,8 @@ recovery starts from the public @handle (§3 "Recovering an account"). What chan
   no longer locks anyone out, and the phrase is a random 256-bit secret, far stronger than the email
   password it replaces as the first factor. Mitigations: accounts with an authenticator app still need
   the 6-digit code; a content-free notice goes to the notice address; the nonce is single use, expires in
-  5 minutes and is rate-limited per IP and per account (12 an hour); the server only ever sees a
+  5 minutes and is rate-limited (each lookup costs an ALTCHA proof-of-work; 12 an hour per account per client,
+  200 an hour per account overall, so one person can't lock the owner out); the server only ever sees a
   signature, never the phrase.
 - **The recovery wrap goes to anyone who types a handle.** It is encrypted under RK (256 random bits), so
   offline guessing is hopeless. The passphrase wrap, protected only by a human-chosen secret, is never
@@ -265,7 +270,8 @@ recovery starts from the public @handle (§3 "Recovering an account"). What chan
   the owner's email. Now the protections are the ones that always carried the weight: the waiting period
   (24 h by default, an admin setting), a warning with a one-tap **cancel** on every device where the owner
   is signed in (`components/shell/AccountNotices.tsx`) plus the notice email, the six words each friend
-  must hear by voice before approving, the k-of-n threshold, and at most 3 requests per account per day.
+  must hear by voice before approving, the k-of-n threshold, a proof-of-work per request, per-requester limits,
+  and friends are only told once the waiting period has passed without the owner cancelling.
   The cost is possible nuisance: friends may be asked about a request the owner didn't make. The help
   pages and the friends' screen tell them to call the owner first and to do nothing if in doubt.
 - **The request id is a bearer capability** for reading the sealed responses and cancelling. It is random
@@ -309,6 +315,7 @@ In development without `NEXT_PUBLIC_SITE_URL`, the rpID is the request host. It 
 
 ## 8. Open items
 
-- Rate limits for unauthenticated routes are counted from the challenge store per IP tag. The handle and
-  lookup routes, and the recovery routes (`lib/auth/recovery-server.ts` tooMany), use per-instance memory.
-  In production, add edge rate limiting (for example Vercel WAF).
+- Rate limits for unauthenticated routes are counted from the challenge store per IP tag. The passphrase
+  lookup and the recovery routes use the database (`kw.anon_rate_events` via `lib/auth/anon-limit.ts`); the
+  handle route still uses per-instance memory. The client IP is taken `TRUSTED_PROXY_HOPS` from the right of
+  `X-Forwarded-For` (security review L6). In production, add edge rate limiting too (for example Vercel WAF).

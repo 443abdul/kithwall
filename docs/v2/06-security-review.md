@@ -554,3 +554,36 @@ the landing copy should only state what is true today.
     web.
 13. **N2, L13, L14**: CI hardening before the repo goes public.
 14. Remaining Low and Info items after launch.
+
+## 9. Remediation status: data exposure and authorisation
+
+Migrations `20261028010100`…`010600_authz_*.sql`; regression tests in `supabase/tests/authz.test.sql`
+(each block replays the attack), `handle_recovery.test.sql` (W4) and the vitest files named below. Key and
+identity findings (K1, K2, W2, C1, L9, L11, L12, I6, I7) are tracked separately.
+
+| ID | Status | What changed |
+|---|---|---|
+| D1 | Fixed | The publication no longer publishes DELETE (`pubdelete = false`); `pokes` leaves it; unfriend/unlike reach the people involved as content-free broadcasts on the private `db:<uid>` topic (owner-only RLS on `realtime.messages`). Production: enable "Private channels only" (07-launch.md §1). |
+| D2 | Fixed | `kw.private_members_guard` + `public.create_conversation()`: chat members only by connection, or shared circle when `requests_from` allows; calls, ringing, inbox signals and notifications inherit it. `recovery_request` notifications are server-only; `recovery_trustee` needs a real share. UI: "You can only start a chat with your connections…". |
+| D3 | Fixed (residual) | Profiles readable by self, staff, connections (any request state), friends of friends, audience peers, notification actors, trusted friends, discoverable profiles; others via exact-handle `find_profile()` only. Residual: connections still see `status`/`created_at` (column privileges would break `select *` in `lib/keys/session.ts`). |
+| D4 | Fixed | Every report kind is validated against what the reporter can see; `target_owner_id` and `stored_envelope` are server-derived; workflow columns can't be pre-filled. |
+| W1 | Fixed | `lib/auth/next.ts` (`safeNext`/`safePath`): control characters and backslashes refused, resolved against a fixed origin; also used for notification taps (`PushManager`). Test: `next.test.ts`. |
+| W3 | Fixed (residual) | Lookup answers from the profile id for every existing handle (no account-type branch, one query either way); unknown handles get a v4-UUID-shaped HMAC decoy; fails closed without a secret; DB-backed limit. Residual: no per-handle limit on the GoTrue password grant itself. Test: `passphrase-decoy.test.ts`, `passkey.e2e.test.ts`. |
+| W4 | Fixed | ALTCHA proof-of-work on both start routes; per-requester (daily IP tag) and open-request limits instead of a per-account cap; friends are prompted (and can see the request) only after the waiting period, once per 12 h; reworded prompt. Residual: `trusted` count/threshold still returned before acceptance. |
+| N1 | Fixed (not compiled here) | iOS `MainFrameBridgeGate` replaces Capacitor's `bridge` handler: main frame of the app origin (or the bundled offline page) only. Needs an Xcode build to confirm. |
+| N2 | Fixed | CI no longer passes the bypass secret; `capacitor.config.ts` refuses it when `CI` is set; shorter artifact retention for non-tag builds. Delete the `VERCEL_AUTOMATION_BYPASS_SECRET` GitHub secret. |
+| C2 | Fixed | Chat link previews only on an explicit "Add link preview" tap (setting: Privacy → Offer link previews in chats); privacy policy §4.8 updated (both copies). Test: `chatModel.test.ts` + browser run. |
+| P1 | Fixed / reworded | Blocked people lose the 1:1 history (`kw.dm_hidden_from`); group-chat caveat added to the block copy; native wipe now clears WebView data (`KithwallShell.clearWebData`); "never store IP addresses" → "keyed hash, rotated daily"; brief/README profile claim narrowed. C1 and K2 claims: keys stream. |
+| L1 | Fixed | No self-adds to someone else's chat or list. |
+| L2 | Fixed | Ban lifts and actions against staff are admin-only; report targets immutable (except FK set-null on account deletion). |
+| L3 | Fixed | Invites can't be reset or extended (≤ 30 days); `redeem_invite` checks active accounts and blocks. |
+| L4 | Fixed | Upload rate (3000/day) and 10 GiB per account; orphaned uploads removed by the ephemeral cron. |
+| L5 | Fixed | See P1. |
+| L6 | Fixed (partly) | `clientIp` counts `TRUSTED_PROXY_HOPS` from the right (Vercel: `x-real-ip`); lookup and recovery limits are in the database. The handle-availability route still uses memory. |
+| L7 | Fixed | `request_account_deletion` requires aal2 when enrolled. |
+| L8 | Fixed | No site URL in production → no mail; `siteOrigin` never falls back to the Host header there. |
+| L10 | Fixed | Hidden chats never write `kw.eph.suggest.*`, `kw.read.*` or the voice-played list; hiding a chat removes old markers. |
+| L13 | Fixed (partly) | Actions pinned to SHAs, `persist-credentials: false`, Supabase CLI pinned. Not done: protected signing environment (GitHub settings), `npm ci --ignore-scripts`. |
+| L14 | Fixed | Tag builds fail without the upload key; local release builds need `KITHWALL_ALLOW_DEBUG_SIGNING=true`; wrapper checksum + `wrapper-validation`. |
+| L15 | Fixed | Notification intents carry a per-install token; `kw_url`/`kw_tag` from other apps are ignored; WebView data cleared on wipe. |
+| I1, I3 | Fixed | TRUNCATE/TRIGGER/REFERENCES revoked; `kw.rate_limit` serialised per user and action. |

@@ -91,6 +91,17 @@ export function firstUrl(text: string): string | null {
   return null;
 }
 
+/**
+ * The link the composer may OFFER a preview for (security review C2). Offering costs nothing: the preview
+ * is fetched only when the person taps "Add link preview" (ChatComposer), never while they type.
+ * Null with attachments, with the setting off, or after the person dismissed the offer for this link.
+ */
+export function previewOffer(text: string, opts: { hasFiles: boolean; enabled: boolean; dismissed?: string | null }): string | null {
+  if (opts.hasFiles || !opts.enabled) return null;
+  const url = firstUrl(text);
+  return url && url !== opts.dismissed ? url : null;
+}
+
 /** A message that is only emoji (1–3) is shown large, without a bubble. */
 export function isEmojiOnly(text: string): boolean {
   const t = text.trim();

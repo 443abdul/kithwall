@@ -7,7 +7,7 @@ import {
   setLockPrefs, setWipeAfter, useAppLock, useExitPrefs, useLockPrefs, type LockPrefs,
 } from '@/lib/safety/applock';
 import { duressSetHere, noteDuressHere, useHiddenChatIds } from '@/lib/safety/hidden';
-import { PIN_MAX, PIN_MIN } from '@/lib/safety/pin';
+import { PIN_MAX, PIN_MIN, PIN_RECOMMENDED } from '@/lib/safety/pin';
 import type { DuressAction } from '@/lib/keys/device';
 import { Section } from '@/components/settings/shared';
 import { Button } from '@/components/ui/Button';
@@ -48,7 +48,7 @@ function NewPinFields({ pin, confirm, onPin, onConfirm, error, labels }: {
   return (
     <div className="k-safety-pinfields">
       <TextField label={labels.pin} type="password" inputMode="numeric" autoComplete="off" value={pin} maxLength={PIN_MAX}
-        hint={t('safety.pin.hint', { min: PIN_MIN })} onChange={(e) => onPin(digits(e.target.value))} />
+        hint={t('keys.pinHint', { min: PIN_MIN, recommended: PIN_RECOMMENDED })} onChange={(e) => onPin(digits(e.target.value))} />
       <TextField label={labels.confirm} type="password" inputMode="numeric" autoComplete="off" value={confirm} maxLength={PIN_MAX}
         error={error ?? undefined} onChange={(e) => onConfirm(digits(e.target.value))} />
     </div>
@@ -88,7 +88,7 @@ function AppPinSection() {
 
   if (state !== 'set') {
     return (
-      <Section id="app-pin" title={t('safety.pin.title')} description={t('safety.pin.body')}>
+      <Section id="app-pin" title={t('safety.pin.title')} description={t('keys.pinBody')}>
         <form className="k-stack" onSubmit={enable}>
           <NewPinFields pin={pin} confirm={confirm} onPin={setPin} onConfirm={setConfirm} error={err}
             labels={{ pin: t('safety.pin.new'), confirm: t('safety.pin.confirm') }} />

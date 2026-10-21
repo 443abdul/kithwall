@@ -38,6 +38,10 @@ final class Notifier {
     static final String CH_ACTIVITY = "activity";
     static final String EXTRA_URL = "kw_url";
     static final String EXTRA_TAG = "kw_tag";
+    /** Per-install secret on our own notification intents (security review L15): MainActivity is exported, so
+     *  other apps could otherwise send it kw_url / kw_tag to open paths or cancel our notifications. */
+    static final String EXTRA_TOKEN = "kw_token";
+    private static final String TOKEN_PREFS = "kw_intent";
     private static final String GENERIC = "You have new activity on Kithwall.";
     private static final Pattern MSG_PATH = Pattern.compile("^/messages/([0-9a-fA-F-]{36})");
     private static final Pattern CONV_TAG = Pattern.compile("^conv:([0-9a-fA-F-]{36})$");
@@ -62,10 +66,32 @@ final class Notifier {
         nm.createNotificationChannel(activity);
     }
 
-    /** Only same-app paths: "/x…", never "//host" or a scheme. */
+    /** Only same-app paths: "/x…", never "//host", a scheme, a backslash or a control character. */
     static String safePath(String u) {
         if (u == null || !u.startsWith("/") || u.startsWith("//") || u.length() > 512 || u.contains("\\")) return "/activity";
+        for (int k = 0; k < u.length(); k++) if (u.charAt(k) < 0x20 || u.charAt(k) == 0x7f) return "/activity";
         return u;
+    }
+
+    /** A random secret made once per install; never leaves the app (only our PendingIntents carry it). */
+    static synchronized String installToken(Context c) {
+        android.content.SharedPreferences p = c.getSharedPreferences(TOKEN_PREFS, Context.MODE_PRIVATE);
+        String t = p.getString("t", null);
+        if (t == null) {
+            byte[] b = new byte[32];
+            new java.security.SecureRandom().nextBytes(b);
+            t = android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP | android.util.Base64.URL_SAFE | android.util.Base64.NO_PADDING);
+            p.edit().putString("t", t).apply();
+        }
+        return t;
+    }
+
+    /** True when an intent came from one of our own notifications (constant-time token check). */
+    static boolean fromOurNotification(Context c, android.content.Intent i) {
+        String got = i == null ? null : i.getStringExtra(EXTRA_TOKEN);
+        if (got == null) return false;
+        return java.security.MessageDigest.isEqual(got.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                installToken(c).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private static String conversationOf(String path, String tag) {
@@ -89,6 +115,7 @@ final class Notifier {
         i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         i.putExtra(EXTRA_URL, path);
         i.putExtra(EXTRA_TAG, tag);
+        i.putExtra(EXTRA_TOKEN, installToken(c));
         return PendingIntent.getActivity(c, req, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 

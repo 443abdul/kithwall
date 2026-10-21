@@ -55,7 +55,9 @@ function Item({ g, href, onOpen }: { g: ActivityGroup; href: string | null; onOp
   usePeopleVersion();
   const nameOf = (id: string) => people.person(id)?.name ?? t('messages.someone');
   const actors = actorsText(g.actors, nameOf, t);
-  const key = (KNOWN.has(g.type) ? `activity.type.${g.type}` : 'activity.type.other') as MessageKey;
+  // Anyone who knows a handle can start a recovery for it, so the prompt says so (security review W4).
+  const key = (g.type === 'recovery_request' ? 'security.recoveryRequestActivity'
+    : KNOWN.has(g.type) ? `activity.type.${g.type}` : 'activity.type.other') as MessageKey;
   const text = t(key, { actors });
   const sealed = preview(g.head as NotificationRow);
   const inner: ReactNode = (

@@ -11,7 +11,7 @@ import type { Sealed } from '@kithwall/crypto';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  if (tooMany(req, 'recover-status', 240, 60 * 60_000)) return fail('rate_limited', 429, 'Too many requests. Please slow down.');
+  if (await tooMany(req, 'recover-status', 240, 60 * 60_000)) return fail('rate_limited', 429, 'Too many requests. Please slow down.');
   const body = await readJson<FriendsStatusReq>(req, 512);
   const id = String(body?.requestId ?? '');
   if (!UUID_RE.test(id)) return fail('unknown', 400, 'Bad request.');

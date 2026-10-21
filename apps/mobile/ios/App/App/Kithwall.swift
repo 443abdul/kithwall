@@ -12,10 +12,46 @@ import WebKit
 
 class KithwallBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
+        restrictBridgeToMainFrame()
         bridge?.registerPluginInstance(KithwallShellPlugin())
         bridge?.registerPluginInstance(KithwallPasskeyPlugin())
         bridge?.registerPluginInstance(KithwallSecurePlugin())
         bridge?.registerPluginInstance(KithwallPushPlugin())
+    }
+
+    /// Security review N1: Capacitor registers its "bridge" message handler for EVERY frame, so a script in a
+    /// third-party iframe (a click-to-play video embed) could post raw plugin calls. Swap in a gatekeeper that
+    /// forwards only messages from the main frame of the app's own origin (or the bundled offline page),
+    /// like Capacitor's Android bridge already does.
+    private func restrictBridgeToMainFrame() {
+        // `bridge` is the protocol type; the delegation handler lives on the concrete CapacitorBridge.
+        guard let bridge = bridge as? CapacitorBridge else { return }
+        let handler = bridge.webViewDelegationHandler
+        let controller = handler.contentController
+        controller.removeScriptMessageHandler(forName: "bridge")
+        controller.add(MainFrameBridgeGate(target: handler, serverURL: bridge.config.serverURL, localURL: bridge.config.localURL), name: "bridge")
+    }
+}
+
+/// Forwards bridge messages to Capacitor only from the top-level document of the app's origin.
+final class MainFrameBridgeGate: NSObject, WKScriptMessageHandler {
+    private let target: WKScriptMessageHandler
+    private let allowed: [(scheme: String, host: String, port: Int)]
+
+    init(target: WKScriptMessageHandler, serverURL: URL, localURL: URL) {
+        self.target = target
+        self.allowed = [serverURL, localURL].compactMap { u -> (scheme: String, host: String, port: Int)? in
+            guard let s = u.scheme?.lowercased(), let h = u.host?.lowercased() else { return nil }
+            return (s, h, u.port ?? 0)
+        }
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame else { return }
+        let o = message.frameInfo.securityOrigin
+        let scheme = o.protocol.lowercased(), host = o.host.lowercased()
+        guard allowed.contains(where: { $0.scheme == scheme && $0.host == host && ($0.port == 0 || o.port == 0 || $0.port == o.port) }) else { return }
+        target.userContentController(userContentController, didReceive: message)
     }
 }
 
@@ -31,6 +67,7 @@ public class KithwallShellPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getSecureScreen", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openExternal", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "exit", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearWebData", returnType: CAPPluginReturnPromise),
     ]
     private static let secureKey = "kw.secureScreen"
     private var cover: UIView?
@@ -83,6 +120,19 @@ public class KithwallShellPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func exit(_ call: CAPPluginCall) {
         if let s = call.getString("url"), let u = URL(string: s), u.scheme?.lowercased() == "https" { openOutside(u) }
         call.resolve()
+    }
+
+    /// Panic wipe (security review N6/P1): remove everything WebKit keeps for any site in this app: cookies,
+    /// local/session storage, IndexedDB, caches, service workers.
+    @objc func clearWebData(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let store = WKWebsiteDataStore.default()
+            store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: Date.distantPast) {
+                HTTPCookieStorage.shared.removeCookies(since: Date.distantPast)
+                URLCache.shared.removeAllCachedResponses()
+                call.resolve()
+            }
+        }
     }
 
     /// Only the app's origin (and the bundled offline page) loads in the app; https/mailto/tel go to the system; the rest is blocked.

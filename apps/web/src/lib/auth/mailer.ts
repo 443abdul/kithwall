@@ -68,6 +68,9 @@ const clean = (s: string) => s.replace(/[\r\n]+/g, ' ').trim();
 const addr = (s: string) => { const m = /<([^<>\s]+@[^<>\s]+)>/.exec(s); return m ? m[1]! : s.trim(); };
 
 export function mailConfigured(): boolean {
+  // In production the links in a notice must point at the configured site, never at whatever Host header
+  // the request carried (security review L8), so no site URL means no mail.
+  if (process.env.NODE_ENV === 'production' && !process.env.NEXT_PUBLIC_SITE_URL) return false;
   return !!process.env.SMTP_URL && !!process.env.MAIL_FROM;
 }
 

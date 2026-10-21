@@ -3,7 +3,7 @@
 // members (an audience with its own epoch keys); Open groups are public and only exist while the
 // operator has enabled the Public audience. Also holds the container helpers shared with events:
 // sealing/opening a container envelope, delivering epoch keys to members, and rotation.
-import { b64u, openEnvelope, seal, sealEnvelope, type Envelope, type EnvelopeHeader } from '@kithwall/crypto';
+import { b64u, openEnvelope, sealEnvelope, type Envelope, type EnvelopeHeader } from '@kithwall/crypto';
 import { sb, must } from './supabase';
 import { identity, me } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
@@ -63,15 +63,6 @@ export function openContainer<T>(type: 'group' | 'event', row: ContainerRow, env
   }
 }
 
-const keyCtx = (aud: string, epoch: number, recipient: string) => `audience-key/${aud}/${epoch}/${recipient}`;
-
-/** Seal one epoch key to one person (same format the keyring reads). Duplicates are ignored. */
-async function sealKeyTo(aud: string, epoch: number, recipient: string, kxPub: string, key: Uint8Array) {
-  const sealed = seal({ recipientKxPub: b64u.decode(kxPub), senderSignPriv: identity().signPriv, context: keyCtx(aud, epoch, recipient), plaintext: key });
-  const res = await sb().from('audience_keys').insert({ audience_id: aud, epoch, recipient_id: recipient, sealed_by: me(), sealed });
-  if (res.error && res.error.code !== '23505') throw new Error(res.error.message);
-}
-
 /**
  * Admins: deliver every epoch key we hold to members (active or invited) who lack it, so new
  * members can read the history. Returns how many keys were delivered.
@@ -80,13 +71,8 @@ export async function deliverMemberKeys(aud: string): Promise<number> {
   const { data, error } = await sb().rpc('community_key_gaps', { aud });
   if (error) return 0;
   const gaps = (data ?? []) as { recipient_id: string; epoch: number; recipient_kx_pub: string }[];
-  let n = 0;
-  for (const g of gaps) {
-    const key = keyring.get(aud, g.epoch);
-    if (!key) continue;
-    try { await sealKeyTo(aud, g.epoch, g.recipient_id, g.recipient_kx_pub, key); n++; } catch { /* not entitled any more */ }
-  }
-  return n;
+  // Sealed by the keyring: only to people whose identity keys this device trusts (K2), errors skipped.
+  return keyring.deliverTo(gaps.map((g) => ({ audience_id: aud, epoch: g.epoch, recipient_id: g.recipient_id, recipient_kx_pub: g.recipient_kx_pub })));
 }
 
 /**
@@ -98,12 +84,9 @@ export async function rotateAudience(aud: string): Promise<boolean> {
   const row = must(await sb().from('audiences').select('*').eq('id', aud).single()) as AudienceRow;
   // Make sure we hold the current key first (so history stays readable for us).
   await keyring.current(aud).catch(() => undefined);
-  const res = await sb().from('audiences').update({ current_epoch: row.current_epoch + 1 })
-    .eq('id', aud).eq('current_epoch', row.current_epoch).select();
-  if (res.error) throw new Error(res.error.message);
-  const next = (res.data as AudienceRow[])[0];
+  // Mints the key, publishes its signed record and advances the epoch atomically (K1).
+  const next = await keyring.advance(aud, row.current_epoch);
   if (!next) return false; // someone else rotated first; we'll receive their key
-  await keyring.ensureOwn(next);
   await keyring.deliverPending().catch(() => undefined);
   await deliverMemberKeys(aud).catch(() => undefined);
   return true;

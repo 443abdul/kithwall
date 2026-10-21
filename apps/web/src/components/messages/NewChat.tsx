@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useT } from '@/i18n';
 import { useSession } from '@/lib/keys/session';
-import { createConversation, openDm } from '@/lib/messages';
+import { createConversation, NotConnectedError, openDm } from '@/lib/messages';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Field';
 import { Callout } from '@/components/ui/Callout';
@@ -28,7 +28,8 @@ export function NewChat({ to }: { to?: string }) {
   const [picked, setPicked] = useState<string[]>([]);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(false);
+  // 'connect': someone picked isn't a connection (chats are only with connections, security review D2).
+  const [err, setErr] = useState<false | 'failed' | 'connect'>(false);
   const direct = !!to && UUID.test(to) && to.toLowerCase() !== userId;
   const started = useRef(false);
 
@@ -37,7 +38,7 @@ export function NewChat({ to }: { to?: string }) {
     started.current = true;
     openDm(to!.toLowerCase())
       .then((c) => { void qc.invalidateQueries({ queryKey: ['conversations'] }); router.replace(`/messages/${c.id}`); })
-      .catch(() => setErr(true));
+      .catch((e) => setErr(e instanceof NotConnectedError ? 'connect' : 'failed'));
   }, [direct, status, to, qc, router]);
 
   async function start() {
@@ -47,7 +48,7 @@ export function NewChat({ to }: { to?: string }) {
       const c = picked.length === 1 ? await openDm(picked[0]!) : await createConversation(picked, null, name.trim() || undefined);
       await qc.invalidateQueries({ queryKey: ['conversations'] });
       router.replace(`/messages/${c.id}`);
-    } catch { setErr(true); setBusy(false); }
+    } catch (e) { setErr(e instanceof NotConnectedError ? 'connect' : 'failed'); setBusy(false); }
   }
 
   if (direct && !err) return <div className="k-chat-thread k-chat-center"><Spinner size={28} label={t('messages.new.opening')} /></div>;
@@ -59,7 +60,7 @@ export function NewChat({ to }: { to?: string }) {
         <h2 className="k-chat-new-title">{t('messages.newChat')}</h2>
       </header>
       <div className="k-chat-new-body">
-        {err ? <Callout tone="danger">{t('messages.new.failed')}</Callout> : null}
+        {err ? <Callout tone="danger">{t(err === 'connect' ? 'security.chatNeedsConnection' : 'messages.new.failed')}</Callout> : null}
         {picked.length ? (
           <ul className="k-chat-selected" aria-label={t('messages.new.selected')}>
             {picked.map((id) => (

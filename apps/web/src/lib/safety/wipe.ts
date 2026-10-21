@@ -77,6 +77,8 @@ export function wipeThisDevice(): Promise<void> {
     await dropStorage();
     // signOut() may have run while the native store was being cleared: clear it once more.
     if (isNative()) await within(import('../native/secure').then((m) => m.nativeSecure.clear()), 1500);
+    // Last: the WebView's own cookies, HTTP cache and storage, which the page can't reach (security review N6).
+    if (isNative()) await within(import('../native/shell').then((m) => m.clearWebData()), 2500);
   })().finally(() => { running = null; });
   return running;
 }

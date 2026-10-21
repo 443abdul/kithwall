@@ -14,7 +14,7 @@ import { UUID_RE, type RecoverFinishReq, type RecoverFinishRes } from '@/lib/aut
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  if (tooMany(req, 'recover-finish', 20, 10 * 60_000)) return fail('rate_limited', 429, 'Too many attempts. Please wait a few minutes.');
+  if (await tooMany(req, 'recover-finish', 20, 10 * 60_000)) return fail('rate_limited', 429, 'Too many attempts. Please wait a few minutes.');
   const body = await readJson<RecoverFinishReq>(req, 4096);
   const userId = String(body?.userId ?? '');
   const requestId = body?.requestId ? String(body.requestId) : null;

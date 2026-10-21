@@ -5,6 +5,8 @@
 import { getSession, initSession, signIn, unlock, type SessionStatus } from '../keys/session';
 import { sb } from '../supabase';
 import { markRecoveryNudge } from '../../components/onboarding/nudges';
+import { AccountError } from './account';
+import { isUnconfirmedEmailError } from './login-errors';
 
 /** Same key as components/onboarding/nudges.ts ('show' | 'dismissed'; absent = never offered on this device). */
 const RECOVERY_NUDGE_KEY = 'kw.nudge.recovery';
@@ -22,7 +24,14 @@ export async function mfaRequired(): Promise<boolean> {
 
 export async function logIn(email: string, password: string, remember: boolean): Promise<LoginOutcome> {
   pending = null;
-  const st = await signIn(email.trim(), password, remember);
+  let st: SessionStatus;
+  try {
+    st = await signIn(email.trim(), password, remember);
+  } catch (e) {
+    // A v1 sign-up whose email was never confirmed: say so instead of a generic failure.
+    if (isUnconfirmedEmailError(e)) throw new AccountError('email_unconfirmed', (e as Error).message);
+    throw e;
+  }
   if (st === 'setup' && await mfaRequired()) {
     pending = { password, remember };
     return 'mfa';

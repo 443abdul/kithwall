@@ -6,23 +6,25 @@
 // if they have a notice address, and each friend must hear the six-word phrase from the owner.
 import { admin, claimNotice, json, readJson, siteOrigin } from '@/lib/auth/server';
 import { mailConfigured, sendNotice } from '@/lib/auth/mailer';
-import { fail, noticeAddress } from '@/lib/auth/passkey-server';
+import { fail, ipTag, noticeAddress } from '@/lib/auth/passkey-server';
 import { isB64u } from '@/lib/auth/passkey-shared';
-import { targetByHandle, tooMany } from '@/lib/auth/recovery-server';
+import { proofOfWorkOk, targetByHandle, tooMany } from '@/lib/auth/recovery-server';
 import type { FriendsStartReq, FriendsStartRes } from '@/lib/auth/recovery-shared';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  if (tooMany(req, 'recover-friends', 6, 60 * 60_000)) return fail('rate_limited', 429, 'Too many attempts. Please try again later.');
-  const body = await readJson<FriendsStartReq>(req, 1024);
+  const body = await readJson<FriendsStartReq>(req, 8192);
   if (!isB64u(body?.ephPub, 43, 43)) return fail('unknown', 400, 'Bad request.');
   try {
+    if (await tooMany(req, 'recover-friends', 6, 60 * 60_000)) return fail('rate_limited', 429, 'Too many attempts. Please try again later.');
+    // A fake request costs real CPU (security review W4).
+    if (!(await proofOfWorkOk(body?.altcha))) return fail('unknown', 400, 'We couldn\'t confirm you\'re a person. Reload the page and try again.');
     const target = await targetByHandle(body?.handle);
     if (target === 'invalid') return fail('handle_invalid', 400, 'That isn\'t a valid handle.');
     if (!target) return fail('no_account', 404, 'No account has that handle.');
     const db = admin();
-    const { data, error } = await db.rpc('start_handle_recovery', { p_owner: target.userId, p_eph_pub: body!.ephPub });
+    const { data, error } = await db.rpc('start_handle_recovery', { p_owner: target.userId, p_eph_pub: body!.ephPub, p_requester: ipTag(req) });
     if (error) {
       if (error.code === 'P0002') return fail('no_trustees', 409, 'This account has no trusted friends.');
       if (error.code === 'P0429') return fail('rate_limited', 429, 'Too many recovery requests for this account today.');

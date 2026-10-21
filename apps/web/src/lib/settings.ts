@@ -29,6 +29,11 @@ export interface Settings {
   readReceipts: boolean;
   /** Kithwall 2: send and show typing indicators (default off). */
   typingIndicator: boolean;
+  /**
+   * Offer an "Add link preview" button in chats (default on). A preview is only ever fetched when that
+   * button is tapped, never while typing (security review C2: the proxy would see URLs from drafts).
+   */
+  chatLinkPreviews: boolean;
   defaultAudience: DefaultAudience;
   email: EmailPrefs;
   language: 'en-US';
@@ -38,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatVisible: true,
   readReceipts: false,
   typingIndicator: false,
+  chatLinkPreviews: true,
   defaultAudience: 'friends',
   email: { activity: false, friendRequests: true, messages: false, security: true },
   language: 'en-US',

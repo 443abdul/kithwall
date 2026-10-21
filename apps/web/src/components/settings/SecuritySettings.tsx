@@ -483,7 +483,7 @@ function DeviceSection() {
   async function forget() { await deviceStore.clear(); setRemembered(false); toast({ message: t('settings.device.forgotten') }); }
   async function remember() { if (!userId) return; await deviceStore.save(userId, amk()); setRemembered(true); toast({ message: t('settings.device.remembered') }); }
   return (
-    <Section id="device" title={t('settings.device.title')} description={remembered ? t('settings.device.rememberedBody') : t('settings.device.askBody')}>
+    <Section id="device" title={t('settings.device.title')} description={remembered ? t('keys.rememberedBody') : t('settings.device.askBody')}>
       <div className="k-row-wrap">
         {remembered ? <Button variant="secondary" onClick={() => void forget()}>{t('settings.device.forget')}</Button>
           : remembered === false ? <Button variant="secondary" onClick={() => void remember()}>{t('settings.device.remember')}</Button> : null}

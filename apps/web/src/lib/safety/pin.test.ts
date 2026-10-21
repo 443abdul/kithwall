@@ -136,3 +136,21 @@ describe('attempt limiter', () => {
     expect(noteFailure({ failures: 50, lockedUntil: 0 }, 0, null).wipe).toBe(false);
   });
 });
+
+describe('PIN cost (security review C1)', () => {
+  it('new PINs use a heavier Argon2id than account passwords, and the UI recommends 8+ digits', async () => {
+    const { PIN_KDF, PIN_RECOMMENDED, PIN_MIN } = await import('./pin');
+    const { DEFAULT_KDF } = await import('@kithwall/crypto');
+    expect(PIN_KDF.m).toBeGreaterThanOrEqual(2 * DEFAULT_KDF.m);
+    expect(PIN_KDF.t).toBeGreaterThanOrEqual(DEFAULT_KDF.t);
+    expect(PIN_RECOMMENDED).toBeGreaterThanOrEqual(PIN_MIN + 2);
+  });
+  it('a wrap made without explicit parameters records PIN_KDF (and still opens)', async () => {
+    const { PIN_KDF } = await import('./pin');
+    const amk = randomBytes(32);
+    const w = await createPinWrap(USER, amk, '48291673');
+    expect(w.kdf).toEqual(PIN_KDF);
+    const out = await openPinWrap(USER, w, '48291673');
+    expect(out.kind).toBe('real');
+  }, 60_000);
+});

@@ -154,7 +154,9 @@ says so). The lock screen shows "Unlock with biometrics" next to the PIN pad.
 
 **Wipe** (`lib/safety/wipe.ts`) additionally, in the app: deletes this install's push row and token,
 deletes the device push key and the hidden-chat mirror, removes shown notifications and clears both
-Keystore/Keychain stores (including the biometric key), then the usual IndexedDB/storage wipe.
+Keystore/Keychain stores (including the biometric key), then the usual IndexedDB/storage wipe, and finally the
+WebView's own data through `KithwallShell.clearWebData` (cookies, every origin's storage, HTTP cache, history;
+security review N6: before this the comment claimed it but nothing cleared them).
 
 ## 5. Native push (payloads end-to-end encrypted to the device)
 
@@ -248,7 +250,10 @@ node scripts/gen-assets.mjs   # icons, adaptive icon, splash, notification icon 
 - `foss`: APK with **no Google libraries** (UnifiedPush connector, no Firebase, no Play services). For direct
   download from kithwall.com and F-Droid. F-Droid builds from source and signs with its own key unless the
   build is reproducible; add F-Droid's signing fingerprint to `ANDROID_CERT_SHA256` if it signs.
-- Release signing comes only from CI secrets (§9); without them CI signs with a throwaway debug key.
+- Release signing comes only from CI secrets (§9). Without them, branch and PR builds sign with a throwaway
+  debug key (`KITHWALL_ALLOW_DEBUG_SIGNING=true`, set by CI); a version-tag build fails, and so does a local
+  release build unless you set that variable (security review L14). The Gradle wrapper checks the
+  distribution's SHA-256 and CI runs `wrapper-validation`; all actions are pinned to commit SHAs (L13).
 - Version: `KITHWALL_VERSION_CODE` = CI run number, `KITHWALL_VERSION_NAME` = the `v*` tag.
 
 **CI** (nothing runs automatically on macOS except `v*` tags):
@@ -276,7 +281,10 @@ node scripts/gen-assets.mjs   # icons, adaptive icon, splash, notification icon 
   origins can never load in the app, and no other site can inject a bridge. Shipping the web bundle inside
   the app (with signed updates) would close the gap at the cost of slower fixes; noted for later.
 - **Native bridge exposure.** Any script running on the origin can call the plugins (e.g. read the
-  Keystore-protected AMK when "keep me signed in" is on). That is the same power it already has over
+  Keystore-protected AMK when "keep me signed in" is on). Only the TOP frame of the app's origin can: Android's
+  bridge is main-frame/app-origin only, and on iOS `KithwallBridgeViewController` swaps Capacitor's `bridge`
+  message handler (registered for every frame) for a gate that drops messages from iframes or other origins
+  (security review N1: a click-to-play embed's scripts could otherwise post plugin calls). That is the same power it already has over
   IndexedDB in a browser; biometric-protected values still need a biometric, and nothing leaves the device
   without the page sending it.
 - **Synced passkeys.** Unchanged from the web: Google Password Manager / iCloud Keychain sync the PRF
@@ -285,7 +293,9 @@ node scripts/gen-assets.mjs   # icons, adaptive icon, splash, notification icon 
   doesn't stop another camera (§6).
 - **Device storage.** Hardware-backed keys make copied app data useless elsewhere, but someone with the
   unlocked phone and the app PIN, or root on it, can still read what the app can read (`03-safety.md` §8).
-- **Staging bypass secret** (§10) ends up inside staging test builds: never distribute them.
+- **Staging bypass secret** (§10) ends up inside staging test builds made with it: never distribute them. CI
+  never embeds it (`capacitor.config.ts` refuses when `CI` is set), because CI artifacts become public with
+  the repository (security review N2).
 
 ## 9. Owner checklist
 
@@ -342,8 +352,10 @@ node scripts/gen-assets.mjs   # icons, adaptive icon, splash, notification icon 
 
 ### Staging (optional, for testing the app before launch)
 - Vercel → Settings → Deployment Protection → *Protection Bypass for Automation* → create a secret →
-  GitHub secret `VERCEL_AUTOMATION_BYPASS_SECRET`. A manual Android/iOS run with `env = staging` puts it in
-  the app's start URL so the first load sets Vercel's bypass cookie. **Internal test builds only.**
+  `KITHWALL_STAGING_BYPASS` in your shell for a **local** build (`KITHWALL_ENV=staging npx cap sync`): it goes
+  into the app's start URL so the first load sets Vercel's bypass cookie. **Internal test builds only, never
+  from CI** (their artifacts are downloadable once the repository is public; security review N2). CI staging
+  builds load staging without it. Don't keep the secret as a GitHub secret.
 - Passkeys on staging need Google/Apple to fetch `https://staging.kithwall.com/.well-known/*`, which Vercel
   Authentication blocks (there is no per-path exception). Either turn protection off for staging while
   testing native passkeys, or test passkeys against production after launch. Everything else (push,

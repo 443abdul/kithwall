@@ -97,7 +97,7 @@ export function SafetyCentre() {
         </List>
       </Card>
 
-      <Callout tone="info" icon="info">{t('safety.limits')}</Callout>
+      <Callout tone="info" icon="info">{t('keys.limits')}</Callout>
       <WipeDialog open={wiping} onClose={() => setWiping(false)} />
     </Page>
   );

@@ -12,7 +12,7 @@ import { isoCBOR } from '@simplewebauthn/server/helpers';
 import { solveChallenge, type Challenge } from 'altcha-lib';
 import { deriveKey } from 'altcha-lib/algorithms/pbkdf2';
 import {
-  PRF_APP_SALT, b64u, createKeyBundle, deriveFromPassword, newPrfSalt, unlockWithPassword, unlockWithPrf, wrapAmkWithPrf,
+  PRF_APP_SALT, b64u, createKeyBundle, deriveFromPassword, generateIdentity, newPrfSalt, signChallenge, unlockWithPassword, unlockWithPrf, wrapAmkWithPrf,
   type KeyBundle,
 } from '@kithwall/crypto';
 
@@ -238,11 +238,27 @@ run('Kithwall 2 accounts (e2e)', () => {
     expect(start.data.options.excludeCredentials.map((c) => c.id)).toEqual([auth.id]);
     expect(start.data.options.user.id).toBe(auth.userHandle);   // same WebAuthn user handle
     const prfSalt = newPrfSalt();
+    // Security review W2: a stolen access token alone can't add a passkey (no proof of the identity key,
+    // or a proof by another key, is refused, and the attempt burns the challenge).
+    const thief = new SoftAuthenticator(origin, rpId);
+    for (const keyProof of [undefined, signChallenge(generateIdentity().signPriv, `kithwall/v1/add-passkey/${start.data.options.challenge}`)]) {
+      const st = keyProof ? await call<typeof start.data>('/api/auth/passkey/add/options', {}, token) : start;
+      const stolen = await call('/api/auth/passkey/add/verify', {
+        challengeId: st.data.challengeId, response: thief.register(st.data.options), label: 'Thief', prfSalt,
+        amkWrap: wrapAmkWithPrf(userId, thief.id, randomBytes(32), thief.prf(), prfSalt), keyProof,
+      }, token);
+      expect(stolen.status).toBe(403);
+    }
+    expect((await client.from('passkeys').select('id')).data).toHaveLength(1);
+    const start2 = await call<typeof start.data>('/api/auth/passkey/add/options', {}, token);
     const add = await call<{ id: string }>('/api/auth/passkey/add/verify', {
-      challengeId: start.data.challengeId, response: second.register(start.data.options), label: 'Laptop',
+      challengeId: start2.data.challengeId, response: second.register(start2.data.options), label: 'Laptop',
       prfSalt, amkWrap: wrapAmkWithPrf(userId, second.id, u.amk, second.prf(), prfSalt),
+      keyProof: signChallenge(u.identity.signPriv, `kithwall/v1/add-passkey/${start2.data.options.challenge}`),
     }, token);
     expect(add.status).toBe(200);
+    // Every device hears about it (in-app notification → push), content-free.
+    expect((await client.from('notifications').select('type').eq('type', 'security_notice')).data).toHaveLength(1);
     expect((await client.from('passkeys').select('id')).data).toHaveLength(2);
 
     // Sign in with the second passkey opens the same keys.
@@ -293,9 +309,14 @@ run('Kithwall 2 accounts (e2e)', () => {
     const look = await call<{ email: string }>('/api/auth/passkey/passphrase/lookup', { handle: h.toUpperCase() });
     expect(look.data.email).toBe(start.data.email);
     const decoy = await call<{ email: string }>('/api/auth/passkey/passphrase/lookup', { handle: `${h}x` });
-    expect(decoy.data.email).toMatch(/^u[0-9a-f]{32}@id\.kithwall\.invalid$/);
-    const decoyPasskey = await call<{ email: string }>('/api/auth/passkey/passphrase/lookup', { handle });
-    expect(decoyPasskey.data.email).not.toMatch(new RegExp(userId.replace(/-/g, '')));   // passkey accounts are not revealed
+    // Security review W3: decoys look exactly like real answers (an embedded version-4 UUID), and a passkey
+    // account gets the same kind of answer as a passphrase account, so the lookup says nothing about the
+    // account type; the password sign-in simply fails for it.
+    expect(decoy.data.email).toMatch(/^u[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}@id\.kithwall\.invalid$/);
+    const passkeyLook = await call<{ email: string }>('/api/auth/passkey/passphrase/lookup', { handle });
+    expect(passkeyLook.data.email).toBe(`u${userId.replace(/-/g, '')}@id.kithwall.invalid`);
+    const tryPasskey = await anonClient().auth.signInWithPassword({ email: passkeyLook.data.email, password: d.authKey });
+    expect(tryPasskey.error).not.toBeNull();
     const client = anonClient();
     const d2 = await deriveFromPassword(look.data.email, pass);
     const si = await client.auth.signInWithPassword({ email: look.data.email, password: d2.authKey });
@@ -330,6 +351,7 @@ run('Kithwall 2 accounts (e2e)', () => {
     const add = await call('/api/auth/passkey/add/verify', {
       challengeId: start.data.challengeId, response: dev.register(start.data.options), prfSalt,
       amkWrap: wrapAmkWithPrf(id, dev.id, u.amk, dev.prf(), prfSalt),
+      keyProof: signChallenge(u.identity.signPriv, `kithwall/v1/add-passkey/${start.data.options.challenge}`),
     }, token);
     expect(add.status).toBe(200);
 

@@ -40,7 +40,9 @@ export type AccountErrorCode =
   /** The account has no trusted friends. */
   | 'no_trustees'
   /** The recovery key (typed, or rebuilt from friends' shares) doesn't open this account. */
-  | 'bad_recovery_key';
+  | 'bad_recovery_key'
+  /** v1 email sign-in: the address was never confirmed, so the account was never set up (lib/auth/login.ts). */
+  | 'email_unconfirmed';
 
 export class AccountError extends Error {
   constructor(public code: AccountErrorCode, message?: string) { super(message ?? code); }

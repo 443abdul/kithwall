@@ -114,7 +114,11 @@ export interface LoginVerifyReq { challengeId: string; response: AuthenticationR
 export interface LoginVerifyRes { userId: string; tokenHash: string; credentialId: string; wrap: PasskeyWrapIn | null }
 
 export interface AddOptionsRes { challengeId: string; options: PublicKeyCredentialCreationOptionsJSON }
-export interface AddVerifyReq { challengeId: string; response: RegistrationResponseJSON; label?: string; prfSalt: string; amkWrap: string }
+/**
+ * `keyProof`: signChallenge(identity signing key, addPasskeyNonce(options.challenge)) — proof that the
+ * caller holds the unlocked identity key, not just an access token (security review W2).
+ */
+export interface AddVerifyReq { challengeId: string; response: RegistrationResponseJSON; label?: string; prfSalt: string; amkWrap: string; keyProof: string }
 export interface AddVerifyRes { id: string }
 
 export interface LookupReq { handle: string }

@@ -13,7 +13,7 @@ import { IconButton } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { ChatIcon } from './ChatIcon';
-import { firstUrl, snippet } from './chatModel';
+import { previewOffer, snippet } from './chatModel';
 import { MAX_ATTACHMENTS, MAX_CHAT_VIDEO_BYTES, type Draft } from './send';
 import { useVoiceRecorder, type VoiceErrorCode } from '@/lib/chat/voiceRecorder';
 import type { VoiceDraft } from '@/lib/chat/voice';
@@ -56,7 +56,7 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
   const s = useSettings();
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
-  const [link, setLink] = useState<{ url: string; draft: LinkDraft | null; loading: boolean } | null>(null);
+  const [linkState, setLink] = useState<{ url: string; draft: LinkDraft | null; loading: boolean } | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -78,21 +78,24 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }, [text]);
 
-  // Link preview for the first link, after a pause in typing. Skipped when photos are attached.
-  const url = files.length ? null : firstUrl(text);
-  useEffect(() => {
-    if (!url || url === dismissed) { setLink(null); return; }
-    if (link?.url === url) return;
+  // Link preview for the first link: only when the person taps "Add link preview" (security review C2).
+  // Fetching while typing would send the server URLs from drafts that are never sent. Skipped when photos
+  // are attached, and when the setting is off.
+  const url = previewOffer(text, { hasFiles: files.length > 0, enabled: s.chatLinkPreviews });
+  // A preview only counts while its link is still the one in the box.
+  const link = linkState && linkState.url === url ? linkState : null;
+  const fetching = useRef<AbortController | null>(null);
+  useEffect(() => () => fetching.current?.abort(), []);
+  function addPreview() {
+    if (!url) return;
+    fetching.current?.abort();
     const ac = new AbortController();
-    const h = setTimeout(() => {
-      setLink({ url, draft: null, loading: true });
-      loadLinkDraft(url, ac.signal)
-        .then((draft) => { if (!ac.signal.aborted) setLink({ url, draft, loading: false }); })
-        .catch(() => { if (!ac.signal.aborted) setLink(null); });
-    }, 700);
-    return () => { clearTimeout(h); ac.abort(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, dismissed]);
+    fetching.current = ac;
+    setLink({ url, draft: null, loading: true });
+    loadLinkDraft(url, ac.signal)
+      .then((draft) => { if (!ac.signal.aborted) setLink({ url, draft, loading: false }); })
+      .catch(() => { if (!ac.signal.aborted) { setLink(null); toast({ message: t('security.linkPreviewFailed'), tone: 'danger' }); } });
+  }
 
   const typingOn = s.typingIndicator;
   function changed(v: string) {
@@ -160,7 +163,16 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
             <span className="k-chat-linkdraft-title">{link.loading ? t('messages.composer.previewLoading') : (link.draft?.preview.title || link.url)}</span>
             <span className="k-small k-muted">{t('messages.composer.previewNote')}</span>
           </span>
-          <IconButton icon="close" size="sm" label={t('messages.composer.removePreview')} onClick={() => { setDismissed(link.url); setLink(null); }} />
+          <IconButton icon="close" size="sm" label={t('messages.composer.removePreview')} onClick={() => { fetching.current?.abort(); setDismissed(link.url); setLink(null); }} />
+        </div>
+      ) : url && url !== dismissed && !disabled ? (
+        <div className="k-chat-linkdraft">
+          <ChatIcon name="attach" />
+          <span className="k-chat-linkdraft-body">
+            <button type="button" className="k-linkbtn k-chat-linkdraft-title" onClick={addPreview}>{t('security.addLinkPreview')}</button>
+            <span className="k-small k-muted">{t('security.addLinkPreviewNote')}</span>
+          </span>
+          <IconButton icon="close" size="sm" label={t('messages.composer.removePreview')} onClick={() => setDismissed(url)} />
         </div>
       ) : null}
       {files.length ? (

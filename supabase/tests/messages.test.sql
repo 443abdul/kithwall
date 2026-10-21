@@ -65,8 +65,13 @@ select throws_ok($$ insert into realtime.messages (topic, extension, event, payl
   values (realtime.topic(), 'broadcast', 'sig', '{}', true) $$, '42501', null, 'nobody signals their own inbox');
 
 -- ---------------------------------------------------------------------------------------
--- Group conversation: Alice (owner) + Bob + Carol (Carol is not Alice's friend; owners may add anyone)
+-- Group conversation: Alice (owner) + Bob + Carol (Carol is not Alice's friend, but they share a circle
+-- and Carol accepts requests, so Alice may add her: 20261028010200_authz_conversations.sql)
 -- ---------------------------------------------------------------------------------------
+select pg_temp.su();
+insert into public.audiences (id, owner_id, kind) values ('40000000-0000-0000-0000-0000000000c1', pg_temp.uid('alice'), 'group');
+insert into public.audience_members (audience_id, member_id, role, status)
+  values ('40000000-0000-0000-0000-0000000000c1', pg_temp.uid('carol'), 'member', 'active');
 select pg_temp.login('alice');
 insert into public.audiences (id, owner_id, kind) values ('40000000-0000-0000-0000-000000000001', pg_temp.uid('alice'), 'conversation');
 insert into public.audience_members (audience_id, member_id, role, status, invited_by)
@@ -74,7 +79,7 @@ insert into public.audience_members (audience_id, member_id, role, status, invit
 select lives_ok($$ insert into public.audience_members (audience_id, member_id, role, status, invited_by)
   values ('40000000-0000-0000-0000-000000000001', pg_temp.uid('bob'), 'member', 'active', pg_temp.uid('alice')),
          ('40000000-0000-0000-0000-000000000001', pg_temp.uid('carol'), 'member', 'active', pg_temp.uid('alice')) $$,
-  'owner adds members (including a non-friend)');
+  'owner adds members (a friend, and a non-friend from a shared circle)');
 select lives_ok($$ insert into public.conversations (id, audience_id, created_by)
   values ('41000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', pg_temp.uid('alice')) $$,
   'owner starts the conversation');

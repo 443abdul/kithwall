@@ -55,21 +55,25 @@ select lives_ok($$ insert into public.notice_emails (kind, ref_id, user_id) valu
   'the account_recovered notice kind exists');
 
 -- ---------------------------------------------------------------------------------------
--- start_handle_recovery: service role only
+-- start_handle_recovery: service role only. Security review W4 (20261028010500_authz_recovery.sql):
+-- limits per requester (a server-computed tag), open requests per account, no friend prompt until the
+-- waiting period is over and the owner hasn't cancelled.
 select pg_temp.login('owen');
-select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('E', 43)) $$, '42501', null,
+select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('E', 43), 'tag-attacker-00000001') $$, '42501', null,
   'signed-in users cannot call start_handle_recovery');
 select pg_temp.su();
 set local role anon;
-select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('E', 43)) $$, '42501', null,
+select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('E', 43), 'tag-attacker-00000001') $$, '42501', null,
   'anonymous callers cannot call start_handle_recovery');
 select pg_temp.su();
 
 select pg_temp.service();
-select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('E', 43)) $$, 'P0002', null,
+select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('E', 43), 'tag-attacker-00000001') $$, 'P0002', null,
   'an account without trusted friends cannot start a friends recovery');
+select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('E', 43), null) $$, '22023', null,
+  'a requester tag is required');
 
-create temp table started as select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('E', 43));
+create temp table started as select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('E', 43), 'tag-attacker-00000001');
 grant select on started to service_role, authenticated;
 select pg_temp.su();
 select is((select threshold from started), 2, 'returns the threshold');
@@ -77,25 +81,72 @@ select is((select trustees from started), 3, 'returns the number of trusted frie
 select ok((select not_before > now() + interval '23 hours' from started), 'keeps the waiting period');
 select ok((select expires_at > now() + interval '71 hours' from started), 'keeps the expiry');
 select is((select status from public.recovery_requests where id = (select request_id from started)), 'pending', 'the request is pending');
-select is((select count(*)::int from public.notifications
-  where actor_id = pg_temp.uid('owen') and type = 'recovery_request' and object_id = (select request_id from started)), 3,
-  'every trusted friend is notified');
+select is((select count(*)::int from public.notifications where type = 'recovery_request' and actor_id = pg_temp.uid('owen')), 0,
+  'W4: friends are NOT prompted while the waiting period runs');
 
--- The owner's own session sees the request (for the warning with a cancel button) and can cancel it.
+-- Trustees don't even see it during the wait; the owner does (warning with a cancel button).
+select pg_temp.login('tia');
+select is((select count(*)::int from public.recovery_requests where owner_id = pg_temp.uid('owen')), 0,
+  'W4: a trusted friend cannot see a request during its waiting period');
 select pg_temp.login('owen');
 select is((select count(*)::int from public.recovery_requests where owner_id = pg_temp.uid('owen') and status = 'pending'), 1,
   'the owner sees the open request');
+select throws_ok($$ update public.recovery_requests set friends_notified_at = now() where id = (select request_id from started) $$,
+  'P0001', null, 'the owner cannot fake the friend-prompt marker');
 select lives_ok($$ update public.recovery_requests set status = 'cancelled' where id = (select request_id from started) $$,
   'the owner can cancel it');
 select pg_temp.su();
 select is((select status from public.recovery_requests where id = (select request_id from started)), 'cancelled', 'cancelled');
 
--- At most 3 requests per account per day (the one above counts).
+-- Per requester: 2 per account a day. The attacker's tag is used up, the owner's own device is not.
 select pg_temp.service();
-select lives_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('F', 43)) $$, 'second request');
-select lives_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('G', 43)) $$, 'third request');
-select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('H', 43)) $$, 'P0429', null,
-  'a fourth request in a day is refused');
+select lives_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('F', 43), 'tag-attacker-00000001') $$, 'second request from the same requester');
+select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('G', 43), 'tag-attacker-00000001') $$, 'P0429', null,
+  'W4: a third request from the same requester for the same account is refused');
+select lives_ok($$ select * from public.start_handle_recovery(pg_temp.uid('owen'), repeat('H', 43), 'tag-owner-device-0001') $$,
+  'W4: the owner can still start their own recovery after junk requests');
+-- Per requester overall: 4 a day across accounts.
+select pg_temp.su();
+insert into public.recovery_shares (owner_id, trustee_id, setup_id, threshold, sealed)
+  values (pg_temp.uid('nia'), pg_temp.uid('tia'), '00000000-0000-0000-0000-0000000000ab', 2, '{"s":"x"}'::jsonb);
+select pg_temp.service();
+select lives_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('I', 43), 'tag-attacker-00000001') $$, 'a request for another account');
+select lives_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('J', 43), 'tag-attacker-00000001') $$, 'the fourth from this requester today');
+select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('K', 43), 'tag-attacker-00000001') $$, 'P0429', null,
+  'W4: a fifth request from one requester in a day is refused');
+
+-- At most 10 OPEN requests per account (cancelled ones don't count).
+select pg_temp.su();
+update public.recovery_requests set status = 'cancelled' where owner_id = pg_temp.uid('nia');
+select pg_temp.service();
+select lives_ok($$ select (public.start_handle_recovery(pg_temp.uid('nia'), repeat('L', 43), 'tag-' || g || '-xxxxxxxxxxxxxx')).request_id
+                   from generate_series(1, 10) g $$, 'ten open requests from ten requesters');
+select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('M', 43), 'tag-eleven-xxxxxxxxxxx') $$, 'P0429', null,
+  'W4: an eleventh open request for one account is refused');
+
+-- Once the waiting period is over, the friends get ONE prompt per account (however many requests are open).
+select pg_temp.su();
+set local session_replication_role = replica;   -- skip the immutability trigger to fast-forward time
+update public.recovery_requests set not_before = now() - interval '1 minute' where owner_id = pg_temp.uid('owen') and status = 'pending';
+set local session_replication_role = origin;
+select kw.recovery_notify_due();
+select is((select count(*)::int from public.notifications where type = 'recovery_request' and actor_id = pg_temp.uid('owen')), 3,
+  'W4: after the wait, each trusted friend is prompted once');
+select kw.recovery_notify_due();
+select is((select count(*)::int from public.notifications where type = 'recovery_request' and actor_id = pg_temp.uid('owen')), 3,
+  'W4: no repeated prompts');
+select pg_temp.login('tia');
+select is((select count(*)::int from public.recovery_requests where owner_id = pg_temp.uid('owen') and status = 'pending'), 2,
+  'after the wait, trusted friends see the open requests');
+
+-- Nobody can forge the prompt from a client, not even a friend (security review D2).
+select pg_temp.su();
+insert into public.friendships (user_a, user_b, status, requested_by, accepted_at)
+  values (least(pg_temp.uid('tia'), pg_temp.uid('tom')), greatest(pg_temp.uid('tia'), pg_temp.uid('tom')), 'accepted', pg_temp.uid('tia'), now());
+select pg_temp.login('tia');
+select throws_ok($$ insert into public.notifications (recipient_id, actor_id, type, object_kind, object_id)
+  values (pg_temp.uid('tom'), pg_temp.uid('tia'), 'recovery_request', 'recovery_request', gen_random_uuid()) $$, '42501', null,
+  'D2: clients cannot insert recovery_request notifications');
 
 select * from finish();
 rollback;

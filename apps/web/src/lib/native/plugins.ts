@@ -54,6 +54,8 @@ export interface KithwallShellPlugin {
   openExternal(opts: { url: string }): Promise<void>;
   /** Quick exit: Android removes the task from recents; iOS opens the neutral site in the browser (apps can't quit themselves). */
   exit(opts: { url: string }): Promise<void>;
+  /** Panic wipe: delete the WebView's cookies, storage of every origin, caches and history (security review N6). */
+  clearWebData(): Promise<void>;
   /** A screenshot (iOS; Android 14+) or screen recording started (iOS) on this device. Local notice only: nobody else is told. */
   addListener(event: 'screenshot', fn: (e: { kind: 'screenshot' | 'recording' }) => void): Promise<PluginListenerHandle>;
 }

@@ -25,7 +25,10 @@ export {
   type Identity,
   type KeyBundle,
   type Unlocked,
+  type PreviousKx,
+  MAX_PREVIOUS_KX,
   generateIdentity,
+  rotateIdentityBundle,
   createKeyBundle,
   unlockWithPassword,
   unlockWithRecoveryPhrase,
@@ -64,6 +67,8 @@ export {
 } from './envelope';
 
 export { encryptBlob, decryptBlob } from './blob';
+
+export { type EpochRecord, epochCommit, keyMatchesCommit, signEpochRecord, verifyEpochRecord } from './epoch';
 
 export { FILE_CHUNK_SIZE, encryptFile, decryptFile } from './files';
 

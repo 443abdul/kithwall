@@ -41,7 +41,7 @@ const WHAT: Record<string, string> = {
   tag: 'tagged you in a photo', poke: 'poked you', group_invite: 'added you to a group',
   group_request: 'asked to join your group', event_invite: 'invited you to an event', mention: 'mentioned you in a comment',
   share: 'shared your post', question_vote: 'answered your question', checkin_tag: 'checked in with you',
-  relationship: 'listed you in a relationship', recovery_request: 'is asking for your help to recover their account',
+  relationship: 'listed you in a relationship', recovery_request: 'may be recovering their account. Only help if they contacted you directly',
   recovery_trustee: 'chose you as a trusted friend for account recovery', game: 'sent you a Kithville request',
   key_waiting: 'is waiting for your device to share your posts with them',
   post_published: '',   // own words below: "Your scheduled post is now shared"
@@ -119,6 +119,13 @@ export function describe(p: Plan): { category: PushCategory; payload: Omit<PushP
     return {
       category: 'activity', urgency: 'normal',
       payload: { v: 1, title: 'Kithwall', kind: 'notification', body: 'Your scheduled post is now shared', tag: `n:post_published:${p.object_id ?? ''}`, url: notifUrl(p) },
+    };
+  }
+  if (p.type === 'security_notice') {
+    // Sent by the server to every device of the account when a passkey or passphrase is added (W2).
+    return {
+      category: 'security', urgency: 'high',
+      payload: { v: 1, title: 'Kithwall', kind: 'notification', body: 'A new way to sign in was added to your account', tag: `n:security_notice:${p.created_at}`, url: '/you/settings/security' },
     };
   }
   const what = p.type ? WHAT[p.type] : undefined;

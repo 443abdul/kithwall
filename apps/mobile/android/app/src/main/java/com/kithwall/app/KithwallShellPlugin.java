@@ -9,6 +9,9 @@ import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.view.WindowManager;
+import android.webkit.CookieManager;
+import android.webkit.WebStorage;
+import android.webkit.WebView;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -64,6 +67,33 @@ public class KithwallShellPlugin extends Plugin {
             r.put("build", "");
         }
         call.resolve(r);
+    }
+
+    /**
+     * Panic wipe (security review N6/P1): forget the WebView's own data too: cookies, DOM storage and
+     * IndexedDB of every origin, the HTTP cache, form data and history. The web side has already cleared
+     * what it can reach; this covers what it can't (cache, cookies, other origins' storage).
+     */
+    @PluginMethod
+    public void clearWebData(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                WebStorage.getInstance().deleteAllData();
+                CookieManager cm = CookieManager.getInstance();
+                cm.removeAllCookies(null);
+                cm.removeSessionCookies(null);
+                cm.flush();
+                WebView w = getBridge().getWebView();
+                if (w != null) {
+                    w.clearCache(true);
+                    w.clearFormData();
+                    w.clearHistory();
+                }
+                call.resolve();
+            } catch (Exception e) {
+                call.reject("could not clear web data", e);
+            }
+        });
     }
 
     @PluginMethod

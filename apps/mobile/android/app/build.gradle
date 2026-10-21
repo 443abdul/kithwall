@@ -11,7 +11,8 @@ apply plugin: 'com.android.application'
 //
 // Release signing comes from the environment (CI secrets), never from files in the repository:
 //   KITHWALL_KEYSTORE_FILE, KITHWALL_KEYSTORE_PASSWORD, KITHWALL_KEY_ALIAS, KITHWALL_KEY_PASSWORD
-// Without them, release builds are signed with the debug key (fine for testing, not for distribution).
+// Without them, release builds FAIL (security review L14), unless KITHWALL_ALLOW_DEBUG_SIGNING=true asks for a
+// release build signed with the debug key (fine for testing, never for distribution; CI sets it for non-tag builds).
 // KITHWALL_ENV=staging builds the app for https://staging.kithwall.com (same as `cap sync` with it).
 
 def env = { String k, String d = null -> System.getenv(k) ?: d }
@@ -19,6 +20,14 @@ def kwEnv = env('KITHWALL_ENV', 'production') == 'staging' ? 'staging' : 'produc
 def kwHost = kwEnv == 'staging' ? 'staging.kithwall.com' : 'www.kithwall.com'
 def keystore = env('KITHWALL_KEYSTORE_FILE')
 def hasReleaseKey = keystore != null && file(keystore).exists()
+def allowDebugSigning = env('KITHWALL_ALLOW_DEBUG_SIGNING', 'false') == 'true'
+
+gradle.taskGraph.whenReady { graph ->
+    def releaseTasks = graph.allTasks.findAll { t -> t.project == project && (t.name.startsWith('assemble') || t.name.startsWith('bundle')) && t.name.endsWith('Release') }
+    if (!releaseTasks.isEmpty() && !hasReleaseKey && !allowDebugSigning) {
+        throw new GradleException('Release builds need the upload key (KITHWALL_KEYSTORE_FILE …). For a test build signed with the debug key, set KITHWALL_ALLOW_DEBUG_SIGNING=true.')
+    }
+}
 
 android {
     namespace = "com.kithwall.app"

@@ -39,5 +39,20 @@ export async function GET(req: Request) {
     }
     if (paths.length < 500) break;
   }
-  return json({ removed });
+  // Uploads that never got their media_objects row (an interrupted post, or someone using the bucket as
+  // free storage): unreadable by anyone else, removed after a day (security review L4).
+  let orphans = 0;
+  for (let round = 0; round < 5; round++) {
+    const { data, error } = await db.rpc('orphaned_media', { max_rows: 500 });
+    if (error) return json({ error: error.message, removed }, 500);
+    const paths = (data ?? []) as string[];
+    if (!paths.length) break;
+    for (let i = 0; i < paths.length; i += 100) {
+      const rm = await db.storage.from('media').remove(paths.slice(i, i + 100));
+      if (rm.error) return json({ error: rm.error.message, removed, orphans }, 500);
+      orphans += Math.min(100, paths.length - i);
+    }
+    if (paths.length < 500) break;
+  }
+  return json({ removed, orphans });
 }

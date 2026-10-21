@@ -10,6 +10,9 @@ import { CALL_TTL_SECONDS, TTL_SECONDS, describe, describeCall, dispatchSecretOk
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Fan-out to every browser and app install of every recipient (Web Push, FCM, APNs with timeouts) can
+// outlast a platform's short default; 30 s is plenty and still bounded (route segment config).
+export const maxDuration = 30;
 
 /** Rows older than this are not pushed (e.g. a backlog after an outage): stale alerts are noise. */
 const MAX_AGE_MS = 60 * 60_000;

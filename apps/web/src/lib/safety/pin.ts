@@ -8,15 +8,29 @@
 //               the same either way.
 //
 // The whole PinWrap is then encrypted again on the device with a NON-EXTRACTABLE WebCrypto key
-// (lib/keys/device.ts pinStore). A PIN alone is useless off the device, and a copied database without
-// the browser's key store is useless without the PIN.
+// (lib/keys/device.ts pinStore). That stops other web pages and a copy of the PIN record alone, but NOT
+// someone with the whole device or a disk image (security review C1): browsers keep the raw bytes of
+// "non-extractable" keys in their profile files, so such an attacker can unwrap the outer layer, skip the
+// attempt limiter and guess the PIN offline, and can tell the real PIN from the duress PIN. The only
+// defence there is the PIN's own strength times the Argon2id cost below, which is why new PINs use a
+// heavier setting than account passwords and the UI asks for 8+ digits (docs/v2/03-safety.md §8).
 //
 // Entering a PIN costs one Argon2id run whatever the outcome: the duress check is a cheap decryption
 // under the same derived key, so a real unlock, a duress unlock and a wrong PIN take the same time.
-import { b64u, decryptBlob, deriveFromPassword, encryptBlob, randomBytes, DEFAULT_KDF, type KdfParams } from '@kithwall/crypto';
+import { b64u, decryptBlob, deriveFromPassword, encryptBlob, randomBytes, type KdfParams } from '@kithwall/crypto';
 
 export const PIN_MIN = 6;
 export const PIN_MAX = 16;
+/** Length the UI recommends: each extra digit multiplies an offline guesser's work by 10. */
+export const PIN_RECOMMENDED = 8;
+
+/**
+ * Argon2id for NEW app PINs: 128 MiB, 3 passes (twice the memory, so twice the time and memory per guess,
+ * of the account password default). Existing wraps keep the parameters they were made with (stored in
+ * the wrap; changing them would invalidate the duress verifier), so they upgrade when the PIN is set up
+ * again.
+ */
+export const PIN_KDF: KdfParams = Object.freeze({ alg: 'argon2id', v: 1, m: 131072, t: 3, p: 1 }) as KdfParams;
 
 export interface PinWrap {
   v: 1;
@@ -72,7 +86,7 @@ export async function createPinWrap(userId: string, amk: Uint8Array, pin: string
   const problem = pinProblem(pin);
   if (problem) throw new Error(`pin_${problem}`);
   const salt = previous?.salt ?? b64u.encode(randomBytes(16));
-  const kdf = previous?.kdf ?? opts.kdf ?? DEFAULT_KDF;
+  const kdf = previous?.kdf ?? opts.kdf ?? PIN_KDF;
   const k = await pinKey(pin, salt, kdf, opts);
   try {
     if (previous && tryDecrypt(k, previous.duress, aadDuress(userId))) throw new Error('pin_same_as_duress');

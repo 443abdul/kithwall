@@ -22,6 +22,8 @@ import { dropEph, loadEph, releaseContext, resplitToSameTrustees, storeEph, subs
 import { AccountError } from './account';
 import { afterLogin, mfaRequired } from './login';
 import { api } from './passkey-client';
+import { proveKey } from '../keys/proof';
+import { fetchChallenge, solve } from './altcha';
 import { isSyntheticEmail, normalizeHandle } from './passkey-shared';
 import {
   cleanPhrase, type FriendsStartRes, type FriendsStatusRes, type RecoverAccountRes, type RecoverFinishRes,
@@ -30,10 +32,16 @@ import {
 export interface RecoveryTarget extends RecoverAccountRes { handle: string }
 export type RecoverOutcome = 'ready' | 'mfa';
 
+/** A fresh proof-of-work: the unauthenticated recovery routes require one (security review W4). */
+async function proofOfWork(): Promise<string> {
+  const { challenge } = await fetchChallenge();
+  return solve(challenge);
+}
+
 /** Look the account up and get a fresh, single-use nonce (5 minutes) for it. */
 export async function findAccount(rawHandle: string): Promise<RecoveryTarget> {
   const handle = normalizeHandle(rawHandle);
-  const res = await api<RecoverAccountRes>('/api/recovery/account', { handle });
+  const res = await api<RecoverAccountRes>('/api/recovery/account', { handle, altcha: await proofOfWork() });
   return { ...res, handle };
 }
 
@@ -90,7 +98,7 @@ function setPending(v: PendingRecovery | null) {
 export async function startFriends(t: RecoveryTarget): Promise<FriendsStartRes> {
   const e = generateEphemeral();
   try {
-    const res = await api<FriendsStartRes>('/api/recovery/friends/start', { handle: t.handle, ephPub: b64u.encode(e.pub) });
+    const res = await api<FriendsStartRes>('/api/recovery/friends/start', { handle: t.handle, ephPub: b64u.encode(e.pub), altcha: await proofOfWork() });
     await storeEph(t.userId, res.requestId, e.priv);
     setPending({ handle: t.handle, userId: t.userId, requestId: res.requestId });
     return res;
@@ -178,6 +186,7 @@ export async function setNewPassphrase(passphrase: string): Promise<void> {
   await setNewPassword(userId, email, bundle, { amk: amk(), identity: identity() }, passphrase);
   if (isSyntheticEmail(email)) {
     const { data } = await sb().auth.getSession();
-    await api('/api/auth/passkey/passphrase/enable', {}, data.session?.access_token);
+    // Proof that this device holds the unlocked identity key, not just a token (security review W2).
+    await api('/api/auth/passkey/passphrase/enable', await proveKey('add_credential'), data.session?.access_token);
   }
 }

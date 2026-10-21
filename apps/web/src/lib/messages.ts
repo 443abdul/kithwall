@@ -11,6 +11,7 @@ import { b64u, extractContentKey, decryptBlob, encryptBlob, openEnvelope, sealEn
 import { sb, must } from './supabase';
 import { identity, me } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
+import { isHiddenChat } from './safety/hidden';
 import { people } from './people';
 import type { AudienceRow, FileRef, MessagePayload, MessageRow } from './types';
 import type { Decrypted } from './content';
@@ -87,26 +88,34 @@ export async function openDm(friendId: string): Promise<ConversationRow> {
   return createConversation([friendId], dmKey(me(), friendId));
 }
 
+/**
+ * Thrown when someone in the list can't be added: chats are only with connections, or with people who
+ * share a circle with you and accept requests (security review D2, enforced by the database).
+ */
+export class NotConnectedError extends Error {
+  constructor() { super('not_connected'); }
+}
+
+/** True for the database's "not_connected" refusal (create_conversation / adding a chat member). */
+export function isNotConnected(e: { code?: string; message?: string } | null | undefined): boolean {
+  return !!e && e.code === '42501' && /not_connected/.test(e.message ?? '');
+}
+
 export async function createConversation(memberIds: string[], dm: string | null = null, name?: string): Promise<ConversationRow> {
   const ids = [...new Set(memberIds)].filter((m) => m !== me());
   if (!ids.length) throw new Error('Choose at least one person.');
   const aud = await keyring.createAudience('conversation');
-  try {
-    // My own membership row (admin) keeps my read marker on the server, across devices.
-    must(await sb().from('audience_members').insert({ audience_id: aud.id, member_id: me(), role: 'admin', status: 'active', invited_by: me() }));
-    must(await sb().from('audience_members').insert(ids.map((m) => ({ audience_id: aud.id, member_id: m, role: 'member', status: 'active', invited_by: me() }))));
-    if (name?.trim() && !dm) await writeName(aud, name.trim());
-  } catch (e) {
-    await sb().from('audiences').delete().eq('id', aud.id);
-    throw e;
-  }
-  const conv = await sb().from('conversations').insert({ audience_id: aud.id, created_by: me(), dm_key: dm }).select().single();
+  // Members and the conversation are created in one transaction by the database, which checks that
+  // every person is someone I may start a chat with (supabase/migrations/20261028010200_authz_conversations.sql).
+  const conv = await sb().rpc('create_conversation', { p_audience: aud.id, p_members: ids, p_dm: !!dm });
   if (conv.error) {
     await sb().from('audiences').delete().eq('id', aud.id);
     // Lost a race creating the same DM: use the other one.
     if (dm && conv.error.code === '23505') return must(await sb().from('conversations').select('*').eq('dm_key', dm).single()) as ConversationRow;
+    if (isNotConnected(conv.error)) throw new NotConnectedError();
     throw new Error(conv.error.code === 'P0429' ? 'You\'ve started too many conversations today. Try again tomorrow.' : conv.error.message);
   }
+  if (name?.trim() && !dm) await writeName(aud, name.trim()).catch((e) => console.warn('conversation name', e));
   await keyring.deliverPending();
   return conv.data as ConversationRow;
 }
@@ -150,12 +159,9 @@ export function rotateConversation(conv: Pick<ConversationRow, 'audience_id'>): 
     const row = await audienceRow(aud);
     if (row.owner_id !== me()) return false;
     const name = readName(row);
-    const res = await sb().from('audiences').update({ current_epoch: row.current_epoch + 1 })
-      .eq('id', aud).eq('current_epoch', row.current_epoch).select().maybeSingle();
-    if (res.error) throw new Error(res.error.message);
-    if (!res.data) return false; // another device of mine got there first
-    const next = res.data as AudienceRow;
-    await keyring.ensureOwn(next);
+    // Mints the key, publishes its signed record and advances the epoch atomically (K1).
+    const next = await keyring.advance(aud, row.current_epoch);
+    if (!next) return false; // another device of mine got there first
     if (name.ok && name.value) await writeName(next, name.value).catch((e) => console.warn('conversation name re-encryption', e));
     await keyring.deliverPending();
     return true;
@@ -408,7 +414,8 @@ export async function markRead(conv: ConversationRow) {
   const now = new Date().toISOString();
   // Private read marker (owner-only; shared with co-members only as an opt-in read receipt).
   const r = await sb().from('conversation_reads').upsert({ conversation_id: conv.id, user_id: me(), last_read_at: now });
-  if (r.error) { try { localStorage.setItem(READ_KEY + conv.id, now); } catch { /* ignore */ } }
+  // Offline fallback only, and never for a hidden chat: its id must not sit in plaintext storage (security review L10).
+  if (r.error && !isHiddenChat(conv.id)) { try { localStorage.setItem(READ_KEY + conv.id, now); } catch { /* ignore */ } }
 }
 
 

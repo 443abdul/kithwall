@@ -25,6 +25,11 @@ for (const [net, bits] of [
   ['::', 128], ['::1', 128], ['::ffff:0:0', 96], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['100::', 64],
   ['2001::', 23], ['2001:db8::', 32], ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8],
 ] as const) blocked6.addSubnet(net, bits, 'ipv6');
+blocked6.addSubnet('3fff::', 20, 'ipv6');            // documentation (RFC 9637)
+// Only global unicast is ever a push server (security review I5): an allow-list, like the link-preview proxy,
+// so odd forms such as ::7f00:1 (IPv4-compatible loopback) can't slip past the block-list.
+const global6 = new BlockList();
+global6.addSubnet('2000::', 3, 'ipv6');
 
 /** Is this IP address publicly routable (not loopback, private, link-local, CGNAT, multicast, …)? */
 export function isPublicAddress(ip: string): boolean {
@@ -34,7 +39,7 @@ export function isPublicAddress(ip: string): boolean {
     const lower = ip.toLowerCase();
     // IPv4-mapped / -compatible / NAT64 forms are never needed for a push server: refuse them outright.
     if (/^::(?:ffff:)?\d+\.\d+\.\d+\.\d+$/.test(lower) || lower.startsWith('::ffff:')) return false;
-    return !blocked6.check(lower, 'ipv6');
+    return global6.check(lower, 'ipv6') && !blocked6.check(lower, 'ipv6');
   }
   return false;
 }

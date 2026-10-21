@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { accountApi } from '@/lib/auth/account';
 import { finishMfaLogin } from '@/lib/auth/login';
+import { safeNext } from '@/lib/auth/next';
 import { useSession } from '@/lib/keys/session';
 import { useT } from '@/i18n';
 import { Button } from '@/components/ui/Button';
@@ -20,11 +21,8 @@ import { useDocumentTitle } from './useDocumentTitle';
 
 type View = 'main' | 'phrase' | 'legacy' | 'mfa' | 'addPasskey';
 
-/** Only same-site paths (no protocol-relative or absolute URLs). */
-export function safeNext(raw: string | null): string {
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '/home';
-  return raw;
-}
+/** Only same-site paths (lib/auth/next.ts; security review W1). */
+export { safeNext };
 
 export function SignIn() {
   const t = useT();

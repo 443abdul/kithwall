@@ -66,10 +66,10 @@ run('Recovery from a @handle (e2e)', () => {
     const acct = await passphraseAccount('rec');
     created.push(acct.userId);
 
-    expect((await call('/api/recovery/account', { handle: `${acct.handle}zz` })).data).toMatchObject({ code: 'no_account' });
-    expect((await call('/api/recovery/account', { handle: 'x' })).status).toBe(400);
+    expect((await call('/api/recovery/account', { altcha: await altcha(), handle: `${acct.handle}zz` })).data).toMatchObject({ code: 'no_account' });
+    expect((await call('/api/recovery/account', { altcha: await altcha(), handle: 'x' })).status).toBe(400);
 
-    const a = await call<AccountRes>('/api/recovery/account', { handle: acct.handle.toUpperCase() });
+    const a = await call<AccountRes>('/api/recovery/account', { altcha: await altcha(), handle: acct.handle.toUpperCase() });
     expect(a.status).toBe(200);
     expect(a.data.userId).toBe(acct.userId);
     expect(a.data.bundle).not.toHaveProperty('amkByPassword');
@@ -81,11 +81,11 @@ run('Recovery from a @handle (e2e)', () => {
     expect(wrong.status).toBe(403);
     // …and so is a well-formed signature by a key that isn't the account's.
     const other = createKeyBundle(acct.userId, null);
-    const b = await call<AccountRes>('/api/recovery/account', { handle: acct.handle });
+    const b = await call<AccountRes>('/api/recovery/account', { altcha: await altcha(), handle: acct.handle });
     const forged = await call('/api/recovery/finish', { userId: acct.userId, challengeId: b.data.challengeId, signature: signChallenge(other.unlocked.identity.signPriv, b.data.nonce) });
     expect(forged.status).toBe(403);
 
-    const c = await call<AccountRes>('/api/recovery/account', { handle: acct.handle });
+    const c = await call<AccountRes>('/api/recovery/account', { altcha: await altcha(), handle: acct.handle });
     const proof = { userId: acct.userId, challengeId: c.data.challengeId, signature: signChallenge(u.identity.signPriv, c.data.nonce) };
     const fin = await call<{ tokenHash: string }>('/api/recovery/finish', proof);
     expect(fin.status).toBe(200);
@@ -101,10 +101,16 @@ run('Recovery from a @handle (e2e)', () => {
     const acct = await passphraseAccount('rcf');
     created.push(acct.userId);
     const e = generateEphemeral();
-    const r = await call('/api/recovery/friends/start', { handle: acct.handle, ephPub: b64u.encode(e.pub) });
+    const r = await call('/api/recovery/friends/start', { altcha: await altcha(), handle: acct.handle, ephPub: b64u.encode(e.pub) });
     expect(r.status).toBe(409);
     expect(r.data).toMatchObject({ code: 'no_trustees' });
     expect((await call('/api/recovery/friends/start', { handle: acct.handle, ephPub: 'short' })).status).toBe(400);
+    // Security review W4: no proof-of-work, no request (and no lookup); a spent one can't be replayed.
+    expect((await call('/api/recovery/friends/start', { handle: acct.handle, ephPub: b64u.encode(e.pub) })).status).toBe(400);
+    expect((await call('/api/recovery/account', { handle: acct.handle })).status).toBe(400);
+    const pow = await altcha();
+    expect((await call('/api/recovery/account', { altcha: pow, handle: acct.handle })).status).toBe(200);
+    expect((await call('/api/recovery/account', { altcha: pow, handle: acct.handle })).status).toBe(400);
     expect((await call('/api/recovery/friends/status', { requestId: '00000000-0000-4000-8000-000000000000' })).status).toBe(404);
   }, 180_000);
 

@@ -169,6 +169,16 @@ IK_sig**, so the server can't inject a key of its own.
   view lists "friends I haven't given my current key to"). Until then the new friend sees
   "Waiting for Jessica's device to share her posts with you." Group and event admins work the same
   way.
+- **Key authority and epoch records** (security review K1). Only the audience owner mints keys for
+  Friends, self and list audiences; for groups, events and conversations the owner or an active admin.
+  Minting publishes `audience_epochs(audience_id, epoch, rotated_by, commit, sig)`: a commitment
+  `SHA-256(lp("kithwall/v1/epoch-commit", audience, epoch, key))` signed with the minter's IK_sig.
+  Rotation is one call, `advance_audience_epoch(aud, from_epoch, commit, sig)` (compare-and-swap on the
+  epoch). The database never accepts a key row for an epoch above the current one; other conversation
+  members may only relay the current, recorded epoch. Clients adopt a key only if it matches the record
+  (any relayer), or, for epochs without a record, if a key authority sealed it; a key that contradicts its
+  record is rejected, discarded and reported as a security warning in the chat. A removed member can
+  neither be given nor plant a post-rotation key.
 
 ### 3.8 Envelope format (posts, comments, albums, notes, events, profile info…)
 ```
@@ -193,6 +203,20 @@ Deleting the account, deleting all posts and changing recovery settings require 
 a fresh server nonce with IK_sig. A Vercel route handler verifies the signature against the stored
 public key before acting. Someone who has only hijacked the email/password session can't destroy
 the account.
+
+**Adding a way in** (a passkey, or a passphrase on an email-less account) also requires proof-of-key: the
+browser signs the WebAuthn challenge of the add ceremony (`kithwall/v1/add-passkey/<challenge>`), or a
+fresh `add_credential` nonce, with IK_sig. Every device gets a content-free `security_notice`
+notification (and push), and the notice address an email (security review W2).
+
+**Identity keys** (`profiles.sign_pub`, `kx_pub`, `key_version`) are immutable in the database except
+through `apply_identity_key_change`, which only the server may call, after `/api/account/identity-key`
+checked a fresh `rotate_identity` proof-of-key and the key-change statement signed by the current IK_sig
+(aal2 when an authenticator app is enrolled). The signed statement is logged in `key_changes`. Clients pin
+every contact's keys on first use (in the encrypted vault) and show "your safety number changed" for ANY
+change; until the user accepts, they do not seal new keys to a changed identity of a verified contact or
+to a change that no chain of signatures from the pinned key vouches for (security review K2). There is no
+key reset without the old key: someone who lost every device and the recovery key deletes the account.
 
 ### 3.10 Messages and chat
 One system (as in Facebook's November 2010 Messages): a **conversation** has a key per epoch,
@@ -228,7 +252,7 @@ deletes the device key and cache.
 
 | Table | Key columns | Visible to |
 |---|---|---|
-| `profiles` | id (= auth uid), username (citext, unique), display_name?, discoverable, avatar_public, sign_pub, kx_pub, key_version | Username/keys: signed-in users. Display name: if discoverable or a friend |
+| `profiles` | id (= auth uid), username (citext, unique), display_name?, discoverable, avatar_public, sign_pub, kx_pub, key_version | The person, their connections (incl. pending requests), friends of friends, people they share a circle/event/chat with, staff, and everyone for discoverable profiles. Anyone else: one row by **exact** handle through `find_profile()` (rate-limited; security review D3) |
 | `key_bundles` | user_id, kdf params, amk_by_password, amk_by_recovery, identity_priv_enc, rk_commitment | Owner only |
 | `key_changes` | user_id, old/new public keys, signature by old key, created_at | Signed-in users |
 | `recovery_shares` | owner_id, trustee_id, setup_id, sealed_share, sig | Owner and that trustee |
@@ -243,7 +267,7 @@ deletes the device key and cache.
 | `likes` | target_kind, target_id, user_id | Whoever can read the target |
 | `albums`, `media` | owner, audience, envelope / storage path, size | Whoever can read the album/post |
 | `tag_notices` | media_id, tagged_user_id, status (pending/approved/removed) | Owner, tagger, tagged person |
-| `conversations`, `conversation_members`, `messages`, `message_reads` | conversation id, epoch, envelope | Members |
+| `conversations`, `conversation_members`, `messages`, `message_reads` | conversation id, epoch, envelope | Members. Only people you're connected to (or share a circle with and who accept requests) can be added (`create_conversation()`, security review D2). While someone blocks you, you can't read your 1:1 chat with them; group chats are a shared key, so a blocked person in the same group still sees the group |
 | `notifications` | recipient, type, actor, object ref, sealed_preview, read_at | Recipient |
 | `pokes` | from, to, created_at | The two people |
 | `groups`, `events`, `event_rsvps` | privacy, audience_id, public fields for open/public ones, envelope otherwise | Members / invitees; public ones to all |
@@ -267,6 +291,9 @@ Helper functions are `SECURITY DEFINER`, `STABLE`, with `search_path = ''`:
 - **Comments / likes**: allowed where `can_read_post` is true; you can delete your own, and the post
   owner can delete any on their post.
 - **Key bundles, vault, notifications**: owner only. `audience_keys`: recipient or owner.
+- Realtime `postgres_changes` carries INSERT and UPDATE only (RLS-filtered); DELETE events, which Realtime can't
+  filter, are not published at all. Deletes a client must hear about arrive as content-free broadcasts on the
+  private `db:<user id>` topic (security review D1).
 - Blocking is enforced in every helper. Nothing is readable by the `anon` role except the sign-up
   splash content.
 - Abuse limits live in `kw.rate_limit(action, max, window)`, called from insert policies and RPCs

@@ -33,6 +33,9 @@ function readRate(): number {
 }
 function saveRate(r: number) { try { localStorage.setItem(RATE_KEY, String(r)); } catch { /* storage blocked */ } }
 
+/** Notes played in hidden chats: remembered in memory only, never in localStorage (security review L10). */
+const playedInMemory = new Set<string>();
+
 /** Ids of notes from other people that I've played, on this device only (the server never learns it). */
 function playedList(): string[] {
   try {
@@ -292,16 +295,16 @@ export function VoicePlayer({ load, duration, peaks, unplayed, onPlayed, classNa
 }
 
 /** A voice note inside a chat bubble. */
-export function VoiceNote({ file, meta, messageId, mine }: { file: FileRef; meta: VoiceMeta; messageId: string; mine: boolean }) {
+export function VoiceNote({ file, meta, messageId, mine, persist = true }: { file: FileRef; meta: VoiceMeta; messageId: string; mine: boolean; persist?: boolean }) {
   const t = useT();
   const clock = useClock();
   const peaks = useMemo(() => decodePeaks(meta.peaks), [meta.peaks]);
-  const [unplayed, setUnplayed] = useState(() => !mine && !playedList().includes(messageId));
+  const [unplayed, setUnplayed] = useState(() => !mine && !playedInMemory.has(messageId) && !playedList().includes(messageId));
   const load = useCallback(() => decryptedUrl(file), [file]);
   return (
     <div className="k-voice-note" role="group" aria-label={t('voice.label', { duration: clock(meta.duration) })}>
       <VoicePlayer load={load} duration={meta.duration} peaks={peaks} unplayed={unplayed}
-        onPlayed={() => { if (unplayed) { setUnplayed(false); markPlayed(messageId); } }} />
+        onPlayed={() => { if (unplayed) { setUnplayed(false); if (persist) markPlayed(messageId); else playedInMemory.add(messageId); } }} />
     </div>
   );
 }

@@ -82,9 +82,25 @@ function tagKey(): string {
   return createHmac('sha256', base).update('kithwall/passkey/ip-tag').digest('hex');
 }
 
-export function clientIp(req: Request): string {
-  const fwd = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+/**
+ * The client address as seen by the nearest proxy we trust (security review L6). Proxies APPEND to
+ * X-Forwarded-For, so the leftmost entries are whatever the client sent; we count TRUSTED_PROXY_HOPS
+ * (default 1: Vercel, or one nginx/Caddy in front of a self-hosted server) from the right. On Vercel the
+ * platform's own x-real-ip is used when present.
+ */
+export function clientIp(req: Request, hops = trustedHops()): string {
+  if (process.env.VERCEL) {
+    const real = req.headers.get('x-real-ip')?.trim();
+    if (real) return real;
+  }
+  const chain = (req.headers.get('x-forwarded-for') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const fwd = chain.length ? chain[Math.max(0, chain.length - hops)] : '';
   return fwd || req.headers.get('x-real-ip')?.trim() || 'unknown';
+}
+
+function trustedHops(): number {
+  const n = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? '1', 10);
+  return Number.isFinite(n) && n >= 1 && n <= 5 ? n : 1;
 }
 
 export function ipTag(req: Request): string {

@@ -25,7 +25,7 @@ Kithwall is free and open source under the [GNU Affero General Public License v3
 1. **We can't see it.** Content, names, photos, circle names, reactions and call media are encrypted on device.
 2. **Collect almost nothing.** No phone number, email optional, no contact upload, no analytics, short logs.
 3. **Calm, not compulsive.** Chronological feed, no engagement tricks, no public like counts by default.
-4. **Safe by default.** Disappearing messages on, read receipts off, profiles visible only to connections.
+4. **Safe by default.** Disappearing messages on, read receipts off, profile details visible only to connections (strangers can only find you by your exact @handle).
 5. **Prove it.** Open source code, a live data page, one-tap export and verifiable safety numbers.
 6. **Everyone, everywhere.** WCAG 2.2 AA, right-to-left layouts, low-bandwidth friendly, native apps.
 
