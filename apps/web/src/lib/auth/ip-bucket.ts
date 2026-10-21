@@ -1,7 +1,7 @@
 // Client IP buckets for unauthenticated rate limits (security re-review R-W4). Pure: unit-tested in Node.
 /**
- * The unit a client is counted by (security re-review R-W4): an IPv4 address, or the /64 network of an
- * IPv6 address (one subscriber usually holds a whole /64, so per-address tags let one person act as
+ * The unit a client is counted by (security re-review R-W4, final review NEW-2): an IPv4 address, or the /48 of an
+ * IPv6 address (a subscriber or small host routinely holds a /48 of /64s, so finer tags let one person act as
  * billions of requesters). IPv4-mapped IPv6 addresses count as their IPv4 address.
  */
 export function ipBucket(ip: string): string {
@@ -20,5 +20,5 @@ export function ipBucket(ip: string): string {
     parts = raw.split(':');
   }
   if (parts.length !== 8 || parts.some((x) => !/^[0-9a-f]{1,4}$/.test(x))) return raw;
-  return `${parts.slice(0, 4).map((x) => x.padStart(4, '0')).join(':')}::/64`;
+  return `${parts.slice(0, 3).map((x) => x.padStart(4, '0')).join(':')}::/48`;
 }

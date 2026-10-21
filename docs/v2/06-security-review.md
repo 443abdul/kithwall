@@ -836,3 +836,138 @@ refused).
 - The passphrase route's per-handle limit can be used to slow one person's passphrase sign-in for up to an hour
   (100 attempts an hour overall). Passkeys and the recovery paths are unaffected.
 - `requests_from` still defaults to `everyone` (unchanged, as decided).
+
+## 12. Final verdict (HEAD `2238e16`, 2026-10-22)
+
+**Method**
+
+- Re-ran the §10 probes against the local DB with migrations `20261029000100…300` applied. The applied
+  bodies were checked against the committed files.
+- Every probe ran as `authenticated`/`postgres` inside `BEGIN … ROLLBACK`; 0 leftover rows.
+- Tests:
+  - `pinned`, `pins` and `authority`: 26/26.
+  - `keyswap.e2e` (superuser swaps an admin's key and posts a signed epoch record): passes; the key is
+    **not** adopted.
+  - `packages/crypto`: 146/146.
+- Live timing on a local dev server (port 3081); the server is stopped and cleaned up.
+- Secrets scan of the new commit.
+- Probe scripts and outputs:
+  `[local scratch folder]`.
+
+### 12.1 Verdicts
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| R-K-1 | **Fixed, except NEW-1** | Every signature check (content, messages, photos, stories, events, groups, notifications, friend notes, recovery shares, export, chat and call signalling, safety codes, keyring sealer/rotator/grant) now resolves keys through `people.get`, which holds pinned or vouched keys. If the pins are unreadable, people stay "loading" (fails closed). New sealing in `deliverTo` is gated by `sealGate`. |
+| R-K-2 | **Fixed** (documented operator residuals) | Probes: a member self-granting is nulled; self-promotion is refused; the owner promoting without a grant, or with a forged `grant_by`, is refused; chained admin grants work; demotion clears the grant; a legacy unsigned admin is not a key authority. The grant does not cover epoch or time, so an operator can replay an old grant (documented; the device's "New admin" warning still fires). |
+| R-K-3 | **Fixed** | Probes: a member cannot rewrite its relay (UPDATE 0); `key_delivered` ignores relays; the owner's delivery replaces the relay. |
+| R-K-4 | **Fixed** (code) | `setRole` rotates on demotion; `currentRecordStale` re-rotates when a record no longer counts. |
+| R-K-5 | **Fixed** | `key_bundles` has no client UPDATE or DELETE. `/api/account/bundle` requires a single-use `update_bundle` proof of key and aal2 when enrolled. It keeps the identity part byte-identical and never drops `amkByPassword`. |
+| R-W3 | **Fixed for the route** | `/passphrase/signin` medians, n=12 each: passphrase account 233 ms, other synthetic account 232 ms, unknown address 230 ms, all with the same 401. `passphrase_password_ok` is SECURITY DEFINER with `search_path=''`; `anon`/`authenticated` get permission denied. Residual NEW-4. |
+| R-W4 | **Not fixed (regressed in a new way)** | See NEW-2. |
+| N-A1 | **Fixed** | A pending join request gives 0 profile rows, and `group_invite` is refused. |
+| N-A2 | **Fixed** | Refused: a fake `comment`, a `like` with no like row, a `friend_request` with no friendship, a fake `recovery_trustee`, `post_published`. Real like and comment notifications still work. Info: duplicates for a real object can be re-inserted (spam only). |
+| I-N1 | **Fixed in code; needs an Xcode build** | `MainFramePromptGate` is installed after Capacitor sets `uiDelegate` and is retained (`promptGate`). Other delegate calls are forwarded via `responds(to:)`/`forwardingTarget`. `prompt()` gets nil unless it comes from the main frame of the app's origin. |
+
+### 12.2 Remaining findings
+
+**NEW-1. Medium (operator or DB compromise): identity rotation re-seals past key deliveries to unpinned
+keys.**
+
+- **Evidence**: `keyring.ts` `resealMine` (about lines 408-427) reads `profiles.kx_pub` directly and
+  re-seals every `audience_keys` row the user sealed, with no `sealGate` and no pin check.
+- **Exploit**: when a victim rotates their identity key (e.g. after losing a device), the operator swaps a
+  recipient's `kx_pub`. Every current and historical audience key the victim delivered is then sealed to
+  the operator. This bypasses R-K-1 for that moment.
+- **Fix** (small): seal to `people.get(id).kx_pub` / pass recipients through `sealGate`; skip and retry
+  recipients whose key change is unvouched.
+
+**NEW-2. Medium: an attacker can now cancel the owner's own recovery request (R-W4 not fixed).**
+
+- **Evidence**: at the cap, `start_handle_recovery` evicts the **oldest** open request
+  (`order by x.created_at, x.id limit open_n - 9`, `20261029000200_authz_recovery_signin.sql`). It does not
+  spare requests whose friends were already notified or are approving.
+- **Probe**: the owner files a request; 10 requests from fresh requester tags cancel it.
+- **Cost**: tags are one per IPv4 address or IPv6 /64. One free /48 tunnel gives 65,536 tags, so about 10
+  proof-of-work solutions per eviction keep a device-less owner's request from ever reaching the 24 h wait,
+  and can also cancel a recovery already in progress.
+- **Fix** (small): drop the cap and eviction (friend prompts are already limited to once per 12 h).
+  Failing that: never evict friend-notified or in-progress requests, evict the newest instead, and bucket
+  IPv6 by /48.
+
+**NEW-3. Low (availability at migration): existing admins have no grant.**
+
+- Records and deliveries they made stop counting, so members wait for keys until the owner taps "Confirm
+  admin" or rotates.
+- **Fix**: prompt owners at first unlock after the update to confirm current admins.
+
+**NEW-4. Low: GoTrue's own password grant is still reachable.**
+
+- **Timing**: passphrase account 114 ms, passkey account 113 ms, nonexistent address 19 ms.
+- It tells a Kithwall 2 account from a lookup decoy (a handle-existence check, conceded in §11).
+- It skips the route's per-handle limits, leaving GoTrue's per-IP limit, which rotating IPv6 addresses
+  defeats. Each guess still costs one Argon2id run, against a zxcvbn-3 minimum.
+- **Fix**: give passphrase accounts a random GoTrue password and verify `authKey` only in
+  `passphrase_password_ok`, or block `grant_type=password` at the edge.
+
+**NEW-5. Low: identity-key rollback.**
+
+- `pinsCore.vouchedFrom` accepts any prefix of the server-supplied key-change chain and does not check
+  `change.userId`.
+- **Exploit**: an operator can republish a superseded (possibly compromised) key K1 and omit the K1-to-K2
+  row, and contacts still pinned on K0 accept K1.
+- **Fix**: bind rows to the user id, require a monotonic `key_version`, and refuse keys older than one
+  already seen.
+
+**Info**
+
+- `/api/account/bundle` sends no security notice when the recovery key or passphrase changes; add one.
+- `ip-bucket.ts` does not strip `:port` from IPv4 values in `X-Forwarded-For`.
+- Recovery status serves trustee keys as published (a fresh device has no pins). Confidentiality still
+  rests on the RK commitment check.
+- TOFU: deleting or rolling back the vault re-pins on next sight (documented).
+
+### 12.3 Secrets
+
+- Commit `2238e16` (the only commit on `v2` since `760720d`) is clean.
+- The only pattern hits are this report's own text: `postgres://user:pass@` and the already-documented
+  local `whsec_` value.
+- Nothing new since §10.3.
+- **P-1 is unchanged**: GitHub still holds 8 `refs/pull/*` refs with the pre-rewrite history (author
+  `[personal email]`). The repo is still PRIVATE, and `backup/pre-author-rewrite` exists locally.
+
+### 12.4 Launch verdict: **NO-GO at `2238e16`; GO once NEW-1 and NEW-2 are fixed**
+
+The original Critical, all three Highs and R-K-1 are resolved and probe- or test-confirmed. Two small,
+well-scoped Medium issues remain that I would not ship to at-risk users. Both are fixes of a few lines,
+with tests, and need no further full re-review.
+
+**Launch blockers**
+
+1. **NEW-1**: `resealMine` must seal to trusted keys (`people.get`/`sealGate`).
+2. **NEW-2**: recovery eviction must never cancel the owner's or an in-progress request; preferably drop
+   eviction altogether.
+
+**Launch-day gates** (configuration and process; all carried over)
+
+- Enable Realtime "Private channels only" in production.
+- Delete the `VERCEL_AUTOMATION_BYPASS_SECRET` GitHub secret.
+- Confirm the production `AUTH_HOOK_SECRET` is not the local dev value.
+- Build and smoke-test the iOS app (`MainFrameBridgeGate` and `MainFramePromptGate`).
+- Tell owners of existing circles to confirm their admins (NEW-3).
+- **Before the repository goes public**: resolve P-1 (a fresh repository with only the rewritten refs, or
+  a GitHub Support purge of the `refs/pull/*` refs), and never push `backup/pre-author-rewrite`.
+
+**Accepted residual risks** (document in the threat model)
+
+- TOFU: first-sight pinning, and vault rollback forcing re-pinning.
+- The roster is server data: an operator can replay an old admin grant or install a puppet owner. The
+  device's "New admin" warning and the server notice mitigate this.
+- Browsers keep non-extractable keys on disk (C1).
+- Handle-existence oracles: `find_profile`, the passphrase lookup, the recovery account lookup, GoTrue
+  timing.
+- The per-handle passphrase limit can slow one person's passphrase sign-in for up to an hour.
+- `requests_from` defaults to `everyone`.
+- XSS can sign anything inside the unlocked page.
+
+**After launch**: NEW-3 (the UX prompt), NEW-4, NEW-5 and the Info items.

@@ -114,7 +114,7 @@ run('Recovery from a @handle (e2e)', () => {
     expect((await call('/api/recovery/friends/status', { requestId: '00000000-0000-4000-8000-000000000000' })).status).toBe(404);
   }, 180_000);
 
-  it('R-W4: one IPv6 /64 is one requester, and strangers at the cap cannot keep the owner out', async () => {
+  it('R-W4/NEW-2: one IPv6 /48 is one requester, and strangers can neither refuse nor cancel the owner', async () => {
     const owner = await passphraseAccount('rw4');
     const friend = await passphraseAccount('rw4f');
     created.push(owner.userId, friend.userId);
@@ -122,27 +122,31 @@ run('Recovery from a @handle (e2e)', () => {
     const share = await db.from('recovery_shares').insert({ owner_id: owner.userId, trustee_id: friend.userId,
       setup_id: randomUUID(), threshold: 2, sealed: { s: 'x' } });
     expect(share.error).toBeNull();
-    const start = async (xff: string) => {
+    const startFull = async (xff: string) => {
       const res = await fetch(`${BASE}/api/recovery/friends/start`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': xff },
         body: JSON.stringify({ altcha: await altcha(), handle: owner.handle, ephPub: b64u.encode(generateEphemeral().pub) }),
       });
-      return res.status;
+      return { status: res.status, body: (await res.json().catch(() => ({}))) as { requestId?: string } };
     };
-    // The re-review's attacker rotated through addresses of ONE /64: now they all share one tag (2 a day).
-    const net = `2001:db8:${randomBytes(2).toString('hex')}:${randomBytes(2).toString('hex')}`;
-    expect(await start(`${net}::1`)).toBe(200);
-    expect(await start(`${net}:aaaa::2`)).toBe(200);
-    expect(await start(`${net}:bbbb:cccc:dddd:3`)).toBe(429);
-    // Ten distinct IPv4 requesters fill the account to its cap of 10 open requests...
+    const start = async (xff: string) => (await startFull(xff)).status;
     const v4 = () => `198.18.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+    // The owner starts a recovery from their new device first...
+    const mine = await startFull(v4());
+    expect(mine.status).toBe(200);
+    // The re-review's attacker rotated through addresses of ONE prefix: every /64 of a /48 shares one tag (2 a day).
+    const net = `2001:db8:${randomBytes(2).toString('hex')}`;
+    expect(await start(`${net}:1::1`)).toBe(200);
+    expect(await start(`${net}:2:aaaa::2`)).toBe(200);
+    expect(await start(`${net}:ffff:bbbb:cccc:dddd:3`)).toBe(429);
+    // ...then ten more distinct IPv4 requesters arrive. Nothing is refused and nothing is evicted.
     for (let i = 0; i < 10; i++) expect(await start(v4())).toBe(200);
+    if (mine.body.requestId) {
+      const row = await db.from('recovery_requests').select('status').eq('id', mine.body.requestId).single();
+      expect(row.data?.status).toBe('pending');
+    }
     const open = await db.from('recovery_requests').select('id', { count: 'exact', head: true }).eq('owner_id', owner.userId).eq('status', 'pending');
-    expect(open.count).toBe(10);
-    // ...and the owner, trying from their own new device, still gets in (the oldest open request makes room).
-    expect(await start(v4())).toBe(200);
-    const after = await db.from('recovery_requests').select('id', { count: 'exact', head: true }).eq('owner_id', owner.userId).eq('status', 'pending');
-    expect(after.count).toBe(10);
+    expect(open.count).toBeGreaterThanOrEqual(12);
   }, 300_000);
 
   if (process.env.E2E_KEEP_FILE) {

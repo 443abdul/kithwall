@@ -32,6 +32,7 @@ import {
   type AudienceMeta, type EpochRecordRow, type GrantRow, type Roster, type TrustedSigner,
 } from './authority';
 import { onPinsChanged, resolveSigners, sealGate } from './pins';
+import { resealTarget } from './resealCore';
 
 const ctx = (aud: string, epoch: number, recipient: string) => `audience-key/${aud}/${epoch}/${recipient}`;
 const k = (aud: string, epoch: number) => `${aud}:${epoch}`;
@@ -414,14 +415,18 @@ class Keyring {
       if (page.length < 1000) break;
     }
     const ids = [...new Set(rows.map((r) => r.recipient_id))].filter((id) => id !== me);
-    const kx = new Map<string, string>();
+    // NEW-1: re-seal only to keys this device trusts. Published keys go through sealGate exactly like
+    // deliverTo, so a recipient whose identity key was swapped without a confirmed or vouched change is
+    // skipped instead of receiving every key we ever delivered.
+    const profs = new Map<string, { s: string; x: string }>();
     for (let i = 0; i < ids.length; i += 100) {
-      const { data } = await sb().from('profiles').select('id, kx_pub').in('id', ids.slice(i, i + 100));
-      for (const p of (data ?? []) as { id: string; kx_pub: string }[]) kx.set(p.id, p.kx_pub);
+      const { data } = await sb().from('profiles').select('id, sign_pub, kx_pub').in('id', ids.slice(i, i + 100));
+      for (const p of (data ?? []) as { id: string; sign_pub: string; kx_pub: string }[]) profs.set(p.id, { s: p.sign_pub, x: p.kx_pub });
     }
+    const allowed = await sealGate([...profs].map(([id, p]) => ({ id, ...p })));
     for (const r of rows) {
       const key = this.get(r.audience_id, r.epoch);
-      const to = r.recipient_id === me ? next.kxPub : kx.has(r.recipient_id) ? b64u.decode(kx.get(r.recipient_id)!) : null;
+      const to = resealTarget(r.recipient_id, me, next.kxPub, profs, allowed);
       if (!key || !to) continue;
       const sealed = seal({ recipientKxPub: to, senderSignPriv: next.signPriv, context: ctx(r.audience_id, r.epoch, r.recipient_id), plaintext: key });
       const res = await sb().from('audience_keys').update({ sealed })
