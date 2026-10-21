@@ -971,3 +971,46 @@ with tests, and need no further full re-review.
 - XSS can sign anything inside the unlocked page.
 
 **After launch**: NEW-3 (the UX prompt), NEW-4, NEW-5 and the Info items.
+
+## 13. Confirmation of NEW-1 and NEW-2 (HEAD `d02ed3a`, 2026-10-22)
+
+This was a targeted check, not a full re-review.
+
+- Migration `20261029000400` is applied locally.
+- Tests: `resealCore`, `ip-bucket` and `pinned` pass, 19/19.
+- Probe: `…\scratchpad\secreview\final\new12\probe6.sql`, run inside `BEGIN … ROLLBACK`, with 0 leftover
+  rows.
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| NEW-1 | **Fixed** | `resealMine` now passes recipients through `sealGate` plus `resealTarget` (`keyring.ts:418-430`, `resealCore.ts`). A recipient whose key changed without being confirmed or vouched is skipped. `sealGate` fails closed: if the pins can't be loaded, it allows nobody (`pins.ts:129`). Residual (Info, TOFU): a recipient this device has never pinned (for example, deliveries made before pinning existed) is pinned at reseal time. |
+| NEW-2 | **Fixed** | There is no longer a cap or eviction (`20261029000400_authz_recovery_no_eviction.sql`). Probe: the owner files a request, then 30 requests arrive from fresh requester tags. The owner's request **stays pending** (31 open). IPv6 is bucketed by /48. |
+
+**Residual R-13 (Low, accepted): a requester who shares the owner's IP bucket can cancel the owner's
+same-day pending request.**
+
+- Who shares a bucket: the same IPv4 address (CGNAT, a VPN or Tor exit) or the same IPv6 /48.
+- Cause: "one open request per requester" supersedes by requester tag.
+- Effect: the attacker can also use up that bucket's 2-per-day allowance for the account (probe: the
+  owner's request was cancelled, and the owner's retry from that bucket got a rate-limit error).
+- What still limits it:
+  - the tag is a per-UTC-day HMAC, so requests from an earlier day, including any that friends were
+    already prompted for, can't be touched;
+  - the owner recovers by using another network or waiting until the next day;
+  - an attacker who pre-fills all Tor exits costs about 2 proof-of-work solutions per exit per day.
+- Suggested hardening, post-launch: supersede only through the request-id capability the requester
+  already holds (the cancel route), not by tag.
+
+### Launch verdict: **GO**
+
+- No launch blockers remain in code.
+- Before going live, complete the launch-day gates from §12.4:
+  - enable Realtime "Private channels only" in production;
+  - delete `VERCEL_AUTOMATION_BYPASS_SECRET`;
+  - confirm the production `AUTH_HOOK_SECRET` is not the local dev value;
+  - build and smoke-test the iOS gates;
+  - tell circle owners to confirm their admins.
+- **Before making the repository public**, resolve P-1 (the GitHub `refs/pull/*` refs still carry the
+  pre-rewrite history) and do not push `backup/pre-author-rewrite`.
+- Accepted residual risks are listed in §12.4, plus R-13. After launch: NEW-3 (the UX prompt), NEW-4,
+  NEW-5 and R-13.
