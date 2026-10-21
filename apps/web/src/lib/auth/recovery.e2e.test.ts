@@ -5,7 +5,7 @@
 // Reads keys from apps/web/.env.local. Creates and deletes its own users. With E2E_KEEP_FILE=<path> it
 // also leaves one extra email-less account behind and writes its handle + recovery phrase there (for a
 // browser walk-through of /recover).
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
@@ -113,6 +113,37 @@ run('Recovery from a @handle (e2e)', () => {
     expect((await call('/api/recovery/account', { altcha: pow, handle: acct.handle })).status).toBe(400);
     expect((await call('/api/recovery/friends/status', { requestId: '00000000-0000-4000-8000-000000000000' })).status).toBe(404);
   }, 180_000);
+
+  it('R-W4: one IPv6 /64 is one requester, and strangers at the cap cannot keep the owner out', async () => {
+    const owner = await passphraseAccount('rw4');
+    const friend = await passphraseAccount('rw4f');
+    created.push(owner.userId, friend.userId);
+    const db = createClient(E.NEXT_PUBLIC_SUPABASE_URL!, E.SUPABASE_SECRET_KEY!, noPersist);
+    const share = await db.from('recovery_shares').insert({ owner_id: owner.userId, trustee_id: friend.userId,
+      setup_id: randomUUID(), threshold: 2, sealed: { s: 'x' } });
+    expect(share.error).toBeNull();
+    const start = async (xff: string) => {
+      const res = await fetch(`${BASE}/api/recovery/friends/start`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': xff },
+        body: JSON.stringify({ altcha: await altcha(), handle: owner.handle, ephPub: b64u.encode(generateEphemeral().pub) }),
+      });
+      return res.status;
+    };
+    // The re-review's attacker rotated through addresses of ONE /64: now they all share one tag (2 a day).
+    const net = `2001:db8:${randomBytes(2).toString('hex')}:${randomBytes(2).toString('hex')}`;
+    expect(await start(`${net}::1`)).toBe(200);
+    expect(await start(`${net}:aaaa::2`)).toBe(200);
+    expect(await start(`${net}:bbbb:cccc:dddd:3`)).toBe(429);
+    // Ten distinct IPv4 requesters fill the account to its cap of 10 open requests...
+    const v4 = () => `198.18.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+    for (let i = 0; i < 10; i++) expect(await start(v4())).toBe(200);
+    const open = await db.from('recovery_requests').select('id', { count: 'exact', head: true }).eq('owner_id', owner.userId).eq('status', 'pending');
+    expect(open.count).toBe(10);
+    // ...and the owner, trying from their own new device, still gets in (the oldest open request makes room).
+    expect(await start(v4())).toBe(200);
+    const after = await db.from('recovery_requests').select('id', { count: 'exact', head: true }).eq('owner_id', owner.userId).eq('status', 'pending');
+    expect(after.count).toBe(10);
+  }, 300_000);
 
   if (process.env.E2E_KEEP_FILE) {
     it('leaves an account for the browser walk-through', async () => {

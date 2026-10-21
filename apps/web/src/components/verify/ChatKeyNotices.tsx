@@ -1,31 +1,24 @@
 'use client';
-// Key notices at the top of a chat (security review K1 / K2):
+// Key notices at the top of a chat (security review K1 / K2, re-review R-K-1 / R-K-2):
 //  * 1:1 chats: the other person's "safety number changed" notice (KeyChangeBanner).
-//  * any chat: a warning when someone handed this device a key for the chat that contradicts the signed
-//    key record of its owner (lib/keys/keyring.ts conflicts). The key was rejected, not used.
-import { useT } from '@/i18n';
-import { Icon } from '@/components/ui/Icon';
-import { useKeyConflicts } from '@/lib/keys/keyring';
+//  * any chat: keys this device rejected (a key contradicting the owner's signed record, or one signed with
+//    an identity key this device doesn't trust), and, in group chats, a prominent warning when someone new
+//    can hand out the chat's keys (AudienceKeyNotices).
 import { people, usePeopleVersion } from '@/lib/people';
 import { KeyChangeBanner } from './KeyChangeBanner';
+import { AudienceKeyNotices } from './AudienceKeyNotices';
 
-export function ChatKeyNotices({ audienceId, peer, name }: { audienceId: string; peer: string | null; name: string }) {
-  const t = useT();
+export function ChatKeyNotices({ audienceId, peer, name, authorities }: {
+  audienceId: string; peer: string | null; name: string;
+  /** Group chats: the owner plus verified admins (null for 1:1 chats). */
+  authorities?: string[] | null;
+}) {
   usePeopleVersion();
-  const conflicts = useKeyConflicts(audienceId);
   const handle = peer ? people.get(peer)?.username ?? null : null;
   return (
     <>
       {peer && handle ? <KeyChangeBanner userId={peer} name={name} handle={handle} /> : null}
-      {conflicts.length ? (
-        <div className="k-keychange" role="alert" data-testid="key-conflict">
-          <Icon name="alert" />
-          <div className="k-stack-sm">
-            <p className="k-keychange-title">{t('keys.conflictTitle')}</p>
-            <p className="k-small">{t('keys.conflictBody')}</p>
-          </div>
-        </div>
-      ) : null}
+      <AudienceKeyNotices audienceId={audienceId} authorities={peer ? null : authorities ?? null} where="chat" />
     </>
   );
 }

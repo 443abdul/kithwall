@@ -15,7 +15,8 @@
 //     accepted too (history from before this change), never the current epoch.
 //
 // Anything else waits: the authority's own delivery (or its record) will arrive.
-import { b64u, keyMatchesCommit, verifyEpochRecord } from '@kithwall/crypto';
+import { b64u, keyMatchesCommit, verifyAdminGrant, verifyEpochRecord } from '@kithwall/crypto';
+import type { SignerTrust } from './pinsCore';
 
 export type AudienceKind = 'friends' | 'list' | 'group' | 'event' | 'conversation' | 'self';
 
@@ -74,4 +75,78 @@ export function judgeKey(args: {
   if (isKeyAuthority(aud, roster, sealedBy)) return { ok: true, via: 'authority' };
   if (aud.kind === 'conversation' && epoch < aud.current_epoch && roster.members.has(sealedBy)) return { ok: true, via: 'history' };
   return { ok: false, reason: 'wait' };
+}
+
+/** An audience_members row as far as admin grants are concerned. */
+export interface GrantRow { member_id: string; role: string; grant_by?: string | null; grant_sig?: string | null }
+
+/**
+ * Admins whose promotion is backed by a chain of signed grants leading to the audience owner (security
+ * review R-K-2), each signature checked against the signer's TRUSTED identity key (`signPubOf`, which
+ * resolves through this device's pins, R-K-1). Admins without a valid chain (made by the server, or
+ * promoted before grants existed) are not key authorities on this device.
+ */
+export function verifiedAdmins(aud: Pick<AudienceMeta, 'id' | 'owner_id'>, rows: readonly GrantRow[], signPubOf: (id: string) => string | null | undefined): Set<string> {
+  const ok = new Set<string>();
+  const pending = rows.filter((r) => r.role === 'admin' && r.member_id !== aud.owner_id && r.grant_by && r.grant_sig);
+  let progress = true;
+  while (progress) {
+    progress = false;
+    for (const r of pending) {
+      if (ok.has(r.member_id)) continue;
+      const by = r.grant_by!;
+      if (by !== aud.owner_id && !ok.has(by)) continue;
+      const pubB64 = signPubOf(by);
+      if (!pubB64) continue;
+      let pub: Uint8Array;
+      try { pub = b64u.decode(pubB64); } catch { continue; }
+      if (verifyAdminGrant(pub, { audienceId: aud.id, memberId: r.member_id, grantedBy: by }, r.grant_sig!)) { ok.add(r.member_id); progress = true; }
+    }
+  }
+  return ok;
+}
+
+/** The identity key this device trusts for a person, and how (lib/keys/pins.ts resolveSigners). */
+export interface TrustedSigner { s: string; trust: SignerTrust }
+
+export type IncomingResult =
+  | { ok: true; key: Uint8Array; via: 'record' | 'authority' | 'history' }
+  | {
+    ok: false;
+    /** wait: retry later (also while a signer's identity change is unconfirmed); conflict: contradicts the record;
+     *  unverified: the seal doesn't verify against the sealer's trusted key. */
+    reason: 'wait' | 'conflict' | 'unverified';
+    /** Set when an unconfirmed identity-key change (no signed chain from the pin) stopped this key: show the
+     *  "safety number changed" warning for that person. */
+    identity?: string;
+  };
+
+/**
+ * Security review R-K-1: judge one sealed key delivery using only TRUSTED identity keys. The seal is opened
+ * against the sealer's trusted key and the epoch record verified against the rotator's trusted key, so a key
+ * the server published for someone (operator or database compromise) cannot get a key adopted. `open` tries
+ * to unseal with a given sealer signing key (null when the signature or decryption fails).
+ */
+export function judgeIncoming(args: {
+  aud: AudienceMeta | null;
+  roster: Roster;
+  epoch: number;
+  sealedBy: string;
+  record: EpochRecordRow | null;
+  signer: (id: string) => TrustedSigner | null;
+  open: (sealerSignPub: string) => Uint8Array | null;
+}): IncomingResult {
+  const sp = args.signer(args.sealedBy);
+  if (!sp) return { ok: false, reason: 'wait' };
+  const key = args.open(sp.s);
+  if (!key) {
+    return sp.trust === 'unvouched' ? { ok: false, reason: 'wait', identity: args.sealedBy } : { ok: false, reason: 'unverified' };
+  }
+  const rot = args.record ? args.signer(args.record.rotated_by) : null;
+  const v = judgeKey({
+    aud: args.aud, roster: args.roster, epoch: args.epoch, sealedBy: args.sealedBy, key, record: args.record, rotatorSignPub: rot?.s ?? null,
+  });
+  if (v.ok) return { ok: true, key, via: v.via };
+  const identity = args.record && rot?.trust === 'unvouched' ? args.record.rotated_by : undefined;
+  return identity ? { ok: false, reason: v.reason, identity } : { ok: false, reason: v.reason };
 }

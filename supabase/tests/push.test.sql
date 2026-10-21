@@ -121,7 +121,7 @@ select lives_ok($$ insert into public.messages (id, conversation_id, sender_id, 
   values ('52000000-0000-0000-0000-000000000001', '51000000-0000-0000-0000-000000000001', pg_temp.uid('alice'), 1, '{}') $$,
   'messages insert normally without push config');
 select lives_ok($$ insert into public.notifications (id, recipient_id, actor_id, type, object_kind, object_id)
-  values ('53000000-0000-0000-0000-000000000001', pg_temp.uid('bob'), pg_temp.uid('alice'), 'poke', 'profile', pg_temp.uid('alice')) $$,
+  values ('53000000-0000-0000-0000-000000000001', pg_temp.uid('bob'), pg_temp.uid('alice'), 'friend_accept', 'profile', pg_temp.uid('alice')) $$,
   'notifications insert normally without push config');
 select pg_temp.su();
 select is((select count(*)::int from net.http_request_queue where id > (select id from q0)), 0, 'nothing is queued without config');
@@ -135,10 +135,10 @@ select lives_ok($$ insert into public.messages (id, conversation_id, sender_id, 
   values ('52000000-0000-0000-0000-000000000002', '51000000-0000-0000-0000-000000000002', pg_temp.uid('alice'), 1, '{"ct":"secret-ciphertext"}') $$,
   'a group message inserts with push config present');
 select lives_ok($$ insert into public.notifications (id, recipient_id, actor_id, type, object_kind, object_id)
-  values ('53000000-0000-0000-0000-000000000002', pg_temp.uid('bob'), pg_temp.uid('alice'), 'comment', 'post', gen_random_uuid()) $$,
+  values ('53000000-0000-0000-0000-000000000002', pg_temp.uid('bob'), pg_temp.uid('alice'), 'friend_accept', 'profile', pg_temp.uid('alice')) $$,
   'a notification inserts with push config present');
-select lives_ok($$ insert into public.notifications (id, recipient_id, actor_id, type)
-  values ('53000000-0000-0000-0000-000000000003', pg_temp.uid('dave'), pg_temp.uid('alice'), 'poke') $$,
+select lives_ok($$ insert into public.notifications (id, recipient_id, actor_id, type, object_kind, object_id)
+  values ('53000000-0000-0000-0000-000000000003', pg_temp.uid('dave'), pg_temp.uid('alice'), 'friend_accept', 'profile', pg_temp.uid('alice')) $$,
   'notifying someone without push subscriptions still works');
 select pg_temp.su();
 select is((select array_agg(convert_from(body, 'utf8')::jsonb order by id) from net.http_request_queue where id > (select id from q0)),
@@ -152,7 +152,7 @@ select is((select count(*)::int from net.http_request_queue where id > (select i
 alter table public.push_subscriptions rename to push_subscriptions_gone;
 select pg_temp.login('alice');
 select lives_ok($$ insert into public.notifications (recipient_id, actor_id, type, object_kind, object_id)
-  values (pg_temp.uid('bob'), pg_temp.uid('alice'), 'poke', 'profile', pg_temp.uid('alice')) $$,
+  values (pg_temp.uid('bob'), pg_temp.uid('alice'), 'friend_accept', 'profile', pg_temp.uid('alice')) $$,
   'notification inserts survive a failing enqueue');
 select lives_ok($$ insert into public.messages (id, conversation_id, sender_id, epoch, envelope)
   values (gen_random_uuid(), '51000000-0000-0000-0000-000000000001', pg_temp.uid('alice'), 1, '{}') $$,
@@ -178,7 +178,7 @@ select is((select (t -> 'prefs' ->> 'messages')::boolean
 select is((select jsonb_array_length(t -> 'subs')
              from jsonb_array_elements(public.push_plan('message', '52000000-0000-0000-0000-000000000002') -> 'targets') t
             where t ->> 'user_id' = pg_temp.uid('bob')::text), 2, 'every device of a target is included');
-select is((public.push_plan('notification', '53000000-0000-0000-0000-000000000002') ->> 'type'), 'comment', 'notification plan carries the type');
+select is((public.push_plan('notification', '53000000-0000-0000-0000-000000000002') ->> 'type'), 'friend_accept', 'notification plan carries the type');
 select ok((select (t ->> 'badge')::int >= 2 from jsonb_array_elements(public.push_plan('notification', '53000000-0000-0000-0000-000000000002') -> 'targets') t),
   'targets carry an unread badge count');
 select is(public.push_plan('message', gen_random_uuid()), null, 'unknown rows produce no plan');

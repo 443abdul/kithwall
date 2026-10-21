@@ -10,21 +10,38 @@
 //
 // Security review K2: keys are only sealed to people whose identity keys this device has pinned, or
 // whose change the user accepted (./pins.ts sealGate).
+//
+// Security review R-K-1: seals and epoch records are verified against the identity keys this device TRUSTS
+// (people.get(id).sign_pub once ./pins.ts resolveSigners is installed: the pinned key, or one a signed key
+// change vouches for), never a key the server merely publishes. A key that only verifies against an
+// unconfirmed new identity key is not adopted; it waits (retried after the user accepts the change) and is
+// reported as an 'identity' warning for its audience (useKeyConflicts).
+//
+// Security review R-K-2: admins count as key authorities only with a chain of signed grants back to the
+// owner (./authority.ts verifiedAdmins); unsigned (server-made) admins can't get a key adopted.
 import {
-  b64u, epochCommit, newSymmetricKey, openSealed, seal, signEpochRecord, type Identity, type Sealed, type Unlocked,
+  b64u, epochCommit, newSymmetricKey, openSealed, seal, signAdminGrant, signEpochRecord, type Identity, type Sealed, type Unlocked,
 } from '@kithwall/crypto';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSyncExternalStore } from 'react';
 import { sb, must } from '../supabase';
 import type { AudienceRow } from '../types';
 import { people } from '../people';
-import { judgeKey, isKeyAuthority, type AudienceMeta, type EpochRecordRow, type Roster } from './authority';
-import { sealGate } from './pins';
+import {
+  judgeIncoming, isKeyAuthority, recordIsValid, verifiedAdmins,
+  type AudienceMeta, type EpochRecordRow, type GrantRow, type Roster, type TrustedSigner,
+} from './authority';
+import { onPinsChanged, resolveSigners, sealGate } from './pins';
 
 const ctx = (aud: string, epoch: number, recipient: string) => `audience-key/${aud}/${epoch}/${recipient}`;
 const k = (aud: string, epoch: number) => `${aud}:${epoch}`;
 
-export interface KeyConflict { audienceId: string; epoch: number; sealedBy: string; at: string }
+/**
+ * conflict: a key contradicted its audience's signed record (someone tried to hand out a key of their own).
+ * identity: a key or record was signed by an identity key this device doesn't trust yet (sealedBy is that
+ * person): their safety number changed and the change wasn't signed with their old key.
+ */
+export interface KeyConflict { audienceId: string; epoch: number; sealedBy: string; at: string; reason: 'conflict' | 'identity' }
 
 const EMPTY_ROSTER: Roster = { admins: new Set(), members: new Set() };
 
@@ -46,6 +63,7 @@ class Keyring {
   ready = false;
   private readyWaiters = new Set<() => void>();
   private readyListeners = new Set<() => void>();
+  private unpin: (() => void) | null = null;
 
   subscribe(l: () => void) { this.listeners.add(l); return () => { this.listeners.delete(l); }; }
   private bump() { this.version++; people.invalidateInfos(); this.listeners.forEach((l) => l()); }
@@ -80,6 +98,16 @@ class Keyring {
   async start(userId: string, u: Unlocked) {
     this.userId = userId; this.u = u; this.keys.clear(); this.waiting.clear();
     people.setKeyLookup((aud, epoch) => this.get(aud, epoch));
+    // R-K-1: from now on people.get() carries the keys this device trusts (pins), not the published ones.
+    await people.setTrustResolver(resolveSigners);
+    this.unpin?.();
+    this.unpin = onPinsChanged((ids) => {
+      // An identity change was accepted: re-check that person's items and retry what waited on them.
+      people.forget(ids);
+      this.conflictList = this.conflictList.filter((c) => !(c.reason === 'identity' && ids.includes(c.sealedBy)));
+      this.conflictListeners.forEach((l) => l());
+      if (this.waiting.size) void this.ingest([...this.waiting.values()]).then(() => this.bump());
+    });
     await this.loadMyAudiences();
     await this.load();
     await this.ensureOwn(this.friendsAudience!);
@@ -104,6 +132,8 @@ class Keyring {
     if (this.ready) this.setReady(false);
     if (this.channel) await sb().removeChannel(this.channel);
     if (this.timer) clearInterval(this.timer);
+    this.unpin?.(); this.unpin = null;
+    void people.setTrustResolver(null);
     this.channel = null; this.timer = null; this.keys.clear(); this.waiting.clear(); this.u = null; this.userId = null;
     this.friendsAudience = null; this.selfAudience = null;
     if (this.conflictList.length) { this.conflictList = []; this.conflictListeners.forEach((l) => l()); }
@@ -132,24 +162,39 @@ class Keyring {
     const auds = new Map<string, AudienceMeta>();
     const rosters = new Map<string, Roster>();
     const records = new Map<string, EpochRecordRow>();
+    const grants = new Map<string, GrantRow[]>();
     for (let i = 0; i < audIds.length; i += 100) {
       const chunk = audIds.slice(i, i + 100);
       const [a, m, r] = await Promise.all([
         sb().from('audiences').select('id, kind, owner_id, current_epoch').in('id', chunk),
-        sb().from('audience_members').select('audience_id, member_id, role').in('audience_id', chunk).eq('status', 'active'),
+        sb().from('audience_members').select('audience_id, member_id, role, grant_by, grant_sig').in('audience_id', chunk).eq('status', 'active'),
         sb().from('audience_epochs').select('audience_id, epoch, rotated_by, commit, sig').in('audience_id', chunk),
       ]);
       for (const row of (a.data ?? []) as AudienceMeta[]) auds.set(row.id, row);
-      for (const row of (m.data ?? []) as { audience_id: string; member_id: string; role: string }[]) {
-        let ro = rosters.get(row.audience_id) as { admins: Set<string>; members: Set<string> } | undefined;
-        if (!ro) { ro = { admins: new Set(), members: new Set() }; rosters.set(row.audience_id, ro); }
-        ro.members.add(row.member_id);
-        if (row.role === 'admin') ro.admins.add(row.member_id);
+      for (const row of (m.data ?? []) as ({ audience_id: string } & GrantRow)[]) {
+        const g = grants.get(row.audience_id) ?? [];
+        g.push(row);
+        grants.set(row.audience_id, g);
       }
       // A missing table (database without this migration) simply means "no records".
       for (const row of (r.data ?? []) as EpochRecordRow[]) records.set(k(row.audience_id, row.epoch), row);
     }
+    // Admin grants are verified against trusted keys (R-K-1 + R-K-2): load the granters first.
+    await people.ensure([...grants.values()].flatMap((g) => g.map((x) => x.grant_by ?? '')).filter(Boolean));
+    for (const [audId, g] of grants) {
+      const a = auds.get(audId);
+      const admins = a ? verifiedAdmins(a, g, (id) => this.signerOf(id)?.s) : new Set<string>();
+      rosters.set(audId, { admins, members: new Set(g.map((x) => x.member_id)) });
+    }
     return { auds, rosters, records };
+  }
+
+  /** The identity key this device trusts for someone (my own: from my unlocked identity). */
+  private signerOf(id: string): TrustedSigner | null {
+    if (id === this.userId && this.u) return { s: b64u.encode(this.u.identity.signPub), trust: 'self' };
+    const p = people.get(id);
+    if (!p) return null;
+    return { s: p.sign_pub, trust: people.trust(id) ?? 'new' };
   }
 
   /** Verify, judge and adopt sealed keys. Returns how many keys were adopted. */
@@ -160,49 +205,36 @@ class Keyring {
     const { auds, rosters, records } = await this.context([...new Set(todo.map((r) => r.audience_id))]);
     await people.ensure([...todo.map((r) => r.sealed_by), ...[...records.values()].map((r) => r.rotated_by)]);
     let adopted = 0;
-    let fresh: Map<string, string> | null = null;
+    const refreshed = new Set<string>();
     for (const r of todo) {
       const id = k(r.audience_id, r.epoch);
       if (this.keys.has(id)) continue;
-      // Our own deliveries are checked against the key we hold, never a cached copy.
-      const sealerPub = r.sealed_by === this.userId ? b64u.encode(this.u.identity.signPub) : people.get(r.sealed_by)?.sign_pub;
-      if (!sealerPub) { this.waiting.set(id, r); continue; }
-      let key = this.open(r, sealerPub);
-      if (!key && r.sealed_by !== this.userId) {
-        // The sealer may have rotated their identity key (re-signing their deliveries) since we cached
-        // their profile: re-read the published keys once and retry.
-        fresh ??= await this.freshSignPubs(todo.map((x) => x.sealed_by));
-        const now = fresh.get(r.sealed_by);
-        if (now && now !== sealerPub) key = this.open(r, now);
-      }
-      if (!key) { console.warn('Rejected an audience key that failed verification', r.audience_id, r.epoch); continue; }
-      const record = records.get(id) ?? null;
-      const verdict = judgeKey({
+      const judge = () => judgeIncoming({
         aud: auds.get(r.audience_id) ?? null, roster: rosters.get(r.audience_id) ?? EMPTY_ROSTER, epoch: r.epoch,
-        sealedBy: r.sealed_by, key, record, rotatorSignPub: record ? people.get(record.rotated_by)?.sign_pub ?? null : null,
+        sealedBy: r.sealed_by, record: records.get(id) ?? null, signer: (who) => this.signerOf(who), open: (pub) => this.open(r, pub),
       });
-      if (verdict.ok) { this.keys.set(id, key); this.waiting.delete(id); adopted++; continue; }
-      if (verdict.reason === 'wait') { this.waiting.set(id, r); continue; }
+      let res = judge();
+      if (!res.ok && (res.reason === 'unverified' || res.identity) && r.sealed_by !== this.userId && !refreshed.has(r.sealed_by)) {
+        // The sealer may have rotated their identity key with a signed change (re-signing their deliveries)
+        // since we cached them: re-read and re-resolve them once. A vouched change is then trusted; an
+        // unvouched one still isn't.
+        refreshed.add(r.sealed_by);
+        people.forget([r.sealed_by]);
+        await people.ensure([r.sealed_by]);
+        res = judge();
+      }
+      if (res.ok) { this.keys.set(id, res.key); this.waiting.delete(id); adopted++; continue; }
+      if (res.identity) this.flagConflict(r, 'identity', res.identity);
+      if (res.reason === 'unverified') { console.warn('Rejected an audience key that failed verification', r.audience_id, r.epoch); continue; }
+      if (res.reason === 'wait') { this.waiting.set(id, r); continue; }
       // Conflict: never adopted. Discard our copy so the authority's delivery can replace it.
       this.waiting.delete(id);
-      this.flagConflict(r);
+      this.flagConflict(r, 'conflict', r.sealed_by);
       void sb().from('audience_keys').delete()
         .match({ audience_id: r.audience_id, epoch: r.epoch, recipient_id: this.userId!, sealed_by: r.sealed_by })
         .then(() => undefined, () => undefined);
     }
     return adopted;
-  }
-
-  private async freshSignPubs(ids: string[]): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
-    const uniq = [...new Set(ids)];
-    for (let i = 0; i < uniq.length; i += 100) {
-      const { data } = await sb().from('profiles').select('id, sign_pub').in('id', uniq.slice(i, i + 100));
-      for (const p of (data ?? []) as { id: string; sign_pub: string }[]) out.set(p.id, p.sign_pub);
-    }
-    const stale = [...out].filter(([id, pub]) => people.get(id) && people.get(id)!.sign_pub !== pub).map(([id]) => id);
-    if (stale.length) people.forget(stale);
-    return out;
   }
 
   private open(r: KeyRow, sealerSignPub: string): Uint8Array | null {
@@ -219,10 +251,11 @@ class Keyring {
     return null;
   }
 
-  private flagConflict(r: KeyRow) {
-    console.warn('SECURITY: an audience key contradicts the signed key record of its owner; it was rejected', r.audience_id, r.epoch, r.sealed_by);
-    if (this.conflictList.some((c) => c.audienceId === r.audience_id && c.epoch === r.epoch && c.sealedBy === r.sealed_by)) return;
-    this.conflictList = [...this.conflictList, { audienceId: r.audience_id, epoch: r.epoch, sealedBy: r.sealed_by, at: new Date().toISOString() }].slice(-50);
+  private flagConflict(r: KeyRow, reason: KeyConflict['reason'], who: string) {
+    if (reason === 'conflict') console.warn('SECURITY: an audience key contradicts the signed key record of its owner; it was rejected', r.audience_id, r.epoch, who);
+    else console.warn('SECURITY: a key for this audience is signed by an identity key this device does not trust yet; it was not used', r.audience_id, r.epoch, who);
+    if (this.conflictList.some((c) => c.audienceId === r.audience_id && c.epoch === r.epoch && c.sealedBy === who && c.reason === reason)) return;
+    this.conflictList = [...this.conflictList, { audienceId: r.audience_id, epoch: r.epoch, sealedBy: who, at: new Date().toISOString(), reason }].slice(-50);
     this.conflictListeners.forEach((l) => l());
   }
 
@@ -401,7 +434,38 @@ class Keyring {
       const res = await sb().from('audience_epochs').update({ sig }).match({ audience_id: r.audience_id, epoch: r.epoch });
       if (!res.error) n++;
     }
+    // R-K-2: admin grants I signed are re-signed too, or the admins I made stop counting as key authorities.
+    const grants = ((await sb().from('audience_members').select('audience_id, member_id').eq('grant_by', me).eq('role', 'admin')).data ?? []) as { audience_id: string; member_id: string }[];
+    for (const g of grants) {
+      const grant_sig = signAdminGrant(next.signPriv, { audienceId: g.audience_id, memberId: g.member_id, grantedBy: me });
+      const res = await sb().from('audience_members').update({ grant_by: me, grant_sig }).match({ audience_id: g.audience_id, member_id: g.member_id });
+      if (!res.error) n++;
+    }
     return n;
+  }
+
+  /**
+   * Security review R-K-4 (and R-K-1): true when I am a key authority of this audience and the record of
+   * its CURRENT epoch no longer counts on this device: its rotator was demoted or left, or it was signed
+   * with an identity key this device doesn't trust. Members can't adopt that epoch's key, so an authority
+   * should rotate (circle housekeeping and demotion do).
+   */
+  async currentRecordStale(aud: string): Promise<boolean> {
+    if (!this.userId) return false;
+    const { auds, rosters, records } = await this.context([aud]);
+    const a = auds.get(aud);
+    if (!a) return false;
+    const rec = records.get(k(aud, a.current_epoch));
+    const ro = rosters.get(aud) ?? EMPTY_ROSTER;
+    if (!rec || !isKeyAuthority(a, ro, this.userId)) return false;
+    await people.ensure([rec.rotated_by]);
+    return !recordIsValid(a, ro, rec, this.signerOf(rec.rotated_by)?.s ?? null);
+  }
+
+  /** Sign an admin grant for `memberId` in this audience (R-K-2). */
+  grantAdmin(aud: string, memberId: string): { grant_by: string; grant_sig: string } {
+    if (!this.u || !this.userId) throw new Error('Locked');
+    return { grant_by: this.userId, grant_sig: signAdminGrant(this.u.identity.signPriv, { audienceId: aud, memberId, grantedBy: this.userId }) };
   }
 
   /** Create a new epoch after removing someone; remaining members get the new key. */

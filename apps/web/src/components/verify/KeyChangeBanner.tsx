@@ -67,6 +67,8 @@ export function KeyChangeBanner({ userId, name, handle, showVerifyLink = true }:
         <p className="k-small">
           {t('keys.changedBody', { name, date: f.date(new Date(change.pinnedAt)) })}{' '}
           {change.vouched ? t('keys.changedVouched') : t('keys.changedUnvouched', { name })}
+          {/* Security re-review R-K-1: this device keeps verifying with the pinned key until the change is accepted. */}
+          {change.vouched ? null : <>{' '}{t('keys.unvouchedUnverified')}</>}
         </p>
         <div className="k-row-wrap">
           {showVerifyLink ? <ButtonLink href={verifyHref} size="sm" variant={change.vouched ? 'ghost' : 'primary'} icon="shield">{t('verify.profileLink')}</ButtonLink> : null}

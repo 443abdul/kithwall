@@ -18,15 +18,20 @@ import {
   type CircleSummary, type MemberRow,
 } from './data';
 import { ConnectionPicker, E2eeLine, Loading, PersonAvatar, SectionHead } from './shared';
+import { RosterNotices } from '@/components/verify/AudienceKeyNotices';
+import { keyAuthorities } from '@/lib/keys/roster';
+import { usePeopleVersion } from '@/lib/people';
 
-type Pending = { kind: 'remove' | 'promote' | 'demote'; m: MemberRow } | { kind: 'leave' } | null;
+type Pending = { kind: 'remove' | 'promote' | 'demote' | 'confirm'; m: MemberRow } | { kind: 'leave' } | null;
 
-function MemberRowView({ m, s, canManage, onAct }: { m: MemberRow; s: CircleSummary; canManage: boolean; onAct: (p: Pending) => void }) {
+function MemberRowView({ m, s, canManage, onAct, confirmed }: { m: MemberRow; s: CircleSummary; canManage: boolean; onAct: (p: Pending) => void; confirmed: boolean }) {
   const t = useT();
   const p = usePerson(m.member_id);
   const creator = m.member_id === s.circle.creator_id;
   const self = m.member_id === me();
-  const role = creator ? t('circles.role.creator') : m.role === 'admin' ? t('circles.role.admin') : null;
+  // An admin without a signed grant this device can verify can't hand out keys here (R-K-2).
+  const unconfirmed = !creator && m.role === 'admin' && !confirmed;
+  const role = creator ? t('circles.role.creator') : m.role === 'admin' ? (unconfirmed ? t('security.roster.unconfirmed') : t('circles.role.admin')) : null;
   const sub = m.status === 'invited' ? t('circles.members.invited') : p?.username ? `@${p.username}` : undefined;
   return (
     <li>
@@ -39,6 +44,9 @@ function MemberRowView({ m, s, canManage, onAct }: { m: MemberRow; s: CircleSumm
             {role ? <Badge tone="soft" className="k-badge-label">{role}</Badge> : null}
             {canManage && !creator && !self ? (
               <>
+                {m.status === 'active' && unconfirmed ? (
+                  <Button size="sm" variant="soft" onClick={() => onAct({ kind: 'confirm', m })}>{t('security.roster.confirm')}</Button>
+                ) : null}
                 {m.status === 'active' ? (
                   <Button size="sm" variant="ghost" onClick={() => onAct({ kind: m.role === 'admin' ? 'demote' : 'promote', m })}>
                     {m.role === 'admin' ? t('circles.members.demote') : t('circles.members.promote')}
@@ -71,6 +79,8 @@ export function CircleMembers({ s, onInvite }: { s: CircleSummary; onInvite: () 
   const active = rows.filter((m) => m.status === 'active');
   const invited = rows.filter((m) => m.status === 'invited');
   const creator = s.circle.creator_id === me();
+  usePeopleVersion();
+  const confirmed = new Set(q.data ? keyAuthorities({ id: s.circle.audience_id, owner_id: s.circle.creator_id }, q.data) : []);
 
   const confirm = async () => {
     if (!pending) return;
@@ -84,7 +94,7 @@ export function CircleMembers({ s, onInvite }: { s: CircleSummary; onInvite: () 
         return;
       }
       if (pending.kind === 'remove') await removeFromCircle(s.circle, pending.m.member_id);
-      else await setRole(s.circle.audience_id, pending.m.member_id, pending.kind === 'promote' ? 'admin' : 'member');
+      else await setRole(s.circle, pending.m.member_id, pending.kind === 'promote' || pending.kind === 'confirm' ? 'admin' : 'member');
       void qc.invalidateQueries({ queryKey: ['circles'] });
       setPending(null);
     } catch {
@@ -95,10 +105,11 @@ export function CircleMembers({ s, onInvite }: { s: CircleSummary; onInvite: () 
   const who = usePerson(pending && pending.kind !== 'leave' ? pending.m.member_id : null)?.name ?? '';
   const dialogText = !pending ? '' : pending.kind === 'leave' ? t('circles.members.leaveBody')
     : pending.kind === 'remove' ? t('circles.members.removeBody', { name: who })
-      : pending.kind === 'promote' ? t('circles.members.promoteBody', { name: who }) : t('circles.members.demoteBody', { name: who });
+      : pending.kind === 'promote' ? t('circles.members.promoteBody', { name: who })
+        : pending.kind === 'confirm' ? t('security.roster.confirmBody', { name: who }) : t('circles.members.demoteBody', { name: who });
   const dialogTitle = !pending ? '' : pending.kind === 'leave' ? t('circles.members.leaveTitle', { name })
     : pending.kind === 'remove' ? t('circles.members.removeTitle', { name: who })
-      : pending.kind === 'promote' ? t('circles.members.promote') : t('circles.members.demote');
+      : pending.kind === 'promote' ? t('circles.members.promote') : pending.kind === 'confirm' ? t('security.roster.confirm') : t('circles.members.demote');
 
   if (q.isLoading) return <Loading />;
   return (
@@ -109,14 +120,15 @@ export function CircleMembers({ s, onInvite }: { s: CircleSummary; onInvite: () 
       <section className="k-stack-sm" aria-labelledby="kc-mem-h">
         <SectionHead id="kc-mem-h" title={t('circles.home.members', { count: active.length })} />
         <Card padding="flush"><List label={t('circles.tab.members')}>
-          {active.map((m) => <MemberRowView key={m.member_id} m={m} s={s} canManage={admin} onAct={setPending} />)}
+          {active.map((m) => <MemberRowView key={m.member_id} m={m} s={s} canManage={admin} onAct={setPending} confirmed={confirmed.has(m.member_id)} />)}
         </List></Card>
       </section>
+      <RosterNotices audienceId={s.circle.audience_id} days={30} />
       {invited.length ? (
         <section className="k-stack-sm" aria-labelledby="kc-invd-h">
           <SectionHead id="kc-invd-h" title={t('circles.members.invitedTitle', { count: invited.length })} />
           <Card padding="flush"><List>
-            {invited.map((m) => <MemberRowView key={m.member_id} m={m} s={s} canManage={admin} onAct={setPending} />)}
+            {invited.map((m) => <MemberRowView key={m.member_id} m={m} s={s} canManage={admin} onAct={setPending} confirmed={false} />)}
           </List></Card>
         </section>
       ) : null}

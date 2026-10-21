@@ -6,7 +6,7 @@ import { signChallenge } from '@kithwall/crypto';
 import { sb } from '../supabase';
 import { identity } from './session';
 
-export type ProofPurpose = 'delete_account' | 'add_credential' | 'rotate_identity';
+export type ProofPurpose = 'delete_account' | 'add_credential' | 'rotate_identity' | 'update_bundle';
 
 export async function proveKey(purpose: ProofPurpose): Promise<{ challengeId: string; signature: string }> {
   const { data, error } = await sb().rpc('create_key_challenge', { purpose });

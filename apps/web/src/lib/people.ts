@@ -1,6 +1,14 @@
 'use client';
 // People directory: public routing data (username, public keys) plus each person's
 // encrypted profile info, decrypted when we hold the key for their friends audience.
+//
+// Security review R-K-1: once the session is unlocked, the keyring installs a trust resolver
+// (lib/keys/pins.ts resolveSigners). Every row is then stored with the identity keys THIS DEVICE trusts for
+// that person: the pinned keys, or published keys that a signed key change from the pinned ones vouches for.
+// If the server publishes a different key that nothing vouches for, rows keep the pinned key, so every
+// signature check that goes through people.get(id).sign_pub (keys, epoch records, posts, messages, profile
+// info, notifications) fails for things signed by the new key, and sealing keeps using the pinned kx key.
+// The published keys stay available through published(id) for the safety-number screens.
 import { b64u, openEnvelope, type Envelope } from '@kithwall/crypto';
 import { useSyncExternalStore } from 'react';
 import { sb, must } from './supabase';
@@ -14,6 +22,8 @@ export interface Person extends ProfileRow {
 }
 
 type KeyLookup = (aud: string, epoch: number) => Uint8Array | null;
+export type SignerTrust = 'self' | 'new' | 'pinned' | 'vouched' | 'unvouched';
+export type TrustResolver = (rows: { id: string; s: string; x: string }[]) => Promise<Map<string, { s: string; x: string; trust: SignerTrust }>>;
 
 class People {
   private rows = new Map<string, ProfileRow>();
@@ -22,16 +32,56 @@ class People {
   private inflight = new Map<string, Promise<void>>();
   private listeners = new Set<() => void>();
   private keyLookup: KeyLookup = () => null;
+  private resolver: TrustResolver | null = null;
+  private publishedKeys = new Map<string, { s: string; x: string }>();
+  private trustOf = new Map<string, SignerTrust>();
   version = 0;
 
   setKeyLookup(fn: KeyLookup) { this.keyLookup = fn; }
+
+  /**
+   * Install (or remove) the pin-based trust resolver. Rows cached before are re-resolved now, so nothing
+   * keeps a server-published key this device doesn't trust.
+   */
+  async setTrustResolver(fn: TrustResolver | null): Promise<void> {
+    this.resolver = fn;
+    const cached = [...this.rows.values()].map((r) => {
+      const pub = this.publishedKeys.get(r.id);
+      return pub ? { ...r, sign_pub: pub.s, kx_pub: pub.x } : r;
+    });
+    this.rows.clear(); this.infos.clear(); this.trustOf.clear();
+    if (cached.length) await this.adopt(cached).catch((e) => console.warn('people: could not check keys', e));
+    this.bump();
+  }
+
+  /** Store rows with the keys this device trusts (see the header). Without a resolver: as published. */
+  private async adopt(rows: ProfileRow[]): Promise<void> {
+    for (const r of rows) this.publishedKeys.set(r.id, { s: r.sign_pub, x: r.kx_pub });
+    if (!this.resolver) {
+      for (const r of rows) { this.rows.set(r.id, r); this.trustOf.delete(r.id); }
+      return;
+    }
+    const trusted = await this.resolver(rows.map((r) => ({ id: r.id, s: r.sign_pub, x: r.kx_pub })));
+    for (const r of rows) {
+      const t = trusted.get(r.id);
+      if (!t) continue;
+      this.rows.set(r.id, { ...r, sign_pub: t.s, kx_pub: t.x });
+      this.trustOf.set(r.id, t.trust);
+      this.infos.delete(r.id);
+    }
+  }
+
+  /** How this device trusts the keys it holds for this person (null: not loaded, or no resolver yet). */
+  trust(id: string): SignerTrust | null { return this.trustOf.get(id) ?? null; }
+  /** The server-published identity keys (may differ from the trusted ones in get()). */
+  published(id: string): { s: string; x: string } | null { return this.publishedKeys.get(id) ?? null; }
   subscribe(l: () => void) { this.listeners.add(l); return () => { this.listeners.delete(l); }; }
   private bump() { this.version++; this.listeners.forEach((l) => l()); }
 
   get(id: string): ProfileRow | undefined { return this.rows.get(id); }
 
   /** Drop cached rows (e.g. after an identity-key change) so the next ensure() reads them fresh. */
-  forget(ids: Iterable<string>) { for (const id of ids) { this.rows.delete(id); this.infos.delete(id); } this.bump(); }
+  forget(ids: Iterable<string>) { for (const id of ids) { this.rows.delete(id); this.infos.delete(id); this.trustOf.delete(id); } this.bump(); }
 
   person(id: string): Person | null {
     const row = this.rows.get(id);
@@ -57,7 +107,8 @@ class People {
       for (let i = 0; i < ids.length; i += 100) {
         const chunk = ids.slice(i, i + 100);
         const rows = must(await sb().from('profiles').select('*').in('id', chunk)) as ProfileRow[];
-        rows.forEach((r) => this.rows.set(r.id, r));
+        // If the pins can't be read the rows are not stored: these people stay "loading" (fail closed).
+        await this.adopt(rows).catch((e) => console.warn('people: could not check identity keys', e));
         const infos = must(await sb().from('profile_info').select('*').in('user_id', chunk)) as ProfileInfoRow[];
         infos.forEach((r) => { this.infoRows.set(r.user_id, r); this.infos.delete(r.user_id); });
       }
@@ -81,9 +132,9 @@ class People {
     if (!found) return null;
     const full = (await sb().from('profiles').select('*').eq('id', found.id).maybeSingle()).data as ProfileRow | null;
     const row: ProfileRow = full ?? { ...found, status: 'active', suspended_until: null, created_at: '' };
-    this.rows.set(row.id, row);
+    await this.adopt([row]);
     await this.refreshInfo(row.id);
-    return row;
+    return this.rows.get(row.id) ?? null;
   }
 
   async refreshInfo(id: string) {

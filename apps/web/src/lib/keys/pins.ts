@@ -5,12 +5,17 @@
 //   sealGate(recipients)   → the recipients this device may seal new keys to right now (TOFU-pins new ones)
 //   useIdentityChange(id)  → null, or the unacknowledged change of that person's identity keys
 //   acceptIdentityChange   → acknowledge it (re-pin), after which sharing resumes
+//   resolveSigners(rows)   → the identity keys to VERIFY with for each person (security review R-K-1): the
+//                            pinned keys, unless a key change signed by them vouches for the published ones
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useSyncExternalStore } from 'react';
+import { b64u } from '@kithwall/crypto';
 import { sb, must } from '../supabase';
-import { getSession, useSession } from './session';
+import { getSession, identity, useSession } from './session';
 import { vaultGet, vaultUpdate } from '../settings';
-import { cleanPins, maySealTo, pinStatus, vouchedFrom, type KeyChangeLogRow, type Pin, type PinMap } from './pinsCore';
+import {
+  cleanPins, maySealTo, pinStatus, trustedKeysFor, vouchedFrom, type KeyChangeLogRow, type Pin, type PinMap, type TrustedKeys,
+} from './pinsCore';
 
 const NS = 'keypins';
 let map: PinMap | null = null;
@@ -34,8 +39,47 @@ export function loadPins(force = false): Promise<PinMap> {
 
 async function write(fn: (prev: PinMap) => PinMap): Promise<void> {
   const uid = getSession().userId;
+  const before = map;
   const next = cleanPins(await vaultUpdate<PinMap>(NS, (prev) => fn(cleanPins(prev))));
-  if (getSession().userId === uid) { map = next; loadedFor = uid; emit(); }
+  if (getSession().userId === uid) {
+    map = next; loadedFor = uid; emit();
+    const changed = Object.keys(next).filter((id) => before?.[id] && (before[id]!.s !== next[id]!.s || before[id]!.x !== next[id]!.x));
+    if (changed.length) pinChangeHooks.forEach((h) => h(changed));
+  }
+}
+
+const pinChangeHooks = new Set<(ids: string[]) => void>();
+/** Called with the ids whose pinned keys changed (an accepted identity change), to re-verify their items. */
+export function onPinsChanged(h: (ids: string[]) => void): () => void { pinChangeHooks.add(h); return () => { pinChangeHooks.delete(h); }; }
+
+/**
+ * Security review R-K-1: the identity keys this device verifies signatures with (and seals to), per person.
+ * People seen for the first time are pinned (trust on first use). When someone's published keys differ from
+ * the pin and no chain of key changes signed by the pinned key leads to them, the PINNED keys are returned
+ * (trust 'unvouched'): keys, epoch records and content signed by the new key then fail verification and
+ * nothing is adopted until the user accepts the change. My own keys always come from my unlocked identity.
+ * Throws when the pins can't be read; callers then treat these people as not loaded yet (fail closed).
+ */
+export async function resolveSigners(rows: { id: string; s: string; x: string }[]): Promise<Map<string, TrustedKeys>> {
+  const out = new Map<string, TrustedKeys>();
+  const s = getSession();
+  if (s.status !== 'ready' || !s.userId) throw new Error('locked');
+  const pins = await loadPins();
+  const fresh: { id: string; s: string; x: string }[] = [];
+  for (const r of rows) {
+    if (r.id === s.userId) {
+      const mine = identity();
+      out.set(r.id, { s: b64u.encode(mine.signPub), x: b64u.encode(mine.kxPub), trust: 'self' });
+      continue;
+    }
+    const pin = pins[r.id];
+    const st = pinStatus(pin, r.s, r.x);
+    if (st === 'new') fresh.push(r);
+    const log = st === 'changed' ? await keyChangeLog(r.id).catch(() => []) : null;
+    out.set(r.id, trustedKeysFor(pin, { s: r.s, x: r.x }, log));
+  }
+  if (fresh.length) await pinIfNew(fresh).catch((e) => console.warn('key pins', e));
+  return out;
 }
 
 /** Trust on first use: pin people I have never seen before (never overwrites an existing pin). */

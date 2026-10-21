@@ -12,6 +12,7 @@ import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import type { AccountErrorCode } from './account';
 import { admin, json } from './server';
 import { isSyntheticEmail, syntheticEmailFor } from './passkey-shared';
+import { ipBucket } from './ip-bucket';
 import { androidOrigins, parseCertFingerprints } from '../native/association';
 
 export const RP_NAME = 'Kithwall';
@@ -105,7 +106,7 @@ function trustedHops(): number {
 
 export function ipTag(req: Request): string {
   const day = new Date().toISOString().slice(0, 10);
-  return createHmac('sha256', tagKey()).update(`${day}\n${clientIp(req)}`).digest('hex').slice(0, 32);
+  return createHmac('sha256', tagKey()).update(`${day}\n${ipBucket(clientIp(req))}`).digest('hex').slice(0, 32);
 }
 
 /** Per-client limits for unauthenticated ceremonies, counted from the challenge store. */
@@ -168,7 +169,9 @@ export async function consumeChallenge(id: unknown, intent: Intent): Promise<Cha
 export async function createAuthUser(userId: string, password?: string): Promise<string> {
   const email = syntheticEmailFor(userId);
   const { error } = await admin().auth.admin.createUser({
-    id: userId, email, email_confirm: true, ...(password ? { password } : {}),
+    // Passkey accounts get a random password nobody knows (security re-review R-W3): GoTrue's password grant
+    // then runs bcrypt for every synthetic account, so its timing can't tell passphrase accounts apart.
+    id: userId, email, email_confirm: true, password: password ?? randomBytes(32).toString('base64url'),
     app_metadata: { kw_account: password ? 'passphrase' : 'passkey' },
   });
   if (error) throw new Error(error.message);

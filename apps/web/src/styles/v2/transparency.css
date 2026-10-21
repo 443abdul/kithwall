@@ -102,3 +102,15 @@
 .kw .k-tr-source-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .kw .k-tr-source-links a { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--accent-text); font-weight: var(--weight-medium); }
 .kw .k-tr-source-links .k-icon { inline-size: 18px; block-size: 18px; flex: none; }
+
+/* ------------------------------------------------------------------ roster notices (security re-review R-K-2) */
+.kw .k-chat-event.is-security {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill, 999px);
+  background: var(--warning-soft); color: var(--text); border: var(--border-width) solid var(--warning);
+}
+.kw .k-chat-event.is-security > .k-icon { color: var(--warning); flex: none; }
+.kw .k-roster-notices { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.kw .k-roster-notices li { display: flex; gap: var(--space-2); align-items: baseline; font-size: var(--text-sm); }
+.kw .k-roster-notices li.is-security { font-weight: var(--weight-bold); }
+.kw .k-roster-notices time { color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }

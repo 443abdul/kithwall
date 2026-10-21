@@ -124,5 +124,9 @@ export interface AddVerifyRes { id: string }
 export interface LookupReq { handle: string }
 export interface LookupRes { email: string }
 
+/** Passphrase sign-in through the server (security re-review R-W3): authKey is derived on the device. */
+export interface PassphraseSignInReq { email: string; authKey: string }
+export interface PassphraseSignInRes { tokenHash: string }
+
 export interface NoticeEmailReq { email: string | null }
 export interface NoticeEmailRes { pending: boolean; sent: boolean }

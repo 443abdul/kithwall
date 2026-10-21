@@ -21,6 +21,9 @@ import { CircleNotes } from '@/components/notes/NotesScreen';
 import { acceptInvite, circleHousekeeping, isAdmin, leaveCircle, readCircle, useCircle, useCircleMembers, type CircleSummary } from './data';
 import { AvatarStack, CircleMark, Loading, NotFound, SealedNote, usePersonName } from './shared';
 import { CircleMembers, InviteDialog } from './CircleMembers';
+import { AudienceKeyNotices, RosterNotices } from '@/components/verify/AudienceKeyNotices';
+import { keyAuthorities } from '@/lib/keys/roster';
+import { usePeopleVersion } from '@/lib/people';
 
 export const CIRCLE_TABS = ['posts', 'chat', 'photos', 'events', 'notes', 'members'] as const;
 export type CircleTab = (typeof CIRCLE_TABS)[number];
@@ -75,6 +78,9 @@ export function CircleScreen({ id, initialTab }: { id: string; initialTab?: stri
   const d = s ? readCircle(s.circle) : null;
   const info = d?.ok ? d.value : null;
   const admin = s ? isAdmin(s.circle, s.membership) : false;
+  usePeopleVersion();
+  // Owner + admins with a verified signed grant (R-K-2); null until the members are loaded.
+  const authorities = s && members.data ? keyAuthorities({ id: s.circle.audience_id, owner_id: s.circle.creator_id }, members.data) : null;
   useDocumentTitle(info?.name ?? t('nav.circles'));
 
   // Admin devices keep keys flowing to new members and rotate after someone leaves.
@@ -123,6 +129,12 @@ export function CircleScreen({ id, initialTab }: { id: string; initialTab?: stri
         ) : null}
       </Card>
 
+      {!invited ? (
+        <>
+          <AudienceKeyNotices audienceId={s.circle.audience_id} authorities={authorities} where="circle" />
+          <RosterNotices audienceId={s.circle.audience_id} days={7} max={3} />
+        </>
+      ) : null}
       {invited ? <InvitedView s={s} /> : (
         <Tabs label={title} value={tab} onChange={changeTab} items={[
           { value: 'posts', label: t('circles.tab.posts'), panel: (

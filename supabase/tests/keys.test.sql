@@ -91,12 +91,14 @@ select throws_ok($$ select pg_temp.plant('80000000-0000-0000-0000-0000000000c1',
   'never to a non-member');
 select lives_ok($$ update public.audience_epochs set commit = repeat('E', 43) where audience_id = '80000000-0000-0000-0000-0000000000c1' $$,
   'a member''s attempt to rewrite the owner''s record touches nothing');
-select lives_ok($$ update public.audience_keys set sealed = '{"v":2}' where audience_id = '80000000-0000-0000-0000-0000000000c1' and sealed_by = pg_temp.uid('mallory') $$,
-  'a sealer may re-sign its own delivery');
-select throws_ok($$ update public.audience_keys set epoch = 2 where audience_id = '80000000-0000-0000-0000-0000000000c1' and sealed_by = pg_temp.uid('mallory') $$,
-  '42501', null, 'but cannot move it to another epoch');
-select throws_ok($$ update public.audience_keys set recipient_id = pg_temp.uid('alice') where audience_id = '80000000-0000-0000-0000-0000000000c1' and sealed_by = pg_temp.uid('mallory') $$,
-  '42501', null, 'or to another recipient');
+-- Security re-review R-K-3: a relaying member may no longer rewrite its delivery (it could keep replacing a
+-- key with garbage); only key authorities re-sign theirs.
+select results_eq($$ with u as (update public.audience_keys set sealed = '{"v":2}' where audience_id = '80000000-0000-0000-0000-0000000000c1' and sealed_by = pg_temp.uid('mallory') returning 1) select count(*)::int from u $$,
+  array[0], 'R-K-3: a relaying member cannot rewrite its own delivery');
+select results_eq($$ with u as (update public.audience_keys set epoch = 2 where audience_id = '80000000-0000-0000-0000-0000000000c1' and sealed_by = pg_temp.uid('mallory') returning 1) select count(*)::int from u $$,
+  array[0], 'nor move it to another epoch');
+select results_eq($$ with u as (update public.audience_keys set recipient_id = pg_temp.uid('alice') where audience_id = '80000000-0000-0000-0000-0000000000c1' and sealed_by = pg_temp.uid('mallory') returning 1) select count(*)::int from u $$,
+  array[0], 'or to another recipient');
 select lives_ok($$ update public.audience_keys set sealed = '{"v":3}' where audience_id = '80000000-0000-0000-0000-0000000000c1' and sealed_by = pg_temp.uid('alice') $$,
   'a member''s update of the owner''s deliveries touches nothing');
 select pg_temp.login('alice');

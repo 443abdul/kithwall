@@ -77,3 +77,42 @@ export function verifyEpochRecord(signPub: Uint8Array, rec: EpochRecord, sig: st
   }
   return edVerifyB64(sig, msg, signPub);
 }
+
+/**
+ * Signed admin grants (security review R-K-2). Promoting someone to admin of a group, event or chat makes
+ * them a key authority, so the promotion is signed by the identity key of the admin (or owner) who made it:
+ *
+ *   sig = Ed25519(IK_sig of grantedBy, canonicalJson({ d:"kithwall/v1/admin-grant", audienceId, memberId, grantedBy }))
+ *
+ * Clients count an admin as a key authority only when a chain of valid grants leads back to the audience
+ * owner, each checked against the PINNED identity key of its signer, so the server cannot make a puppet
+ * an admin.
+ */
+export interface AdminGrant {
+  audienceId: string;
+  memberId: string;
+  grantedBy: string;
+}
+
+function grantMessage(g: AdminGrant): Uint8Array {
+  if (typeof g !== 'object' || g === null) invalid('grant must be an object');
+  assertString(g.audienceId, 'audienceId');
+  assertString(g.memberId, 'memberId');
+  assertString(g.grantedBy, 'grantedBy');
+  return utf8(canonicalJson({ d: 'kithwall/v1/admin-grant', audienceId: g.audienceId, memberId: g.memberId, grantedBy: g.grantedBy }));
+}
+
+export function signAdminGrant(signPriv: Uint8Array, g: AdminGrant): string {
+  return b64u.encode(edSign(grantMessage(g), signPriv));
+}
+
+/** Never throws; false on any problem. */
+export function verifyAdminGrant(signPub: Uint8Array, g: AdminGrant, sig: string): boolean {
+  let msg: Uint8Array;
+  try {
+    msg = grantMessage(g);
+  } catch {
+    return false;
+  }
+  return edVerifyB64(sig, msg, signPub);
+}

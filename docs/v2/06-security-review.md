@@ -587,3 +587,252 @@ identity findings (K1, K2, W2, C1, L9, L11, L12, I6, I7) are tracked separately.
 | L14 | Fixed | Tag builds fail without the upload key; local release builds need `KITHWALL_ALLOW_DEBUG_SIGNING=true`; wrapper checksum + `wrapper-validation`. |
 | L15 | Fixed | Notification intents carry a per-install token; `kw_url`/`kw_tag` from other apps are ignored; WebView data cleared on wipe. |
 | I1, I3 | Fixed | TRUNCATE/TRIGGER/REFERENCES revoked; `kw.rate_limit` serialised per user and action. |
+
+## 10. Re-review (HEAD `760720d`, 2026-10-21)
+
+**Method**
+
+- Re-ran the original attacker probes (as `authenticated` with forged JWT claims, every probe in
+  `BEGIN … ROLLBACK`) against the local Supabase with all eight `20261028*` migrations applied. The applied
+  function bodies were checked against the committed files.
+- `supabase/tests/authz.test.sql` passes (1..68, all ok). `authority.test.ts` and `pins.test.ts` pass
+  16/16. `packages/crypto` passes 143/143.
+- Live route probes on a local dev server (port 3081), then cleaned up. One `altcha_spent` row and a few
+  `anon_rate_events` rows from the proof-of-work replay test remain in the **local** DB only.
+- Full git-history secret re-scan, including the GitHub `refs/pull/*` refs.
+- Probe scripts and outputs:
+  `[local scratch folder]`.
+
+### 10.1 Verdicts on the original findings
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| K1 | **Partly fixed** | Malicious member is closed. Probes: a member planting a future epoch, planting the current epoch before its record, inserting into `audience_epochs`, calling the record/advance RPCs, bumping `current_epoch`, self-promoting to admin, re-signing the owner's record, deleting the owner's deliveries: all refused. `authority.ts:71-76` adopts only keys matching a signed epoch record; `ensureOwn`/`storeFor` no longer adopt or silently keep planted keys (`keyring.ts:256-288`). The operator variant remains: see R-K-1 and R-K-2. |
+| K2 | **Fixed** (stolen-session threat) | Every direct path is refused with "identity keys can only change through a key change signed by the old key": aal1, aal2, `key_version` only, upsert, even `service_role`. `apply_identity_key_change` is not executable by `authenticated`. The route `/api/account/identity-key` requires aal2 when enrolled, a single-use `rotate_identity` proof of key, a ±10 min timestamp, and a signature by the current key over `{userId, newSignPub, newKxPub, at}`. The row is locked and `oldSignPub` must equal the current key, so there is no replay or race. TOFU pins live in the vault; sealing to an unvouched change stops. |
+| W2 | **Fixed** | Passkey add requires an identity-key signature bound to the WebAuthn challenge (`credentials-server.ts:11-19`), and passphrase enable requires an `add_credential` proof of key. Both send a server-only `security_notice` plus an email. The proof does not stop XSS, which runs inside the unlocked page; that is inherent. |
+| D1 | **Fixed** (plus production config) | `pubdelete = f` on the publication and `pokes` removed. The remaining tables publish INSERT/UPDATE only, under RLS, with the default replica identity. The `db:<uid>` topic has SELECT-only owner RLS with a strict lowercase-UUID parse. A could not read `db:B`, and could not send on `db:B`, `db:A`, `inbox:B` or `ring:B`. The payload is just the table name. **Production must enable "Private channels only"** (`private_only` is still `f` locally). |
+| D2 | **Fixed** | A stranger adding B (`requests_from='nobody'`) is refused with `not_connected`: by direct insert, by `create_conversation`, and by adding B to an existing chat. Member identity is immutable, and group/event adds are friends-only. `may_signal(B)` and `shares_conversation(A,B)` return false. `recovery_request`/`recovery_trustee` notifications from clients are refused. After a block, ring and signal rights are lost. |
+| D3 | **Fixed** (documented residual) | A fresh stranger sees 0 of 49 profiles. `find_profile` matches the exact handle only, returns nothing for blocked users, and allows 300 calls per hour. Residual: connections still see `status`/`created_at`. |
+| D4 | **Fixed** | A forged group report is refused ("cannot report what you cannot see"). On a profile report, `target_owner_id` is server-derived and a forged `stored_envelope` is nulled. |
+| W1 | **Fixed** | `lib/auth/next.ts` was fuzzed with node: tab, newline, backslash, `//`, `/.//`, `/..//`, `javascript:`, U+2028, `%5C`, `%2F%2F` and `/@evil` are all refused or stay on the site. It is used by SignIn and PushManager. |
+| W3 | **Partly fixed** | The lookup no longer branches on account type, decoys are UUIDv4-shaped, it fails closed without a key, and the limit is DB-backed. Residual R-W3 below. |
+| W4 | **Partly fixed** | Proof-of-work is required on both start routes (live: missing, forged and replayed solutions get 400). Cancelled requests no longer count. Trustees are prompted only after the waiting period, at most once per 12 h, with reworded copy. Residual R-W4 below. |
+| N1 | **Fixed in code; needs an Xcode build** | `MainFrameBridgeGate` replaces Capacitor's `bridge` handler in `capacitorDidLoad()`, before any load, and Capacitor never re-adds it. It requires `isMainFrame` plus scheme and host matching `serverURL`/`localURL`. Residual I-N1 below. |
+| N2, L13, L14 | **Fixed** | Bypass secret removed from CI, and `capacitor.config.ts` refuses it under `CI`. All 7 action SHAs match their tags on GitHub. `persist-credentials: false`. CLI pinned. Tag builds need the keystore. Wrapper checksum and validation added. Not done (acknowledged): a protected signing environment and `--ignore-scripts`. **Delete the `VERCEL_AUTOMATION_BYPASS_SECRET` GitHub secret.** |
+| C2 | **Fixed** | Chat previews are fetched only on the "Add link preview" tap. |
+| P1, L5 | **Fixed** | A blocked user sees 0 messages of the 1:1 chat, and media follows. The native wipe clears WebView data on both platforms. Claims reworded. |
+| L1, L3, L7 | **Fixed** (probed) | Self-add refused. Invites can only be shortened. Deletion request at aal1 with TOTP refused. |
+| L4, L8, L10, L15 | **Fixed** (code) | L15: notification intents carry a per-install 32-byte token, compared in constant time. |
+| L6 | **Partly fixed** | `x-real-ip` on Vercel, `TRUSTED_PROXY_HOPS` elsewhere. A self-hosted server with no proxy still trusts a client-sent XFF (document this). The handle-availability limit is still in memory. |
+
+### 10.2 New and residual findings
+
+**R-K-1. High (residual of K1/K2; operator or DB-compromise threat): incoming keys, epoch records and
+content signatures are verified against the server-published `sign_pub`, not the pinned one.**
+
+- **Evidence**: pins are consulted only by `sealGate` and the banner (`pins.ts:80-100`; callers
+  `keyring.ts:305` and `KeyChangeBanner`). Sealer and rotator keys come from `people.get(...).sign_pub` and
+  `freshSignPubs` (`keyring.ts:168-205`). Content signatures are checked against `prof.sign_pub`
+  (`people.ts`).
+- **Exploit**: an attacker with superuser access disables `profiles_guard` and swaps a group admin's or
+  conversation owner's `sign_pub`. They advance the epoch and insert an `audience_epochs` row signed by the
+  swapped key. `recordIsValid` passes, every member **adopts** the operator's epoch key and encrypts the
+  circle or chat to it, and no conflict is raised. Forged posts in that person's name also verify. The only
+  signal is a "safety number changed" banner on that person's profile or 1:1 chat.
+- **Why it matters**: spec §3.6 says the server can't inject a key. That is true for planting, but not for
+  this path.
+- **Fix**: in `ingest`/`judgeKey`, `recordIsValid` and content verification, resolve the signer through
+  the pin (or a `vouchedFrom` chain from it). Treat an unvouched key as unverified: do not adopt its
+  records or keys, and show the content as unverified.
+
+**R-K-2. Medium (operator): "ghost admin".**
+
+- The roster and `owner_id` used by `isKeyAuthority` are server data, with no signed membership log
+  (`keyring.ts:131-153`).
+- An operator can insert a puppet as an active admin, rotate, and members adopt the puppet's key.
+- **Fix**: owner-signed roster or admin entries. At minimum, show a prominent in-chat notice whenever a
+  member or admin is added, and document the limit.
+
+**R-W3. Medium: GoTrue timing still reveals passphrase accounts.**
+
+- Live on the local stack: a wrong password against a real passphrase account's synthetic address took
+  0.11–0.33 s (bcrypt runs); a decoy address took 0.010–0.016 s.
+- Passkey-only accounts have no password and are inferred to answer fast (none exist locally to measure).
+- **Exploit**: list the passphrase-only accounts, then guess passwords against them; GoTrue limits per IP
+  only.
+- **Fix**: proxy the password grant through a server route that runs a constant-cost dummy hash and
+  rate-limits per handle.
+
+**R-W4. Medium: trusted-friend recovery can still be locked.**
+
+- `start_handle_recovery` refuses new requests once an account has 10 open ones
+  (`20261028010500_authz_recovery.sql:114-116`). Each requester may file 2 per account per day, and the
+  requester tag is an HMAC of the **full** IP address (`passkey-server.ts:111-114`).
+- Five IPv4 addresses, or one IPv6 /64, keep the account at the cap indefinitely (requests last 72 h)
+  for about 25 CPU-seconds of proof-of-work. An owner who has lost every device can never start recovery,
+  and friends are prompted for the attacker's oldest request.
+- The recovery-key path (200 per hour per account) can be exhausted the same way at a higher cost.
+- **Fix**:
+  - tag IPv6 clients by /64;
+  - at the cap, let a new request replace the oldest one that hasn't notified friends yet, instead of
+    refusing;
+  - don't count the owner's own successful proof-of-key against per-account limits.
+
+**N-A1. Low: a pending join request to a closed group grants profile visibility and notification-insert
+rights toward its owner, bypassing `requests_from='nobody'`.**
+
+- Cause: `kw.audience_peers` (`20261028010300_authz_profiles.sql:33`), plus `kw.shares_audience`
+  accepting members of any status.
+- Probe: A sent B a `comment` notification with a random object id, which fires a push. It needs the
+  group's UUID; ringing stayed refused.
+- **Fix**: require `status='active'` for these paths.
+
+**N-A2. Low: circle co-members can insert notifications of any type with made-up object ids to members who
+set `requests_from='nobody'`.**
+
+- This is spam or phishing via push.
+- **Fix**: derive notifications server-side from the triggering row, or validate that `object_id` exists
+  and was caused by the actor.
+
+**R-K-3. Low: a malicious member can starve another member of the current key.**
+
+- The member relays garbage for the current recorded epoch before the owner does, and the recipient
+  deletes it as a conflict (`keyring.ts:186-191`).
+- The owner's delivery then hits 23505 and is treated as delivered (`:283`), so the member can keep
+  winning, and can also rewrite its own delivery later.
+- **Fix**: authority deliveries override relays (or include `sealed_by` in the primary key); no content
+  UPDATE for non-authorities.
+
+**R-K-4. Low: demoting an admin can strand members.**
+
+- Their record for the current epoch becomes invalid (`authority.ts:52`), and the owner's redelivery is
+  skipped.
+- **Fix**: rotate on demotion, or let the owner overwrite.
+
+**R-K-5. Low (pre-existing): a session-only attacker can overwrite `key_bundles`.**
+
+- The "owner updates bundle" policy needs no proof of key, so the attacker can destroy the victim's
+  wrapped keys (lockout). They cannot change the published keys.
+- **Fix**: write bundles through a proof-of-key route, or keep previous versions.
+
+**Info**
+
+- **I-N1**: Capacitor iOS synchronous `prompt()` bridge calls (`CapacitorCookies`, `CapacitorHttp`;
+  `WebViewDelegationHandler.swift:271-301`) are not gated by `MainFrameBridgeGate`. Embeds are safe today
+  only because their sandbox lacks `allow-modals` (`Media.tsx:206`). Gate
+  `runJavaScriptTextInputPanel` the same way, and never add `allow-modals` to embeds.
+- **Lookups that still reveal handles and UUIDs**:
+  - the anonymous passphrase lookup and `/api/recovery/account` return a user's UUID for any existing
+    handle (one proof-of-work per call for the latter);
+  - `find_profile` allows 300 lookups an hour per account.
+  - These are handle-existence oracles; acceptable, but note them in the threat model.
+- `requests_from` defaults to `everyone`. Given "safe by default" and the at-risk audience, consider
+  `mutual`.
+- On a misconfigured deployment (no site URL), `friends/start` returns 503 after creating the request row.
+
+### 10.3 Secrets re-scan (full history, 32 commits on all local refs, plus GitHub PR refs)
+
+- **No secrets.** The new commits `a40ba07` and `760720d` were scanned with the same patterns as §7 plus
+  `whsec_`, `rk_live_`, GitHub `ghs_`/`ghu_`/`ghr_`.
+- The only additional hit is `v1,whsec_bG9jYWwt…` (base64 of `local-dev-hook-secret-0123456789abcdef`).
+  - Where: `supabase/config.toml:284`, `docs/deploy.md`, `docs/v2/07-launch.md`; present since `6408e77`
+    (my §7 patterns missed it).
+  - It is a documented local-only value. The hook route accepts raw secrets only outside production.
+  - **Owner check (needs verification, production not accessed): the production `AUTH_HOOK_SECRET` must be
+    a freshly generated secret, not this value.**
+- Other hits are placeholders (`postgres://user:pass@` in this report, `a-test-secret-of-sufficient-length`
+  in a test, `YYYY…`/`ZZZZ…` fixtures) and the RFC test vectors.
+
+**New finding P-1. Medium (maintainer privacy; blocks the "make repository public" step as planned): the
+author rewrite is undone by GitHub pull-request refs.**
+
+- `v2` and `main` now carry only the `443abdul` identity. But GitHub's `refs/pull/1…8/head` (Dependabot
+  PRs) still point at the **pre-rewrite** history.
+- Every PR's parent chain contains 7 commits authored `[old author] <[personal email]>` (`0b76782` …
+  `fc8ffa1`, checked by fetching the refs into a scratch repo).
+- Those refs cannot be deleted with git, so they become public, along with the old code, when the repo is
+  made public. The local `backup/pre-author-rewrite` branch has the same history; do not push it.
+- **Fix**: do not flip this repository to public. Either publish to a **new** repository containing only
+  the rewritten branches and tags, or close the PRs and ask GitHub Support to remove the
+  `refs/pull/*` refs and run garbage collection before making it public.
+- The secret scan of that old history was clean (§7).
+
+### 10.4 Launch verdict: **NO-GO** (one remaining blocker; close to GO)
+
+The Critical and three original High findings are fixed against users and stolen sessions, and confirmed
+by probes. What remains:
+
+**Blocker**
+
+1. **R-K-1 (High)**: verify keys, epoch records and content signatures against the pinned or vouched
+   identity key, not the server-published one.
+   - Without it, the operator (or someone who breaches the DB) can make a whole circle adopt a key they
+     hold, with only a per-contact safety-number banner as warning. That contradicts the published "the
+     server can't inject a key" claim.
+   - The change is narrow (`keyring.ts` `ingest`/`judgeKey`, `authority.ts` `recordIsValid`, and
+     `people.ts` verification). The alternative is for the owner to explicitly accept the risk **and**
+     narrow the claim in `docs/03-spec.md` §3.6, the brief and the transparency copy to "only with a
+     visible safety-number change".
+
+**Launch-day gates (configuration and process, not code)**
+
+- Enable Realtime "Private channels only" in production (D1).
+- Delete the `VERCEL_AUTOMATION_BYPASS_SECRET` GitHub secret (N2).
+- Confirm the production `AUTH_HOOK_SECRET` is not the local dev value.
+- Compile and smoke-test the iOS build to confirm `MainFrameBridgeGate` (N1).
+- Before making the code public: resolve P-1 (publish to a fresh repository, or have GitHub purge the PR
+  refs).
+
+**Strongly recommended before or just after launch**
+
+- R-W4: recovery lockout. Tag IPv6 clients by /64 and let new requests supersede old ones at the cap.
+  This is a small change, and the risk is a targeted denial of recovery to at-risk users.
+- R-W3: route the password grant through the server with a constant-cost hash and a per-handle limit.
+- R-K-2: show a notice when someone is added as a member or admin.
+
+**After launch**: N-A1, N-A2, R-K-3, R-K-4, R-K-5, I-N1 and the Info items.
+
+Once R-K-1 is fixed (or formally risk-accepted with the claims narrowed) and the launch-day gates are
+done, the verdict is **GO**.
+
+## 11. Remediation status: re-review findings (second fix pass, 2026-10-21)
+
+Migrations `20261029000100_keys_roster_signed.sql`, `…000200_authz_recovery_signin.sql` and
+`…000300_authz_notifications.sql`. Database regression tests in `supabase/tests/rereview.test.sql` (53 checks;
+each block replays a re-review probe) plus the updated `handle_recovery.test.sql` and `keys.test.sql`. The
+original probe scripts (`…/secreview/rereview/`) were re-run against the fixed database and now fail where they
+used to succeed (K1.9 relay rewrite: 0 rows; N-A1 owner profile: 0 rows and the notification is refused; N-A2:
+refused).
+
+| ID | Status | What changed | Tests |
+|---|---|---|---|
+| R-K-1 | **Fixed** (TOFU residual) | `people.get(id)` carries the identity keys this device TRUSTS, resolved through the pins (`lib/keys/pins.ts` `resolveSigners`, `pinsCore.trustedKeysFor`): the pinned key, or a newer one that a chain of signed key changes from the pin vouches for. My own keys come from my unlocked identity. A published key that nothing vouches for is ignored. The keyring opens seals and checks epoch records with the pinned key (`authority.judgeIncoming`), so the operator's key is not adopted. The delivery waits (it is retried once the user accepts the change), and the circle or chat shows "Kithwall didn't use a key from …" with a link to the safety number. Every other signature check that goes through `people` uses the trusted key too: posts, comments, messages, profile info, notifications, call signalling, recovery shares and friend notes. Sealing (notifications, recovery shares) uses the pinned kx key. The safety-number banner adds "anything signed with the new key shows as unverified". People are pinned on first sight whenever they are loaded. If the pins can't be read, people stay "loading" (fail closed). | `lib/keys/pinned.test.ts` (attack replay with real crypto, including the "published key" control). `lib/keys/keyswap.e2e.test.ts`: a superuser disables `profiles_guard`, swaps an admin's keys, advances the epoch with a record signed by the swapped key and seals that key to a member; the member, reading through RLS with its pins, does NOT adopt it and raises the identity warning, while trusting the published key would have adopted it. Browser run: the owner sees the warning in the circle and "safety number changed" on the admin's profile. |
+| R-K-2 | **Fixed** (operator residuals below) | Admin promotions carry a signed grant (`audience_members.grant_by` / `grant_sig`, `signAdminGrant` over audience, member and granter). The database requires the granter to be the caller and a key authority, and `kw.is_key_authority` ignores admins without a grant. Clients count an admin as a key authority only with a grant chain back to the owner, verified against pinned keys (`authority.verifiedAdmins`). Unsigned admins show as "Admin (unconfirmed)", with a "Confirm admin" action. Content-free server notices for every join, promotion and change of owner: notice messages in group chats, `audience_roster_notices` for circles and events; shown in the chat timeline (promotions highlighted) and on the circle page. Each device remembers each circle's and chat's key authorities in its vault (`rosterpins`) and shows a prominent "New admin: …" warning for anyone new (not for admins it promoted itself). | `rereview.test.sql` R-K-2 block; `pinned.test.ts` grant chains; browser run. |
+| R-W4 | **Fixed** | Requester tags are per IPv4 address or IPv6 /64 (`lib/auth/ip-bucket.ts`). One open request per requester per account (a new one supersedes it). At the cap of 10 open requests a new request supersedes the oldest instead of being refused. The account-wide limit on recovery-key lookups is gone (per-client 12/h plus proof-of-work remain). Other people's requests can no longer get the owner refused. | `handle_recovery.test.sql` (the cap no longer refuses; one open request per requester); `ip-bucket.test.ts`; `recovery.e2e.test.ts` "R-W4" (three addresses in one /64 count as one requester, so the third is refused; with 10 IPv4 requesters at the cap, the owner's request is still accepted). |
+| R-W3 | **Fixed** | `POST /api/auth/passkey/passphrase/signin {email, authKey}`: `public.passphrase_password_ok()` runs exactly one bcrypt (cost 10) for every input. Limits per client (30 / 10 min), per handle per client (10 / 15 min) and per handle (100 / h), then a one-time session token. The browser no longer calls GoTrue's password grant for handle sign-in or passphrase sign-up. Passkey-only accounts get a random, never-used GoTrue password (new accounts in `createAuthUser`, existing ones in the migration), so a direct GoTrue grant costs one bcrypt for every synthetic account too. **Timing** (local, wrong passphrase, median, min–max): before, GoTrue grant: passphrase account 112 ms (108–179), unknown handle 15 ms (7–22). After, the route: passphrase account 209 ms (176–329), passkey-only 208 ms (163–362), passkey-only with random password 210 ms (182–353), unknown handle 202 ms (165–374); n = 15 each. The e2e test measured 232 vs 214 ms (ratio 1.08). | `rereview.test.sql` R-W3 block; `passphrase-signin.e2e.test.ts`; browser run (sign-in calls only `/passphrase/signin`). |
+| N-A1 | **Fixed** | `kw.audience_peers` and `kw.shares_audience`: a pending join request gives nothing. An invitation still shows the owner and the inviter, and lets them notify the invitee. | `rereview.test.sql` N-A1 block |
+| N-A2 | **Fixed** | Restrictive policy "notifications describe something real" (`kw.notification_ok`): clients may insert only the types the app sends (friend request/accept, group/event invite, tag, comment, like, recovery_trustee), each tied to a real object the actor caused: their comment or like on that post or photo, their tag, the invitation, the friendship or the share. Everything else is server-made. | `rereview.test.sql` N-A2 block; the push, rls and native_push tests now use real notifications. |
+| R-K-3 | **Fixed** | A delivery by a key authority replaces a relay for the same recipient and epoch (trigger). Relays don't count as delivered for the authority (`kw.key_delivered`), and only authorities may rewrite their deliveries. | `rereview.test.sql` R-K-3 block; `keys.test.sql` |
+| R-K-4 | **Fixed** | Demoting an admin rotates the key (`groups.setRole`). An admin's device also rotates whenever the current epoch's record no longer counts on it (`keyring.currentRecordStale`, run by circle housekeeping): its rotator was demoted or left, or it was signed with an untrusted key. | Browser run: demote → epoch + 1, and the remaining member still reads the circle. |
+| R-K-5 | **Fixed** | The "owner updates bundle" policy is gone. `/api/account/bundle` (proof-of-key purpose `update_bundle`, aal2 when enrolled, identity part unchanged) is the only client path; password/passphrase changes and new recovery keys use it. | `rereview.test.sql` R-K-5 block; `passkey.e2e` and `recovery.e2e` |
+| I-N1 | **Fixed in code; needs an Xcode build** | `MainFramePromptGate` wraps Capacitor's `WKUIDelegate`. `window.prompt()` (the synchronous CapacitorCookies / CapacitorHttp bridge) is answered with nil unless it comes from the main frame of the app's origin; every other UI-delegate call is forwarded. The origin check (`AppOrigins`) is shared with `MainFrameBridgeGate`. | Not compiled here. |
+
+**Residuals and notes**
+
+- Trust on first use: a device that has never seen someone pins whatever the server publishes at that
+  moment. Pins live in the encrypted vault, so an operator who deletes the `keypins` namespace (or rolls the
+  vault back) makes the device pin again on next sight. Comparing safety numbers is the defence for high-risk
+  contacts.
+- The roster is still server data. An operator can replay an old grant (re-promote a former admin) or hand a
+  group chat to a puppet owner. Members get the server notice (unless the operator suppresses it) and,
+  independently, their device's own "New admin" warning, but keys from that authority are adopted meanwhile.
+  Admins promoted by someone who has since lost their admin role stop counting until the owner confirms them.
+- Existing admins have no grant. After this migration they are not key authorities until the owner taps
+  "Confirm admin" (Members tab). Owners keep full control.
+- A direct GoTrue password grant still answers fast for addresses without an auth user (unknown handles, and
+  v1 email accounts, whose handle maps to a synthetic address that doesn't exist). It can therefore tell a
+  Kithwall 2 account from "no account, or a v1 email account". It no longer tells passphrase accounts from
+  passkey accounts.
+- The passphrase route's per-handle limit can be used to slow one person's passphrase sign-in for up to an hour
+  (100 attempts an hour overall). Passkeys and the recovery paths are unaffected.
+- `requests_from` still defaults to `everyone` (unchanged, as decided).

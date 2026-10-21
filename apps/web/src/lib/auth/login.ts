@@ -2,7 +2,7 @@
 // Login with optional MFA (spec §3.3, §7). The database requires an aal2 session once a user has a
 // verified TOTP factor (migration 20261018000100), so for those users the key bundle is invisible
 // until the code is entered: we sign in, ask for the code, then load and unlock the keys.
-import { getSession, initSession, signIn, unlock, type SessionStatus } from '../keys/session';
+import { getSession, initSession, signIn, unlock, type PasswordGrant, type SessionStatus } from '../keys/session';
 import { sb } from '../supabase';
 import { markRecoveryNudge } from '../../components/onboarding/nudges';
 import { AccountError } from './account';
@@ -22,11 +22,11 @@ export async function mfaRequired(): Promise<boolean> {
   return data.nextLevel === 'aal2' && data.currentLevel !== 'aal2';
 }
 
-export async function logIn(email: string, password: string, remember: boolean): Promise<LoginOutcome> {
+export async function logIn(email: string, password: string, remember: boolean, grant?: PasswordGrant): Promise<LoginOutcome> {
   pending = null;
   let st: SessionStatus;
   try {
-    st = await signIn(email.trim(), password, remember);
+    st = await signIn(email.trim(), password, remember, grant);
   } catch (e) {
     // A v1 sign-up whose email was never confirmed: say so instead of a generic failure.
     if (isUnconfirmedEmailError(e)) throw new AccountError('email_unconfirmed', (e as Error).message);

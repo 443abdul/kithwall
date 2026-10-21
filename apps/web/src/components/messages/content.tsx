@@ -36,6 +36,13 @@ export function eventLine(p: ChatPayload, actor: string, nameOf: (id: string) =>
       if (e.state === 'ringing') return t('calls.event.ringing', { name: actor });
       if (e.state === 'missed') return e.mine ? t('calls.event.noAnswer', { name: actor }) : t(e.video ? 'calls.event.missedVideo' : 'calls.event.missedVoice', { name: actor });
       return t(e.video ? 'calls.event.video' : 'calls.event.voice', { name: actor });
+    // Server notices about who may read and hand out this chat's keys (security re-review R-K-2).
+    case 'roster': {
+      const person = nameOf(e.member);
+      if (e.what === 'owner') return t('security.roster.owner', { person });
+      if (e.what === 'admin') return t('security.roster.admin', { name: actor, person });
+      return person === actor ? t('security.roster.joined', { person }) : t('security.roster.added', { name: actor, person });
+    }
     default: return null;
   }
 }

@@ -240,7 +240,8 @@ function Thread({ c }: { c: ConversationSummary }) {
 
       <div ref={scroller} className="k-chat-scroll" onScroll={onScroll} role="log" aria-label={t('messages.threadLabel', { title })} aria-live="polite" aria-relevant="additions">
         <div className="k-chat-sealed k-small"><Icon name="lock" /> {t('messages.sealedBanner')}</div>
-        <ChatKeyNotices audienceId={c.audience_id} peer={!isGroup && others.length === 1 ? others[0]! : null} name={title} />
+        <ChatKeyNotices audienceId={c.audience_id} peer={!isGroup && others.length === 1 ? others[0]! : null} name={title}
+          authorities={!c.isDm ? c.keyAuthorities : null} />
         {msgs.isFetchingNextPage ? <div className="k-chat-center k-chat-older"><Spinner /></div> : null}
         {msgs.hasOlder && !msgs.isFetchingNextPage ? (
           <div className="k-chat-center k-chat-older"><Button size="sm" variant="ghost" onClick={() => void msgs.loadOlder()}>{t('messages.loadOlder')}</Button></div>
@@ -260,7 +261,13 @@ function Thread({ c }: { c: ConversationSummary }) {
             if (it.kind === 'event') {
               const actor = l.sender === userId ? t('messages.you') : nameOf(l.sender);
               const txt = l.payload ? eventLine(l.payload, actor, nameOf, list, t) : null;
-              return txt ? <li key={it.key} className="k-chat-event" id={`m-${l.id}`}>{txt}</li> : null;
+              // Someone was made an admin or took the chat over: they can hand out keys (R-K-2), so it stands out.
+              const loud = l.payload?.event?.kind === 'roster' && l.payload.event.what !== 'joined';
+              return txt ? (
+                <li key={it.key} className={loud ? 'k-chat-event is-security' : 'k-chat-event'} id={`m-${l.id}`}>
+                  {loud ? <Icon name="shield" /> : null}{txt}
+                </li>
+              ) : null;
             }
             return (
               <Bubble key={it.key} l={l} c={c} first={it.first} last={it.last} mine={l.sender === userId} isGroup={isGroup}

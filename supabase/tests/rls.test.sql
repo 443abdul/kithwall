@@ -173,7 +173,7 @@ select throws_ok($$ insert into public.messages (id, conversation_id, sender_id,
 select throws_ok($$ insert into public.notifications (recipient_id, actor_id, type)
   values (pg_temp.uid('bob'), pg_temp.uid('carol'), 'poke') $$, '42501', null, 'strangers cannot notify people');
 select pg_temp.login('alice');
-select lives_ok($$ insert into public.notifications (recipient_id, actor_id, type) values (pg_temp.uid('bob'), pg_temp.uid('alice'), 'poke') $$,
+select lives_ok($$ insert into public.notifications (recipient_id, actor_id, type, object_kind, object_id) values (pg_temp.uid('bob'), pg_temp.uid('alice'), 'friend_accept', 'profile', pg_temp.uid('alice')) $$,
   'friends can notify each other');
 select throws_ok($$ insert into public.pokes (from_id, to_id) values (pg_temp.uid('alice'), pg_temp.uid('carol')) $$,
   '42501', null, 'cannot poke a stranger');

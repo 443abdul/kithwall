@@ -68,7 +68,9 @@ export {
 
 export { encryptBlob, decryptBlob } from './blob';
 
-export { type EpochRecord, epochCommit, keyMatchesCommit, signEpochRecord, verifyEpochRecord } from './epoch';
+export {
+  type EpochRecord, type AdminGrant, epochCommit, keyMatchesCommit, signEpochRecord, verifyEpochRecord, signAdminGrant, verifyAdminGrant,
+} from './epoch';
 
 export { FILE_CHUNK_SIZE, encryptFile, decryptFile } from './files';
 

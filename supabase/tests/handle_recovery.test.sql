@@ -115,14 +115,31 @@ select lives_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia')
 select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('K', 43), 'tag-attacker-00000001') $$, 'P0429', null,
   'W4: a fifth request from one requester in a day is refused');
 
--- At most 10 OPEN requests per account (cancelled ones don't count).
+-- At most 10 OPEN requests per account, but the cap never refuses (security re-review R-W4): ten
+-- requesters used to hold an account at the cap for 72 hours, so its owner could never start a recovery.
+-- Now a new request at the cap supersedes the oldest open one, and one requester holds at most one.
 select pg_temp.su();
-update public.recovery_requests set status = 'cancelled' where owner_id = pg_temp.uid('nia');
+update public.recovery_requests set status = 'cancelled' where owner_id = pg_temp.uid('nia') and status = 'pending';
 select pg_temp.service();
 select lives_ok($$ select (public.start_handle_recovery(pg_temp.uid('nia'), repeat('L', 43), 'tag-' || g || '-xxxxxxxxxxxxxx')).request_id
                    from generate_series(1, 10) g $$, 'ten open requests from ten requesters');
-select throws_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('M', 43), 'tag-eleven-xxxxxxxxxxx') $$, 'P0429', null,
-  'W4: an eleventh open request for one account is refused');
+select pg_temp.su();
+select is((select count(*)::int from public.recovery_requests where owner_id = pg_temp.uid('nia') and status = 'pending'), 10, 'the account is at the cap');
+select pg_temp.service();
+create temp table owner_req as select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('M', 43), 'tag-owner-new-device-01');
+grant select on owner_req to service_role, authenticated;
+select pg_temp.su();
+select is((select status from public.recovery_requests where id = (select request_id from owner_req)), 'pending',
+  'R-W4: at the cap, the owner''s new request is accepted, not refused');
+select is((select count(*)::int from public.recovery_requests where owner_id = pg_temp.uid('nia') and status = 'pending'), 10,
+  'R-W4: ...and the oldest open request made room (still 10 open)');
+select pg_temp.service();
+select lives_ok($$ select * from public.start_handle_recovery(pg_temp.uid('nia'), repeat('N', 43), 'tag-3-xxxxxxxxxxxxxx') $$,
+  'a second request from one of the ten requesters');
+select pg_temp.su();
+select is((select count(*)::int from public.recovery_requests where owner_id = pg_temp.uid('nia') and status = 'pending'
+             and requester_tag = 'tag-3-xxxxxxxxxxxxxx'), 1, 'R-W4: one requester holds at most one open request per account');
+select ok((select count(*) from public.recovery_requests where owner_id = pg_temp.uid('nia') and status = 'pending') <= 10, 'never more than 10 open');
 
 -- Once the waiting period is over, the friends get ONE prompt per account (however many requests are open).
 select pg_temp.su();

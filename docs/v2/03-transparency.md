@@ -60,6 +60,15 @@ recovery), pruned after 2 days by `kithwall-recovery-notify`; and on `public.rec
 (time). The transparency page now says "a keyed hash that changes daily" instead of "never store IP
 addresses" (security review P1).
 
+**Added by the re-review fixes** (`20261029000100_keys_roster_signed.sql`, classified in the map): on
+`public.audience_members`, `grant_by` (id: who made the person an admin) and `grant_sig` (plaintext: that
+admin's signature on the promotion, security re-review R-K-2); and `public.audience_roster_notices`
+(`social`, owner predicate `member_id` or `actor_id`): content-free notices that someone joined, became an
+admin or took over a circle or event (`kind`), kept until the circle or event is deleted. Group chats get
+the same notices as server notice messages (`public.messages.notice`, already mapped). The client keeps
+its own record of each circle's key authorities in the encrypted vault (namespace `rosterpins`), next to the
+identity-key pins (`keypins`); the server never sees either.
+
 ## 2. Safety numbers (`/u/<handle>/verify`)
 
 - `packages/crypto/src/safety.ts`: `safetyNumber` (existing, Signal-style, 5200 × SHA-512, order-independent),

@@ -3,7 +3,7 @@
 // See docs/03-spec.md §3.1–3.4 and §3.13.
 import {
   b64u, createKeyBundle, deriveFromPassword, deriveCacheKey, unlockWithPassword,
-  rewrapPassword, rotateRecovery, unlockWithAmk, unlockWithPrf, KithwallCryptoError,
+  rewrapPassword, rotateRecovery, signChallenge, unlockWithAmk, unlockWithPrf, KithwallCryptoError,
   type Identity, type KeyBundle, type Unlocked,
 } from '@kithwall/crypto';
 import { useSyncExternalStore } from 'react';
@@ -12,6 +12,7 @@ import type { ProfileRow } from '../types';
 import { keyring } from './keyring';
 import { deviceStore } from './device';
 import { clientRpId, evaluatePrf } from '../auth/passkey-client';
+import { authedPost } from '../auth/api';
 
 export type SessionStatus =
   | 'loading'     // checking for an existing session
@@ -204,13 +205,24 @@ function unlockFromAmk(userId: string, bundle: KeyBundle, amkBytes: Uint8Array):
   return unlockWithAmk(userId, bundle, amkBytes);
 }
 
-export async function signIn(email: string, password: string, remember: boolean): Promise<SessionStatus> {
-  set({ error: null });
-  const { authKey, passwordKEK } = await deriveFromPassword(email, password);
+/**
+ * Starts the auth session for (email, authKey) and returns the user id. The default is GoTrue's password
+ * grant (v1 email accounts); passphrase accounts go through the server instead (security re-review R-W3,
+ * lib/auth/account-impl.ts passphraseGrant), which mints the session after a constant-cost check.
+ */
+export type PasswordGrant = (email: string, authKey: string) => Promise<string>;
+
+const gotrueGrant: PasswordGrant = async (email, authKey) => {
   const res = await sb().auth.signInWithPassword({ email, password: authKey });
   if (res.error || !res.data.user) throw new Error(res.error?.message === 'Invalid login credentials'
     ? 'The email or password you entered is incorrect.' : (res.error?.message ?? 'Login failed'));
-  const userId = res.data.user.id;
+  return res.data.user.id;
+};
+
+export async function signIn(email: string, password: string, remember: boolean, grant: PasswordGrant = gotrueGrant): Promise<SessionStatus> {
+  set({ error: null });
+  const { authKey, passwordKEK } = await deriveFromPassword(email, password);
+  const userId = await grant(email, authKey);
   const bundle = await fetchBundle(userId);
   if (!bundle) { set({ status: 'setup', userId, email }); return 'setup'; }
   const u = unlockWithPassword(userId, bundle, passwordKEK);
@@ -260,12 +272,24 @@ export async function completeSetup(args: { password: string; username: string; 
   return recoveryPhrase;
 }
 
+/**
+ * Store a new key bundle (a new password/passphrase wrap or recovery key) through /api/account/bundle with a
+ * proof-of-key signed by this identity (security re-review R-K-5: a session alone can't write bundles).
+ */
+async function putBundle(next: KeyBundle, signPriv: Uint8Array): Promise<void> {
+  const { data, error } = await sb().rpc('create_key_challenge', { purpose: 'update_bundle' });
+  if (error) throw new Error(error.code === 'P0429' ? 'Too many attempts. Please wait a little.' : error.message);
+  const ch = (Array.isArray(data) ? data[0] : data) as { id: string; nonce: string } | undefined;
+  if (!ch) throw new Error('No confirmation was issued. Please try again.');
+  await authedPost('/api/account/bundle', { challengeId: ch.id, signature: signChallenge(signPriv, ch.nonce), bundle: next });
+}
+
 /** Used by password change, phrase recovery and trusted-friend recovery. */
 export async function setNewPassword(userId: string, email: string, bundle: KeyBundle, u: Unlocked, newPassword: string) {
   const { authKey, passwordKEK } = await deriveFromPassword(email, newPassword);
   const next: KeyBundle = { ...bundle, amkByPassword: rewrapPassword(userId, u.amk, passwordKEK) };
   // Update the bundle first: if the auth update then fails, the old password still unlocks via recovery.
-  must(await sb().from('key_bundles').update({ bundle: next, updated_at: new Date().toISOString() }).eq('user_id', userId));
+  await putBundle(next, u.identity.signPriv);
   const res = await sb().auth.updateUser({ password: authKey });
   if (res.error) throw new Error(res.error.message);
   await becomeReady(userId, email, u, false);
@@ -290,7 +314,7 @@ export async function newRecoveryPhrase(): Promise<{ phrase: string; rk: Uint8Ar
   await sb().rpc('mark_recovery_saved', { p_saved: false }).then(() => undefined, () => undefined);
   const r = rotateRecovery(userId, unlocked.amk);
   const next: KeyBundle = { ...bundle, amkByRecovery: r.amkByRecovery, rkCommitment: r.rkCommitment };
-  must(await sb().from('key_bundles').update({ bundle: next, updated_at: new Date().toISOString() }).eq('user_id', userId));
+  await putBundle(next, unlocked.identity.signPriv);
   return { phrase: r.recoveryPhrase, rk: r.rk };
 }
 

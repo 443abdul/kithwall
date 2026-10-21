@@ -117,11 +117,11 @@ select pg_temp.login('alice');
 select lives_ok($$ insert into public.messages (id, conversation_id, sender_id, epoch, envelope)
   values ('62000000-0000-0000-0000-000000000001', '61000000-0000-0000-0000-000000000001', pg_temp.uid('alice'), 1, '{"ct":"x"}') $$,
   'a message to an app-only person inserts');
-select lives_ok($$ insert into public.notifications (id, recipient_id, actor_id, type)
-  values ('63000000-0000-0000-0000-000000000001', pg_temp.uid('bob'), pg_temp.uid('alice'), 'poke') $$,
+select lives_ok($$ insert into public.notifications (id, recipient_id, actor_id, type, object_kind, object_id)
+  values ('63000000-0000-0000-0000-000000000001', pg_temp.uid('bob'), pg_temp.uid('alice'), 'friend_accept', 'profile', pg_temp.uid('alice')) $$,
   'a notification to an app-only person inserts');
-select lives_ok($$ insert into public.notifications (id, recipient_id, actor_id, type)
-  values ('63000000-0000-0000-0000-000000000002', pg_temp.uid('carol'), pg_temp.uid('alice'), 'poke') $$,
+select lives_ok($$ insert into public.notifications (id, recipient_id, actor_id, type, object_kind, object_id)
+  values ('63000000-0000-0000-0000-000000000002', pg_temp.uid('carol'), pg_temp.uid('alice'), 'friend_accept', 'profile', pg_temp.uid('alice')) $$,
   'a notification to someone with no devices inserts');
 select pg_temp.su();
 select is((select array_agg(convert_from(body, 'utf8')::jsonb order by id) from net.http_request_queue where id > (select id from q0)),

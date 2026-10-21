@@ -11,6 +11,9 @@ import WebKit
 // MARK: - Bridge view controller
 
 class KithwallBridgeViewController: CAPBridgeViewController {
+    /// WKWebView.uiDelegate is weak: keep the prompt gate alive for the controller's lifetime.
+    private var promptGate: MainFramePromptGate?
+
     override func capacitorDidLoad() {
         restrictBridgeToMainFrame()
         bridge?.registerPluginInstance(KithwallShellPlugin())
@@ -29,29 +32,85 @@ class KithwallBridgeViewController: CAPBridgeViewController {
         let handler = bridge.webViewDelegationHandler
         let controller = handler.contentController
         controller.removeScriptMessageHandler(forName: "bridge")
-        controller.add(MainFrameBridgeGate(target: handler, serverURL: bridge.config.serverURL, localURL: bridge.config.localURL), name: "bridge")
+        let origins = AppOrigins(serverURL: bridge.config.serverURL, localURL: bridge.config.localURL)
+        controller.add(MainFrameBridgeGate(target: handler, origins: origins), name: "bridge")
+        // Security re-review I-N1: Capacitor also answers synchronous bridge calls (CapacitorCookies get/set,
+        // CapacitorHttp) through window.prompt(), i.e. the WKUIDelegate text-input panel, which the "bridge"
+        // message gate above never sees. Gate that path the same way.
+        let gate = MainFramePromptGate(target: handler, origins: origins)
+        promptGate = gate
+        webView?.uiDelegate = gate
+    }
+}
+
+/// The app's own origins (the live server URL and the bundled offline page).
+struct AppOrigins {
+    private let allowed: [(scheme: String, host: String, port: Int)]
+
+    init(serverURL: URL, localURL: URL) {
+        allowed = [serverURL, localURL].compactMap { u -> (scheme: String, host: String, port: Int)? in
+            guard let s = u.scheme?.lowercased(), let h = u.host?.lowercased() else { return nil }
+            return (s, h, u.port ?? 0)
+        }
+    }
+
+    /// True only for the top-level document of one of the app's origins.
+    func admits(_ frame: WKFrameInfo) -> Bool {
+        guard frame.isMainFrame else { return false }
+        let o = frame.securityOrigin
+        let scheme = o.protocol.lowercased(), host = o.host.lowercased()
+        return allowed.contains(where: { $0.scheme == scheme && $0.host == host && ($0.port == 0 || o.port == 0 || $0.port == o.port) })
     }
 }
 
 /// Forwards bridge messages to Capacitor only from the top-level document of the app's origin.
 final class MainFrameBridgeGate: NSObject, WKScriptMessageHandler {
     private let target: WKScriptMessageHandler
-    private let allowed: [(scheme: String, host: String, port: Int)]
+    private let origins: AppOrigins
 
-    init(target: WKScriptMessageHandler, serverURL: URL, localURL: URL) {
+    init(target: WKScriptMessageHandler, origins: AppOrigins) {
         self.target = target
-        self.allowed = [serverURL, localURL].compactMap { u -> (scheme: String, host: String, port: Int)? in
-            guard let s = u.scheme?.lowercased(), let h = u.host?.lowercased() else { return nil }
-            return (s, h, u.port ?? 0)
-        }
+        self.origins = origins
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame else { return }
-        let o = message.frameInfo.securityOrigin
-        let scheme = o.protocol.lowercased(), host = o.host.lowercased()
-        guard allowed.contains(where: { $0.scheme == scheme && $0.host == host && ($0.port == 0 || o.port == 0 || $0.port == o.port) }) else { return }
+        guard origins.admits(message.frameInfo) else { return }
         target.userContentController(userContentController, didReceive: message)
+    }
+}
+
+/// Wraps Capacitor's WKUIDelegate. window.prompt() from anything but the main frame of the app's origin is
+/// answered with nil (no panel, and Capacitor's synchronous cookie/HTTP bridge never sees it); every other
+/// UI delegate call goes to Capacitor unchanged. Never add `allow-modals` to embed iframes either.
+final class MainFramePromptGate: NSObject, WKUIDelegate {
+    private weak var target: (NSObject & WKUIDelegate)?
+    private let origins: AppOrigins
+
+    init(target: NSObject & WKUIDelegate, origins: AppOrigins) {
+        self.target = target
+        self.origins = origins
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        guard origins.admits(frame), let target = target else {
+            completionHandler(nil)
+            return
+        }
+        // Optional protocol requirement: nil when Capacitor doesn't implement it (then answer nil ourselves).
+        if target.webView?(webView, runJavaScriptTextInputPanelWithPrompt: prompt, defaultText: defaultText,
+                           initiatedByFrame: frame, completionHandler: completionHandler) == nil {
+            completionHandler(nil)
+        }
+    }
+
+    // Everything else (alerts, confirms, new windows, media permissions…) is Capacitor's as before.
+    override func responds(to aSelector: Selector!) -> Bool {
+        super.responds(to: aSelector) || (target?.responds(to: aSelector) ?? false)
+    }
+
+    override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        (target?.responds(to: aSelector) ?? false) ? target : super.forwardingTarget(for: aSelector)
     }
 }
 

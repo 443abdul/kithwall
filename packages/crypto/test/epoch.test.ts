@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { epochCommit, generateIdentity, keyMatchesCommit, newSymmetricKey, signEpochRecord, verifyEpochRecord } from '../src/index';
+import { epochCommit, generateIdentity, keyMatchesCommit, newSymmetricKey, signAdminGrant, signEpochRecord, verifyAdminGrant, verifyEpochRecord } from '../src/index';
 import { expectCode } from './helpers';
 
 const AUD = '00000000-0000-0000-0000-0000000000aa';
@@ -44,5 +44,25 @@ describe('epoch records (K1)', () => {
   it('never throws on garbage', () => {
     expect(verifyEpochRecord(owner.signPub, { ...rec, commit: 'x' }, 'y')).toBe(false);
     expect(verifyEpochRecord(owner.signPub, null as never, 'y')).toBe(false);
+  });
+});
+
+describe('admin grants (R-K-2)', () => {
+  const g = { audienceId: AUD, memberId: 'member-id', grantedBy: 'owner-id' };
+  it('verifies only with the granter key and the exact statement', () => {
+    const sig = signAdminGrant(owner.signPriv, g);
+    expect(verifyAdminGrant(owner.signPub, g, sig)).toBe(true);
+    expect(verifyAdminGrant(member.signPub, g, sig)).toBe(false);
+    expect(verifyAdminGrant(owner.signPub, { ...g, memberId: 'other' }, sig)).toBe(false);
+    expect(verifyAdminGrant(owner.signPub, { ...g, audienceId: 'other' }, sig)).toBe(false);
+    expect(verifyAdminGrant(owner.signPub, { ...g, grantedBy: 'member-id' }, sig)).toBe(false);
+  });
+  it('is not interchangeable with an epoch record or a proof-of-key signature', () => {
+    const rec = { audienceId: AUD, epoch: 1, rotatedBy: 'owner-id', commit: epochCommit(AUD, 1, newSymmetricKey()) };
+    expect(verifyAdminGrant(owner.signPub, g, signEpochRecord(owner.signPriv, rec))).toBe(false);
+  });
+  it('never throws on garbage', () => {
+    expect(verifyAdminGrant(owner.signPub, null as never, 'x')).toBe(false);
+    expect(verifyAdminGrant(owner.signPub, g, '')).toBe(false);
   });
 });

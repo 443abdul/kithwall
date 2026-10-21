@@ -11,7 +11,7 @@ import { people } from '@/lib/people';
 import { useKeyringVersion } from '@/lib/hooks';
 import {
   acceptInvite, createGroup, deleteGroup, deliverMemberKeys, getGroup, inviteToGroup, leave, membersOf,
-  readGroup, removeMember, rotateIfNeeded, setRole, updateGroup,
+  readGroup, removeMember, rotateIfNeeded, rotateIfRecordStale, setRole as setGroupRole, updateGroup,
   type GroupRow, type MemberRow,
 } from '@/lib/groups';
 import type { Decrypted } from '@/lib/content';
@@ -80,7 +80,16 @@ export async function inviteToCircle(c: GroupRow, ids: string[], name: string) {
   return inviteToGroup({ id: c.id, audience_id: c.audience_id }, ids, name);
 }
 
-export { acceptInvite, setRole };
+export { acceptInvite };
+
+/** Promote (signed grant) or demote (rotates the key, then re-seals the circle's name and look). */
+export async function setRole(c: GroupRow, memberId: string, role: 'admin' | 'member') {
+  const before = readCircle(c);
+  if (await setGroupRole(c.audience_id, memberId, role)) {
+    const fresh = await getGroup(c.id);
+    if (fresh && before.ok) await updateGroup(fresh, before.value);
+  }
+}
 
 /** Decline an invitation or leave a circle. The creator can't leave (they delete it instead). */
 export async function leaveCircle(c: GroupRow) {
@@ -103,7 +112,7 @@ export async function circleHousekeeping(c: GroupRow): Promise<void> {
   try {
     await deliverMemberKeys(c.audience_id);
     const before = readCircle(c);
-    if (await rotateIfNeeded(c.audience_id)) {
+    if ((await rotateIfNeeded(c.audience_id)) || (await rotateIfRecordStale(c.audience_id))) {
       const fresh = await getGroup(c.id);
       if (fresh && before.ok) await updateGroup(fresh, before.value);
     }

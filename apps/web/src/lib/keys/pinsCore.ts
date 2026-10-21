@@ -74,3 +74,25 @@ export function maySealTo(args: { pin: Pin | undefined; signPub: string; kxPub: 
   if (args.verifiedKey) return false;
   return args.vouched;
 }
+
+/**
+ * How much this device trusts the identity keys it uses for a contact (security review R-K-1).
+ *   self       my own keys (from my unlocked identity, never the server's copy)
+ *   new        first sight: pinned now (trust on first use)
+ *   pinned     the published keys are the pinned ones
+ *   vouched    the published keys differ, but a chain of key changes signed by the pinned key leads to them
+ *   unvouched  the published keys differ and nothing signed by the pinned key vouches for them: this device
+ *              keeps using the PINNED keys, so anything signed by the new key fails verification until the
+ *              user accepts the change (KeyChangeBanner / VerifyScreen)
+ */
+export type SignerTrust = 'self' | 'new' | 'pinned' | 'vouched' | 'unvouched';
+export interface TrustedKeys { s: string; x: string; trust: SignerTrust }
+
+/** The identity keys to verify (and seal) with for a contact, given the pin and the published keys. */
+export function trustedKeysFor(pin: Pin | undefined, published: { s: string; x: string }, log: KeyChangeLogRow[] | null): TrustedKeys {
+  const st = pinStatus(pin, published.s, published.x);
+  if (st === 'new') return { s: published.s, x: published.x, trust: 'new' };
+  if (st === 'same') return { s: published.s, x: published.x, trust: 'pinned' };
+  if (log && vouchedFrom(pin!, published.s, published.x, log)) return { s: published.s, x: published.x, trust: 'vouched' };
+  return { s: pin!.s, x: pin!.x, trust: 'unvouched' };
+}

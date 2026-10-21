@@ -7,6 +7,7 @@ import { b64u, openEnvelope, sealEnvelope, type Envelope, type EnvelopeHeader } 
 import { sb, must } from './supabase';
 import { identity, me } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
+import { noteAuthority } from './keys/roster';
 import { people } from './people';
 import { notify } from './friends';
 import { preparePosts, type Decrypted } from './content';
@@ -18,6 +19,8 @@ import type { AudienceRow, PostRow } from './types';
 export interface MemberRow {
   audience_id: string; member_id: string; role: 'admin' | 'member'; status: 'active' | 'invited' | 'requested';
   rsvp: 'yes' | 'maybe' | 'no' | null; invited_by: string | null; last_read_at: string | null; created_at: string;
+  /** Signed admin grant (security re-review R-K-2): who promoted them, and their signature. */
+  grant_by?: string | null; grant_sig?: string | null;
 }
 
 export interface ContainerRow {
@@ -214,9 +217,30 @@ export async function leave(aud: string) {
   must(await sb().from('audience_members').delete().eq('audience_id', aud).eq('member_id', me()));
 }
 
-export async function setRole(aud: string, memberId: string, role: 'admin' | 'member') {
-  must(await sb().from('audience_members').update({ role }).eq('audience_id', aud).eq('member_id', memberId));
-  if (role === 'admin') await deliverMemberKeys(aud).catch(() => undefined);
+/**
+ * Promote or demote. A promotion carries an admin grant signed with my identity key (security review
+ * R-K-2): members only treat signed admins as key authorities. A demotion rotates the key (R-K-4): the
+ * demoted admin's record for the current epoch stops counting, and they shouldn't mint or hold the next key
+ * as an admin. Returns true when the audience was rotated (the caller re-seals container metadata).
+ */
+export async function setRole(aud: string, memberId: string, role: 'admin' | 'member'): Promise<boolean> {
+  const grant = role === 'admin' ? keyring.grantAdmin(aud, memberId) : { grant_by: null, grant_sig: null };
+  must(await sb().from('audience_members').update({ role, ...grant }).eq('audience_id', aud).eq('member_id', memberId));
+  if (role === 'admin') {
+    await noteAuthority(aud, memberId).catch(() => undefined);   // my own promotion: no "new admin" warning for me
+    await deliverMemberKeys(aud).catch(() => undefined);
+    return false;
+  }
+  return rotateAudience(aud).catch(() => false);
+}
+
+/**
+ * Admin housekeeping for key records (R-K-4 / R-K-1): rotate when the current epoch's record no longer
+ * counts (its rotator was demoted, or signed with an identity key this device doesn't trust).
+ */
+export async function rotateIfRecordStale(aud: string): Promise<boolean> {
+  if (!(await keyring.currentRecordStale(aud).catch(() => false))) return false;
+  return rotateAudience(aud).catch(() => false);
 }
 
 /** Remove a member (or reject a request) and rotate so they can't read anything new. */

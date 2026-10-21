@@ -19,13 +19,13 @@ export function tooMany(req: Request, scope: string, max: number, windowMs: numb
 }
 
 /**
- * Per-account limits on recovery-key challenges (security review W4): at most 12 an hour for one
- * account from one client, and a generous 200 an hour for the account overall, so one person
- * hammering a handle can't lock its owner out of their own recovery.
+ * Per-account limit on recovery-key challenges (security review W4): at most 12 an hour for one account
+ * from one client (an IPv4 address or IPv6 /64, see ipBucket). There is deliberately NO account-wide
+ * limit (security re-review R-W4): strangers could use it up and lock the owner out of their own
+ * recovery, and a nonce is worthless without the recovery key. Each lookup also costs a proof-of-work.
  */
 export async function accountTooMany(req: Request, userId: string): Promise<boolean> {
-  return (await overLimit(rateKey('recover-account-target-client', userId, ipTag(req)), 12, 3600))
-      || (await overLimit(rateKey('recover-account-target', userId), 200, 3600));
+  return overLimit(rateKey('recover-account-target-client', userId, ipTag(req)), 12, 3600);
 }
 
 /** A valid, unexpired, unused ALTCHA proof-of-work (spent here, so it can't be replayed). */

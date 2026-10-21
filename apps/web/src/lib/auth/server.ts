@@ -62,7 +62,7 @@ export async function readJson<T>(req: Request, maxBytes = 16_384): Promise<T | 
   try { return JSON.parse(text) as T; } catch { return null; }
 }
 
-export type ChallengePurpose = 'delete_account' | 'delete_all_posts' | 'change_recovery' | 'recover_account' | 'add_credential' | 'rotate_identity';
+export type ChallengePurpose = 'delete_account' | 'delete_all_posts' | 'change_recovery' | 'recover_account' | 'add_credential' | 'rotate_identity' | 'update_bundle';
 
 /**
  * Proof-of-key (spec §3.9): the challenge must belong to the caller, match the purpose, be unused

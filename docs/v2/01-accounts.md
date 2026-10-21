@@ -123,8 +123,16 @@ unwraps. Nothing is sent to the server, and no server verification is needed, be
 can produce the PRF output. `unlockOptions()` reports whether the account has passkeys and a password.
 
 ### Sign-in with a passphrase (`signInWithPassphrase(handle, passphrase)`)
-`POST passphrase/lookup {handle}` returns the account's synthetic address. Then the v1 login path runs:
-Argon2id, `signInWithPassword(authKey)` and unlock. The answer never depends on the account type (security
+`POST passphrase/lookup {handle}` returns the account's synthetic address. The device runs Argon2id and sends
+only `authKey` to `POST passphrase/signin {email, authKey}`, which checks it in the database with exactly one
+bcrypt whatever the input (`public.passphrase_password_ok`: a throwaway hash when the address is unknown or has
+no password), limits attempts per client (30 per 10 min), per handle per client (10 per 15 min) and per handle
+(100 an hour), and returns a one-time `tokenHash` like a passkey sign-in; the device redeems it and unlocks.
+The browser never calls GoTrue's password grant for handle accounts (security re-review R-W3: its timing told
+passphrase accounts apart). Passkey-only accounts also get a random, never-used GoTrue password, so even a
+direct password grant costs one bcrypt for every synthetic account. Measured locally (median, wrong
+passphrase): GoTrue grant 112 ms for a passphrase account vs 15 ms for an unknown handle; the new route
+209 / 208 / 202 ms for a passphrase account / passkey-only account / unknown handle. The answer never depends on the account type (security
 review W3): every existing handle gets the synthetic address of its own id (for passkey and v1 accounts the
 sign-in then simply fails with `wrong_passphrase`), and an unknown handle gets a deterministic **decoy** that is
 a version-4 UUID derived from an HMAC of the handle (`lib/auth/passphrase-decoy.ts`), exactly the shape of a real
@@ -162,8 +170,10 @@ browser: `lib/auth/recover-client.ts`; screens: `components/public/RecoverFlow.t
    (wrapped by a non-extractable WebCrypto key) and calls `POST /api/recovery/friends/start {handle, ephPub}`.
    The service-role RPC `start_handle_recovery` opens the request (same waiting period, 24 h by default,
    and 72 h expiry as before). Security review W4: the route needs an ALTCHA proof-of-work; limits are per
-   requester (a daily IP tag: 2 per account and 4 overall a day) and at most 10 OPEN requests per account, so
-   junk the owner cancels never blocks them. The owner's devices and notice address hear about it at once;
+   requester (a daily tag of the IPv4 address or IPv6 /64: 2 per account and 4 overall a day, and one OPEN
+   request per account: a newer one supersedes it) and at most 10 OPEN requests per account. At that cap a
+   new request is never refused: it supersedes the oldest open one (security re-review R-W4), so strangers
+   can't hold the owner out of their own recovery. The owner's devices and notice address hear about it at once;
    the trusted friends are told only when the waiting period is over and the request is still open
    (`kithwall-recovery-notify`, once per account per 12 h), and only then can they see it. Both sides see the same **six words**
    (`verificationPhrase(requestId, ephPub)`); friends approve only after hearing them from the owner by
@@ -261,7 +271,8 @@ recovery starts from the public @handle (§3 "Recovering an account"). What chan
   password it replaces as the first factor. Mitigations: accounts with an authenticator app still need
   the 6-digit code; a content-free notice goes to the notice address; the nonce is single use, expires in
   5 minutes and is rate-limited (each lookup costs an ALTCHA proof-of-work; 12 an hour per account per client,
-  200 an hour per account overall, so one person can't lock the owner out); the server only ever sees a
+  counted per IPv4 address or IPv6 /64, and deliberately no account-wide limit that strangers could use up to
+  lock the owner out, re-review R-W4); the server only ever sees a
   signature, never the phrase.
 - **The recovery wrap goes to anyone who types a handle.** It is encrypted under RK (256 random bits), so
   offline guessing is hopeless. The passphrase wrap, protected only by a human-chosen secret, is never
@@ -311,7 +322,12 @@ In development without `NEXT_PUBLIC_SITE_URL`, the rpID is the request host. It 
   `supabase/tests/handle_recovery.test.sql` (server-only recovery challenges, `start_handle_recovery`
   rights, waiting period, notifications, owner cancel, 3-a-day limit); and
   `apps/web/src/lib/auth/recovery.e2e.test.ts` against a dev server (wrong and forged proofs refused,
-  session minted, challenge single use, no-trustees and unknown-request errors).
+  session minted, challenge single use, no-trustees and unknown-request errors; R-W4: one IPv6 /64 is one
+  requester, and at the cap of 10 open requests the owner's new request still gets in).
+- Security re-review: `apps/web/src/lib/auth/passphrase-signin.e2e.test.ts` (R-W3: right key signs in, wrong
+  key and unknown handle answer the same in about the same time, per-handle limit) and
+  `apps/web/src/lib/auth/ip-bucket.test.ts` (IPv6 /64 buckets); `supabase/tests/rereview.test.sql` and
+  `handle_recovery.test.sql` for the database side.
 
 ## 8. Open items
 

@@ -157,6 +157,15 @@ HKDF(shared, eph_pub ‖ recipient_pub, "kithwall/v1/seal") → XChaCha20-Poly13
 key that grants access (audience, conversation, recovery share) is also **signed by the sender's
 IK_sig**, so the server can't inject a key of its own.
 
+Signatures are checked against the identity key **this device trusts** for the signer, never simply
+the one the server publishes (security re-review R-K-1): the key pinned when the device first saw that
+person (§3.9), or a newer key that a chain of key changes signed by the pinned key vouches for. If the
+server publishes a key that nothing signed by the pinned key vouches for (a swapped key), keys, epoch
+records and admin grants signed with it are not adopted, content signed with it shows as "couldn't be
+verified", and new keys are still sealed to the pinned key-exchange key, until the user accepts the change
+("safety number changed" on the profile, in 1:1 chats, and in any circle or chat whose key it touched).
+Trust on first use remains: a device that has never seen someone pins whatever is published then.
+
 ### 3.7 Audience keys and rotation
 - Each user has a **Friends audience** with a 32-byte key per *epoch*. Custom friend lists,
   Closed/Secret groups and private events each have their own audience with the same structure.
@@ -179,6 +188,19 @@ IK_sig**, so the server can't inject a key of its own.
   (any relayer), or, for epochs without a record, if a key authority sealed it; a key that contradicts its
   record is rejected, discarded and reported as a security warning in the chat. A removed member can
   neither be given nor plant a post-rotation key.
+- **Signed admin grants** (security re-review R-K-2). Making someone an admin (a key authority) carries
+  `grant_sig = Ed25519(IK_sig of the promoter, {d:"kithwall/v1/admin-grant", audienceId, memberId,
+  grantedBy})` in `audience_members.grant_by/grant_sig`. Clients count an admin as a key authority only if a
+  chain of valid grants leads to the audience owner, each verified against the signer's trusted key; the
+  database ignores admins without a grant too. Every join, promotion and change of owner produces a
+  content-free server notice for the members (a notice message in group chats,
+  `audience_roster_notices` in circles and events), and each device remembers who the key authorities
+  were and warns prominently ("New admin: …") when someone new appears. Demoting an admin rotates the key,
+  and an authority rotates whenever the current epoch's record no longer counts (its rotator was demoted, or
+  signed with an untrusted key).
+- **Relays never beat the authority** (R-K-3): a delivery by a key authority replaces a member's relay of
+  the same epoch, relays don't count as delivered for the authority, and only authorities may re-sign
+  their deliveries.
 
 ### 3.8 Envelope format (posts, comments, albums, notes, events, profile info…)
 ```
@@ -215,8 +237,15 @@ checked a fresh `rotate_identity` proof-of-key and the key-change statement sign
 (aal2 when an authenticator app is enrolled). The signed statement is logged in `key_changes`. Clients pin
 every contact's keys on first use (in the encrypted vault) and show "your safety number changed" for ANY
 change; until the user accepts, they do not seal new keys to a changed identity of a verified contact or
-to a change that no chain of signatures from the pinned key vouches for (security review K2). There is no
+to a change that no chain of signatures from the pinned key vouches for (security review K2), and they
+verify everything that person signs against the pinned key (re-review R-K-1, §3.6). There is no
 key reset without the old key: someone who lost every device and the recovery key deletes the account.
+
+**Key bundles** (the wrapped AMK and identity keys) are written only by the server: at sign-up (definer
+RPCs), on an identity-key rotation, and through `/api/account/bundle`, which needs a fresh `update_bundle`
+proof-of-key (aal2 when enrolled) and refuses any change to the identity part (`signPub`, `kxPub`,
+`identityEnc`, `prevKxEnc`). Password/passphrase changes and new recovery keys go through it, so a stolen
+session alone can't destroy the wrapped keys (re-review R-K-5).
 
 ### 3.10 Messages and chat
 One system (as in Facebook's November 2010 Messages): a **conversation** has a key per epoch,

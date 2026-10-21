@@ -13,6 +13,7 @@ import { identity, me } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
 import { isHiddenChat } from './safety/hidden';
 import { people } from './people';
+import { keyAuthorities } from './keys/roster';
 import type { AudienceRow, FileRef, MessagePayload, MessageRow } from './types';
 import type { Decrypted } from './content';
 import type { VoiceMeta } from './chat/voice';
@@ -32,6 +33,9 @@ export interface ConversationSummary extends ConversationRow {
   unread: boolean;
   ownerId: string | null;
   admins: string[];
+  /** Who may hand out this chat's keys as far as this device can verify: the owner plus admins with a signed
+   *  grant checked against pinned keys (security re-review R-K-2). */
+  keyAuthorities: string[];
   epoch: number;
   nameEnc: unknown;
   isDm: boolean;
@@ -54,7 +58,9 @@ export type ConversationEvent =
   /** Server notice (phase 3): someone changed the disappearing-messages timer (null = off). */
   | { kind: 'timer'; secs: number | null }
   /** Server notice (phase 4): a voice/video call. state: still ringing, someone answered, or nobody did. */
-  | { kind: 'call'; video: boolean; state: 'ringing' | 'answered' | 'missed'; mine: boolean };
+  | { kind: 'call'; video: boolean; state: 'ringing' | 'answered' | 'missed'; mine: boolean }
+  /** Server notice (security re-review R-K-2): someone joined, was made an admin, or now owns the chat. */
+  | { kind: 'roster'; what: 'joined' | 'admin' | 'owner'; member: string };
 export interface ChatPayload extends MessagePayload {
   event?: ConversationEvent;
   /** Quoted message (Kithwall 2): the id plus its author, so the quote survives if it scrolls out of the loaded page. */
@@ -324,6 +330,10 @@ function readNotice(row: MessageRow): Decrypted<ChatPayload> {
     const state = c.ans === true ? 'answered' : Date.now() - Date.parse(row.created_at) < 50_000 ? 'ringing' : 'missed';
     return { ok: true, value: { text: '', event: { kind: 'call', video: c.video === true, state, mine: row.sender_id === me() } } };
   }
+  const r = row.notice as { kind?: unknown; what?: unknown; m?: unknown } | null | undefined;
+  if (r && r.kind === 'roster' && (r.what === 'joined' || r.what === 'admin' || r.what === 'owner') && typeof r.m === 'string') {
+    return { ok: true, value: { text: '', event: { kind: 'roster', what: r.what, member: r.m } } };
+  }
   return { ok: false, reason: 'unverified' };
 }
 
@@ -349,13 +359,13 @@ export function readMessage(conv: Pick<ConversationRow, 'audience_id'>, row: Mes
 // ---------------------------------------------------------------------------------------------
 // Listing
 
-interface MemberRow { audience_id: string; member_id: string; role: string; status: string; last_read_at: string | null; created_at: string }
+interface MemberRow { audience_id: string; member_id: string; role: string; status: string; last_read_at: string | null; created_at: string; grant_by: string | null; grant_sig: string | null }
 
 async function summarize(convs: ConversationRow[]): Promise<ConversationSummary[]> {
   if (!convs.length) return [];
   const auds = convs.map((c) => c.audience_id);
   const [members, audRows, previews, reads, circles] = await Promise.all([
-    sb().from('audience_members').select('audience_id, member_id, role, status, last_read_at, created_at').in('audience_id', auds).eq('status', 'active'),
+    sb().from('audience_members').select('audience_id, member_id, role, status, last_read_at, created_at, grant_by, grant_sig').in('audience_id', auds).eq('status', 'active'),
     sb().from('audiences').select('id, owner_id, kind, current_epoch, name_enc').in('id', auds),
     sb().rpc('conversation_previews', { conv_ids: convs.map((c) => c.id) }),
     // My private read markers (migration 20261022000500; co-members can't see them).
@@ -382,12 +392,17 @@ async function summarize(convs: ConversationRow[]): Promise<ConversationSummary[
       ...c, members: [...ids], lastReadAt, unread, last: lm,
       ownerId: a?.owner_id ?? null, epoch: a?.current_epoch ?? 1, nameEnc: a?.name_enc ?? null, isDm: !!c.dm_key,
       admins: [...new Set([...(a ? [a.owner_id] : []), ...mine.filter((m) => m.role === 'admin').map((m) => m.member_id)])],
+      keyAuthorities: [],
       joinedAt: a?.owner_id === self ? null : myRow?.created_at ?? null,
       kind: a?.kind === 'group' ? 'group' : 'conversation',
       circleId: circleOf.get(c.audience_id) ?? null,
     };
   });
   await people.ensure(out.flatMap((c) => [...c.members, ...(c.last ? [c.last.sender_id] : [])]));
+  // Signed admin grants are checked once the granters' (trusted) keys are loaded.
+  for (const c of out) {
+    if (c.ownerId) c.keyAuthorities = keyAuthorities({ id: c.audience_id, owner_id: c.ownerId }, ms.filter((m) => m.audience_id === c.audience_id));
+  }
   return out;
 }
 

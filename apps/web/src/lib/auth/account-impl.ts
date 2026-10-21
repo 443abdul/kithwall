@@ -14,7 +14,7 @@ import {
 import { sb } from '../supabase';
 import {
   adoptUnlocked, amk as currentAmk, confirmRecoverySaved, fetchBundle, getSession, holdPendingAmk, initSession,
-  newRecoveryPhrase, noteSignedIn, unlockOptions, unlockWithPasskey,
+  newRecoveryPhrase, noteSignedIn, unlockOptions, unlockWithPasskey, type PasswordGrant,
 } from '../keys/session';
 import { AccountError, type AccountApi, type Capabilities } from './account';
 import { afterLogin, logIn, mfaRequired } from './login';
@@ -24,7 +24,7 @@ import { api, createPasskey, getPasskey, prfSupport, webauthnAvailable } from '.
 import {
   deviceLabel, handleShapeProblem, normalizeHandle,
   type AddOptionsRes, type AddVerifyRes, type HandleProblem, type LoginOptionsRes, type LoginVerifyReq, type LoginVerifyRes,
-  type LookupRes, type NoticeEmailRes, type RegisterOptionsRes, type RegisterVerifyReq, type RegisterVerifyRes,
+  type LookupRes, type NoticeEmailRes, type PassphraseSignInReq, type PassphraseSignInRes, type RegisterOptionsRes, type RegisterVerifyReq, type RegisterVerifyRes,
 } from './passkey-shared';
 
 const BASE = '/api/auth/passkey';
@@ -42,6 +42,17 @@ async function redeem(tokenHash: string): Promise<{ userId: string; email: strin
   if (error || !data.session || !data.user) throw new AccountError('network', error?.message ?? 'Could not start the session.');
   return { userId: data.user.id, email: data.user.email ?? null };
 }
+
+/**
+ * Passphrase sign-in goes through the server (security re-review R-W3): it checks authKey with a constant-cost
+ * hash, limits attempts per handle and mints the session, so sign-in timing can't reveal passphrase accounts.
+ * The browser never calls GoTrue's password grant for synthetic (handle) accounts.
+ */
+const passphraseGrant: PasswordGrant = async (email, authKey) => {
+  const body: PassphraseSignInReq = { email, authKey };
+  const { tokenHash } = await api<PassphraseSignInRes>(`${BASE}/passphrase/signin`, body);
+  return (await redeem(tokenHash)).userId;
+};
 
 function cryptoToAccount(e: unknown, fallback: AccountError): never {
   if (e instanceof AccountError) throw e;
@@ -135,8 +146,8 @@ export const accountApi: AccountApi = {
       passwordKEK.fill(0);
       const body: RegisterVerifyReq = { challengeId: start.challengeId, bundle, authKey };
       await api<RegisterVerifyRes>(`${BASE}/register/verify`, body);
-      const res = await sb().auth.signInWithPassword({ email, password: authKey });
-      if (res.error || !res.data.user) throw new AccountError('network', res.error?.message ?? 'Could not start the session.');
+      const signedIn = await passphraseGrant(email, authKey);
+      if (signedIn !== userId) throw new AccountError('unknown', 'Session mismatch.');
       await adoptUnlocked(userId, email, unlocked);
     }
     if (getSession().status !== 'ready') throw new AccountError('unknown', 'Your account was created but could not be opened. Please sign in.');
@@ -187,8 +198,9 @@ export const accountApi: AccountApi = {
     const { email } = await api<LookupRes>(`${BASE}/passphrase/lookup`, { handle });
     let outcome;
     try {
-      outcome = await logIn(email, passphrase, true);
+      outcome = await logIn(email, passphrase, true, passphraseGrant);
     } catch (e) {
+      if (e instanceof AccountError && (e.code === 'wrong_passphrase' || e.code === 'rate_limited')) throw new AccountError(e.code);
       if (e instanceof KithwallCryptoError || /incorrect|invalid/i.test((e as Error).message)) throw new AccountError('wrong_passphrase');
       if (/rate|too many/i.test((e as Error).message)) throw new AccountError('rate_limited');
       throw new AccountError('network', (e as Error).message);
