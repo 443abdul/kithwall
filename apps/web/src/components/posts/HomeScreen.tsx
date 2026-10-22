@@ -9,6 +9,7 @@ import { Icon } from '@/components/ui/Icon';
 import { ButtonLink } from '@/components/ui/Button';
 import { Page } from '@/components/shell/AppShell';
 import { PushNudge, RecoveryNudge } from '@/components/shell/Nudges';
+import { InstallNudge } from '@/components/install/InstallNudge';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { InviteCard } from '@/components/people/InviteCard';
 import { StoriesRow } from '@/components/stories/Stories';
@@ -33,6 +34,7 @@ export function HomeScreen() {
       <StoriesRow />
       <RecoveryNudge />
       <PushNudge />
+      <InstallNudge />
       <Composer audience={{ kind: 'connections' }} />
       <Feed scope={{ kind: 'home' }} empty={
         <Card>

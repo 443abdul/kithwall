@@ -51,6 +51,9 @@ function mapError(e: unknown): AccountError {
     case 'no_credential': return new AccountError('passkey_cancelled', 'No passkey for Kithwall was found on this device.');
     case 'exists': return new AccountError('unknown', 'This device already has a passkey for this account.');
     case 'unsupported': return new AccountError('passkey_unsupported', 'Passkeys are not available on this device.');
+    // The password manager couldn't link this app to the website (assetlinks.json doesn't list this build's
+    // signing key yet). Same outcome as a device without passkeys: the flows offer the passphrase.
+    case 'not_linked': return new AccountError('passkey_unsupported', 'Passkeys are not set up for this app yet.');
     default: return new AccountError('unknown', (e as Error)?.message ?? 'Passkey error');
   }
 }

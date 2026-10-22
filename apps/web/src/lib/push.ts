@@ -6,6 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { sb, must } from './supabase';
 import { authedPost } from './auth/api';
 import { isNative, nativePlatform } from './native';
+import { isStandalone } from './install';
 
 // Inside the Kithwall app, push goes through the native provider instead of the service worker
 // (lib/native/push.ts, docs/v2/05-native.md §5). Loaded only there.
@@ -35,11 +36,8 @@ export function isIos(): boolean {
   return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
-export function isStandalone(): boolean {
-  if (typeof window === 'undefined') return false;
-  const nav = navigator as Navigator & { standalone?: boolean };
-  return window.matchMedia?.('(display-mode: standalone)').matches || nav.standalone === true;
-}
+// Installed-app detection lives with the rest of installing (lib/install.ts).
+export { isStandalone } from './install';
 
 export function pushSupport(): PushSupport {
   if (typeof window === 'undefined') return { supported: false, iosNeedsInstall: false, ios: false, standalone: false, permission: 'unsupported' };
@@ -293,43 +291,4 @@ export function dismissPrompt(): void {
 export function clearAppBadge(): void {
   const nav = typeof navigator === 'undefined' ? null : (navigator as Navigator & { clearAppBadge?: () => Promise<void> });
   nav?.clearAppBadge?.().catch(() => undefined);
-}
-
-// ---------------------------------------------------------------------------------------
-// Install ("Add to Home Screen"). Chrome/Edge fire `beforeinstallprompt` once, early, so PushManager
-// starts listening at app start and Settings shows the button whenever an install is on offer.
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
-let deferredInstall: BeforeInstallPromptEvent | null = null;
-let installedNow = false;
-let installListening = false;
-
-export function listenForInstallPrompt(): void {
-  if (installListening || typeof window === 'undefined') return;
-  installListening = true;
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault(); // we offer it from Settings instead of the browser's mini-infobar
-    deferredInstall = e as BeforeInstallPromptEvent;
-    changed();
-  });
-  window.addEventListener('appinstalled', () => { deferredInstall = null; installedNow = true; changed(); });
-}
-
-export function installState(): { canPrompt: boolean; installed: boolean } {
-  if (isNative()) return { canPrompt: false, installed: true };
-  return { canPrompt: !!deferredInstall, installed: installedNow || isStandalone() };
-}
-
-/** Show the browser's install dialog (Chrome/Edge on Android and desktop). Call from a click. */
-export async function promptInstall(): Promise<'accepted' | 'dismissed' | 'unavailable'> {
-  const ev = deferredInstall;
-  if (!ev) return 'unavailable';
-  deferredInstall = null;
-  await ev.prompt();
-  const { outcome } = await ev.userChoice;
-  if (outcome === 'accepted') installedNow = true;
-  changed();
-  return outcome;
 }

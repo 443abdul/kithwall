@@ -10,6 +10,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { PublicFooter, PublicHeader } from './PublicChrome';
 import { StylePreview } from './StylePicker';
 import { useDocumentTitle } from './useDocumentTitle';
+import { InstallSection } from '@/components/install/InstallSection';
 
 const PROMISES: { icon: IconName; title: MessageKey; body: MessageKey }[] = [
   { icon: 'lock', title: 'landing.p1Title', body: 'landing.p1Body' },
@@ -88,6 +89,8 @@ export function Landing() {
             ))}
           </div>
         </section>
+
+        <InstallSection />
 
         <section className="k-band k-donate" aria-labelledby="donate-title">
           <span className="k-promise-ico"><Icon name="gift" /></span>

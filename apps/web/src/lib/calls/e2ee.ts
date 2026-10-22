@@ -57,14 +57,3 @@ export class FrameCrypto {
 
   close() { this.worker.terminate(); }
 }
-
-/** Prefer VP8 (its frame header is what the worker keeps in the clear) when frames are encrypted. */
-export function preferVp8(t: RTCRtpTransceiver) {
-  try {
-    const caps = typeof RTCRtpReceiver !== 'undefined' && RTCRtpReceiver.getCapabilities ? RTCRtpReceiver.getCapabilities('video') : null;
-    if (!caps || typeof t.setCodecPreferences !== 'function') return;
-    const vp8 = caps.codecs.filter((c) => /vp8/i.test(c.mimeType));
-    const rest = caps.codecs.filter((c) => !/vp8/i.test(c.mimeType) && !/h264|h265|av1|vp9/i.test(c.mimeType));
-    if (vp8.length) t.setCodecPreferences([...vp8, ...rest]);
-  } catch { /* keep the browser's defaults */ }
-}

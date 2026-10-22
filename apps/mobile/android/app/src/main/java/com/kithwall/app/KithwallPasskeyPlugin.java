@@ -16,6 +16,7 @@ import androidx.credentials.GetPublicKeyCredentialOption;
 import androidx.credentials.PublicKeyCredential;
 import androidx.credentials.exceptions.CreateCredentialCancellationException;
 import androidx.credentials.exceptions.CreateCredentialException;
+import androidx.credentials.exceptions.CreateCredentialNoCreateOptionException;
 import androidx.credentials.exceptions.CreateCredentialProviderConfigurationException;
 import androidx.credentials.exceptions.CreateCredentialUnsupportedException;
 import androidx.credentials.exceptions.GetCredentialCancellationException;
@@ -24,7 +25,9 @@ import androidx.credentials.exceptions.GetCredentialProviderConfigurationExcepti
 import androidx.credentials.exceptions.GetCredentialUnsupportedException;
 import androidx.credentials.exceptions.NoCredentialException;
 import androidx.credentials.exceptions.domerrors.InvalidStateError;
+import androidx.credentials.exceptions.domerrors.SecurityError;
 import androidx.credentials.exceptions.publickeycredential.CreatePublicKeyCredentialDomException;
+import androidx.credentials.exceptions.publickeycredential.GetPublicKeyCredentialDomException;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -61,11 +64,30 @@ public class KithwallPasskeyPlugin extends Plugin {
         call.resolve(r);
     }
 
+    /**
+     * 'not_linked': the password manager refused the rpId for this app, i.e. https://<rpId>/.well-known/
+     * assetlinks.json doesn't (yet) list this app's signing certificate (ANDROID_CERT_SHA256 not set on the
+     * server, or a build signed with another key). The web app treats it like "no passkeys here" and offers
+     * the passphrase (lib/native/passkey.ts).
+     */
+    private static boolean notLinked(Exception e) {
+        if (e instanceof CreatePublicKeyCredentialDomException && ((CreatePublicKeyCredentialDomException) e).getDomError() instanceof SecurityError) return true;
+        if (e instanceof GetPublicKeyCredentialDomException && ((GetPublicKeyCredentialDomException) e).getDomError() instanceof SecurityError) return true;
+        String m = String.valueOf(e.getMessage()).toLowerCase(java.util.Locale.ROOT);
+        return m.contains("asset link") || m.contains("assetlinks") || m.contains("digital asset") || m.contains("rp id") || m.contains("rpid")
+                || m.contains("cannot be validated") || m.contains("not associated");
+    }
+
     private static String codeFor(Exception e) {
+        if (BuildConfig.DEBUG) android.util.Log.w("KwPasskey", e.getClass().getName() + ": " + e.getMessage());
+        if (notLinked(e)) return "not_linked";
         if (e instanceof CreateCredentialCancellationException || e instanceof GetCredentialCancellationException) return "cancelled";
         if (e instanceof NoCredentialException) return "no_credential";
         if (e instanceof CreatePublicKeyCredentialDomException
                 && ((CreatePublicKeyCredentialDomException) e).getDomError() instanceof InvalidStateError) return "exists";
+        // No password manager offers to save a passkey for this app/rpId (none installed, or none accepts the
+        // rpId because assetlinks.json doesn't list this app yet): the same as "no passkeys here".
+        if (e instanceof CreateCredentialNoCreateOptionException) return "unsupported";
         if (e instanceof CreateCredentialProviderConfigurationException || e instanceof GetCredentialProviderConfigurationException
                 || e instanceof CreateCredentialUnsupportedException || e instanceof GetCredentialUnsupportedException) return "unsupported";
         return "failed";

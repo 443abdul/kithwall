@@ -5,6 +5,8 @@ import { initSession, useSession } from '@/lib/keys/session';
 import { sb } from '@/lib/supabase';
 import { keyring } from '@/lib/keys/keyring';
 import { PushManager } from '@/components/push/PushManager';
+import { InstallRuntime } from '@/components/install/InstallRuntime';
+import { NativeRuntime } from '@/components/native/NativeRuntime';
 import { invalidateSoon } from '@/lib/invalidate';
 
 export function Providers({ children }: { children: ReactNode; nonce?: string }) {
@@ -16,6 +18,8 @@ export function Providers({ children }: { children: ReactNode; nonce?: string })
     <QueryClientProvider client={qc}>
       <RealtimeBridge />
       <PushManager />
+      <InstallRuntime />
+      <NativeRuntime />
       {children}
     </QueryClientProvider>
   );

@@ -6,8 +6,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ORIGINS = { production: 'https://www.kithwall.com', staging: 'https://staging.kithwall.com' };
-const env = process.env.KITHWALL_ENV === 'staging' ? 'staging' : 'production';
+const ORIGINS = { production: 'https://www.kithwall.com', staging: 'https://staging.kithwall.com', local: 'http://127.0.0.1:3073' };
+const env = process.env.KITHWALL_ENV === 'staging' ? 'staging' : process.env.KITHWALL_ENV === 'local' ? 'local' : 'production';
 const origin = ORIGINS[env];
 const www = join(dirname(fileURLToPath(import.meta.url)), '..', 'www');
 

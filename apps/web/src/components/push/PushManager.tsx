@@ -11,7 +11,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/keys/session';
-import { clearAppBadge, dropDeviceSubscription, listenForInstallPrompt, registerServiceWorker, syncPush } from '@/lib/push';
+import { clearAppBadge, dropDeviceSubscription, registerServiceWorker, syncPush } from '@/lib/push';
 import { isNative } from '@/lib/native';
 import { safePath } from '@/lib/auth/next';
 
@@ -53,8 +53,6 @@ export function PushManager() {
     })).then((o) => { if (live) off = o; else o(); }).catch(() => undefined);
     return () => { live = false; off?.(); };
   }, [router]);
-
-  useEffect(() => { listenForInstallPrompt(); }, []);
 
   useEffect(() => {
     const onVisible = () => { if (document.visibilityState === 'visible') clearAppBadge(); };

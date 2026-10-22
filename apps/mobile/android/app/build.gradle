@@ -27,6 +27,11 @@ gradle.taskGraph.whenReady { graph ->
     if (!releaseTasks.isEmpty() && !hasReleaseKey && !allowDebugSigning) {
         throw new GradleException('Release builds need the upload key (KITHWALL_KEYSTORE_FILE …). For a test build signed with the debug key, set KITHWALL_ALLOW_DEBUG_SIGNING=true.')
     }
+    // KITHWALL_ENV=local (http://localhost dev server) is for debug builds only.
+    def capConfig = file('src/main/assets/capacitor.config.json')
+    if (!releaseTasks.isEmpty() && capConfig.exists() && capConfig.text.contains('"url": "http://')) {
+        throw new GradleException('This release build would load a plain-http (local) origin. Run `npm run sync` (production) or `npm run sync:staging` first.')
+    }
 }
 
 android {
@@ -72,8 +77,11 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // R8: smaller, faster app (Capacitor and AndroidX ship their own keep rules; ours are in
+            // proguard-rules.pro). Unused resources are dropped too.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
         }
     }

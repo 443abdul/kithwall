@@ -1,6 +1,6 @@
 # Kithwall 2: native apps (Android and iOS)
 
-Status: implemented, not yet built on a device (phase 5) · 2026-10-21 · see also `00-brief.md` §8, `01-accounts.md`
+Status: Android built and audited on the emulator 2026-10-23 (§11); iOS not yet built · see also `00-brief.md` §8, `01-accounts.md`
 (passkeys and PRF), `03-safety.md` (app PIN, duress, wipe), `04-calls.md`, `03-transparency.md` (data map)
 
 The apps are a **Capacitor 8** shell around the deployed web app, with native code where a WebView is
@@ -12,7 +12,7 @@ only carry ciphertext, screen protection and screenshot notices.
 | Project | `apps/mobile/android` (Java, AGP 8.13, compile/target SDK 36, **min SDK 28**) | `apps/mobile/ios/App` (Swift, SPM, **iOS 16+**) |
 | Builds | flavours `play` (Google Play, FCM) and `foss` (direct APK / F-Droid, UnifiedPush, no Google libraries) | one app + Notification Service Extension |
 | CI | `.github/workflows/android.yml` (APK + AAB) | `.github/workflows/ios.yml` (simulator build + unsigned archive; signing prepared) |
-| Status | compiles in CI only (no JDK/SDK on the dev machine) | compiles in CI only (no Mac); needs the Apple account to run on a device |
+| Status | builds locally (JDK 21 + Android SDK, §7) and in CI; audited on the emulator (§11) | compiles in CI only (no Mac); needs the Apple account to run on a device |
 
 ## 1. Architecture
 
@@ -53,6 +53,29 @@ only carry ciphertext, screen protection and screenshot notices.
   device transfer, FileProvider limited to the app cache, WebView debugging off, F-Droid-friendly
   `dependenciesInfo` off. iOS: Keychain items `ThisDeviceOnly`, no backups of secrets.
 
+### App frame (what a browser does that a bare WebView doesn't)
+
+Native side: `MainActivity`, `KwWebViewClient`, `KwChromeClient`, `KwDownloads`, `KwCallService`,
+`KithwallShellPlugin`. Web side: `lib/native/runtime.ts`, started by `components/native/NativeRuntime.tsx` (app
+only, its own chunk; browsers never load it).
+
+| Area | Behaviour |
+|---|---|
+| Launch | Android 12+ system splash (back-ported to 9–11 by core-splashscreen): the mark on an accent disc over the page colour (light/dark), held until the first page paints (at most 4 s). Window and WebView are painted in the page colour from the first frame: no white or black flash. No full-screen splash bitmaps any more. |
+| Edge-to-edge | Forced by target SDK 36. Capacitor's `SystemBars` turns the insets into the page's `env(safe-area-inset-*)` (WebView 140+; `--safe-area-inset-*` plus decor padding before); `initialViewportFitValueHint: 'cover'` avoids a layout jump. Status-bar icons follow the page's own light/dark mode (`data-mode`, which can differ from the system's). Pages without a top bar (sign-in, help, legal) get a page-coloured strip behind the status bar while scrolled. |
+| Keyboard | The WebView is resized above the keyboard (SystemBars pads the IME inset); an open chat that was at the bottom stays there, so the newest messages stay above the composer. |
+| Back | Closes the top `<dialog>` / sheet / menu / viewer first (same as Esc), then goes back in history; on Home, the signed-out start pages and during a call the app goes to the background (task kept: the call goes on, keys stay unlocked behind the app lock). A deep link with no history goes Home first. `enableOnBackInvokedCallback` is on (predictive back). |
+| Offline / errors | Only connection failures and 502/503/504 show the bundled offline page ("Try again"; retries by itself when the network comes back). Capacitor showed it for every main-frame error, so a 404 page or a navigation the WebView aborted itself replaced a working page with "can't connect". |
+| Links | Same origin loads in the app; https/mailto/tel open in the system; everything else is blocked (unchanged). |
+| Files | `<input type=file>` for photos/videos opens the Android 13+ system photo picker (no storage permission); other types and `capture` keep Capacitor's Files picker / camera. Every picked file is copied to the app cache and handed over through our FileProvider: a picker URI read later (when the page encrypts and uploads it) failed with `NotReadableError`, so previews broke and sending failed. Copies older than a day are deleted; the panic wipe deletes them all. |
+| Downloads | A WebView ignores `<a download href="blob:…">`. The runtime keeps the blob behind every object URL (the page CSP doesn't allow `fetch(blob:)`) and streams it in 768 KiB chunks to `KithwallShell.download*`, which writes it to **Downloads** through MediaStore (Android 10+, no permission; Android 9: share sheet) and shows "Saved to Downloads: …". Covers the data export, `.ics`, photo/video downloads. Same-origin attachment URLs go to DownloadManager with the session cookie. |
+| Share | Android WebView has no `navigator.share`; the app provides it and opens the system share sheet (https links only). |
+| Calls | `lib/native/calls.ts` (`nativeCallActive({speaker, video})`, `nativeCallEnded()`) → `KithwallShell.setCallAudio`: screen kept on, `MODE_IN_COMMUNICATION`, volume keys control call volume, speaker / earpiece (a headset wins), and a "Kithwall call in progress" **foreground service** (type `microphone`, plus `camera` for video) so the microphone and camera keep working when the person switches app (Android silences them in the background). Until the call UI calls these itself, the runtime follows the call screen being shown (speaker on). |
+| Plugins | `nativePlugin()` returned Capacitor's plugin proxy from an `async` function; the proxy answers every property, `then` included, so awaiting it called a native `then()` that rejected and the promise never settled: **every plugin call hung** (passkeys, Keystore storage, biometrics, push, screen protection). Fixed with a `then`-less view (`notThenable`, unit-tested). |
+| Passkeys | If the password manager refuses the rpID for this app (assetlinks.json doesn't list the signing key yet, e.g. `ANDROID_CERT_SHA256` unset), the plugin reports `not_linked` (and "no create options", no password manager will save one, reports `unsupported`); the web flows treat both like "no passkeys here": the passphrase is offered, and after a v1 sign-in "Add passkey" says passkeys aren't available instead of "Something went wrong". |
+| Push (foss) | Without a UnifiedPush distributor app, turning notifications on explains what to install (native dialog linking to the distributor list) instead of "Check your browser settings". |
+| Release | R8 (`minifyEnabled`, `shrinkResources`, `proguard-android-optimize`; Capacitor and AndroidX ship their keep rules): foss APK 15 MB → 1.6 MB, play 2.5 MB. A release build refuses a plain-http (local) origin. Debug builds: WebView debugging on (chrome://inspect), plugin calls and page console in logcat. |
+
 ### Web app integration (apps/web)
 
 | File | What |
@@ -63,6 +86,9 @@ only carry ciphertext, screen protection and screenshot notices.
 | `src/lib/native/secure.ts` | Keystore/Keychain store for `lib/keys/device.ts`; biometric helpers |
 | `src/lib/native/push.ts` | register / sync / disable native push, hidden-chat mirror, notification taps |
 | `src/lib/native/shell.ts` | secure screen setting, screenshot events, quick exit |
+| `src/lib/native/runtime.ts` | app frame: Back, downloads, share, status-bar colour and strip, chat-at-bottom, call fallback |
+| `src/lib/native/calls.ts` | `nativeCallActive({speaker, video})` / `nativeCallEnded()` for the call UI |
+| `src/components/native/NativeRuntime.tsx` | starts the runtime inside the app (mounted in `components/Providers.tsx`) |
 | `src/lib/native/association.ts` | assetlinks / AASA bodies, Android passkey origins |
 | `src/lib/push/crypto.ts` | RFC 8291 encrypt (server) + reference decrypt (tests) |
 | `src/lib/push/endpoint.ts` | UnifiedPush endpoint validation and the public-address-only DNS lookup (SSRF) |
@@ -240,6 +266,7 @@ reuses the VAPID keys. Without a provider's config, those devices are skipped (c
 cd apps/mobile
 npm run sync                  # writes www/ (offline page) and runs `cap sync` (production origin)
 npm run sync:staging          # same for https://staging.kithwall.com
+                              # (debug only: KITHWALL_ENV=local, see "Testing on the emulator" below)
 node scripts/gen-assets.mjs   # icons, adaptive icon, splash, notification icon (from the Kithwall 2 mark)
 # Android (needs JDK 21 + Android SDK): cd android && ./gradlew assemblePlayRelease bundlePlayRelease assembleFossRelease
 # iOS (needs a Mac + Xcode): ruby ios/scripts/add-notification-service.rb, then open ios/App/App.xcodeproj
@@ -255,6 +282,27 @@ node scripts/gen-assets.mjs   # icons, adaptive icon, splash, notification icon 
   release build unless you set that variable (security review L14). The Gradle wrapper checks the
   distribution's SHA-256 and CI runs `wrapper-validation`; all actions are pinned to commit SHAs (L13).
 - Version: `KITHWALL_VERSION_CODE` = CI run number, `KITHWALL_VERSION_NAME` = the `v*` tag.
+- **JDK 21.** Gradle 8.14 can't run on Java 25, which Android Studio's bundled JBR now is ("Unsupported class
+  file major version 69"): point `JAVA_HOME` at a JDK 21 (e.g. Eclipse Temurin 21, as in CI).
+- **16 KB pages** (Android 15+ requirement for new apps): foss has no native libraries; play has only
+  `libdatastore_shared_counter.so` (AndroidX DataStore, via Firebase), 16 KB-aligned
+  (`zipalign -c -P 16 -v 4 app-play-release.apk` passes, ELF LOAD alignment 0x4000). Check again when
+  dependencies change.
+
+**Testing on the emulator** (signed-in flows against a local build; debug builds only):
+```
+# web: a production build using the local Supabase from apps/web/.env.local, on port 3073
+cd apps/web && NEXT_DIST_DIR=.next-android NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3073 npx next build
+NEXT_DIST_DIR=.next-android npx next start -p 3073
+# app: debug build loading http://127.0.0.1:3073 (cleartext allowed only by src/debug/res/xml)
+cd apps/mobile && KITHWALL_ENV=local node scripts/prepare.mjs && KITHWALL_ENV=local npx cap sync android
+cd android && ./gradlew assembleFossDebug && adb install -r app/build/outputs/apk/foss/debug/app-foss-debug.apk
+adb reverse tcp:3073 tcp:3073 && adb reverse tcp:64321 tcp:64321   # 127.0.0.1 in the emulator = this PC
+# WebView devtools: chrome://inspect, or adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>
+# afterwards: npm run sync (production) before any release build, and delete apps/web/.next-android
+```
+Use `127.0.0.1`: `localhost` is claimed by Capacitor's local server, and `10.0.2.2` is not a secure context
+(no WebCrypto).
 
 **CI** (nothing runs automatically on macOS except `v*` tags):
 - `android.yml`: on pushes/PRs touching `apps/mobile/**`, tags `v*`, or manually (choose production/staging).
@@ -330,7 +378,10 @@ node scripts/gen-assets.mjs   # icons, adaptive icon, splash, notification icon 
    `https://www.kithwall.com/.well-known/assetlinks.json` and Google's tester:
    `https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://www.kithwall.com&relation=delegate_permission/common.get_login_creds`.
 8. Play Console: store listing, **Data safety** and permissions from `docs/v2/store/play-listing.md`;
-   *App content → Full-screen intent* declaration ("calling app"); target audience; content rating.
+   *App content → Full-screen intent* declaration ("calling app"); *App content → Foreground service
+   permissions*: `FOREGROUND_SERVICE_MICROPHONE` / `FOREGROUND_SERVICE_CAMERA`, use "ongoing call
+   (user-initiated)", with a short video of a call continuing while switching apps; target audience; content
+   rating. Until step 7 is done, passkeys in the app fail gracefully (the passphrase is offered): expected.
 9. Direct APK: publish the `foss` APK (from a tagged CI run, signed with the upload key) on kithwall.com
    with its SHA-256 checksum; consider an F-Droid submission (metadata in the F-Droid data repo; they build
    `fossRelease`).
@@ -382,6 +433,8 @@ Capacitor chunk not loaded; `.well-known` routes return JSON / 404 as specified.
   `NotificationService/NotificationService.swift`, the `project.pbxproj` edits and
   `ios/scripts/add-notification-service.rb`.
 
+**Emulator audit:** see §11.
+
 **Must be verified on devices:**
 1. Android passkey sign-up/sign-in/unlock with PRF against production (after assetlinks are live), and a
    passkey made in Chrome opening the same account in the app (same PRF output).
@@ -399,3 +452,39 @@ Capacitor chunk not loaded; `.well-known` routes return JSON / 404 as specified.
 - PWA icons (`apps/web/public/icons`) still show the v1 "k"; the native assets use the Kithwall 2 mark.
 - `packages/crypto` `npm run typecheck` fails on `test/reseal.test.ts` (`Buffer` with `types: []`); this
   predates phase 5 and also affects the CI typecheck step.
+
+## 11. Emulator audit (2026-10-23)
+
+Pixel-class AVD, Android 16 (API 37), WebView 145; the foss debug build against a local production build
+(§7, "Testing on the emulator"), the foss release (R8) build against www.kithwall.com. Screenshots:
+`docs/v2/screens/android-*.png`.
+
+| Found | Severity | Now |
+|---|---|---|
+| Every native plugin call hung (`"X.then()" is not implemented on android`): passkeys, Keystore storage, biometrics, push, screen protection. Visible as: **v1 email + password sign-in spinning forever** (it stores the "keep me signed in" key in the Keystore), same for passphrase sign-in | critical | fixed (`notThenable`), regression test `lib/native/plugin-proxy.test.ts`; verified v1 sign-in → passkey offer → Home in the app and in desktop Chromium, and: passkey error shown, notification permission + register, downloads, call audio |
+| Back always quit the app (no handler: page and unlocked keys gone) | high | menus/dialogs close first, then history; Home → background (`android-back-menu.png`, `android-back-dialog.png`) |
+| Any main-frame error (404, aborted navigation) showed "Kithwall can't connect" | high | only connection failures and 502–504 (`android-offline.png`, `android-404.png`) |
+| Picked photos unreadable later: broken preview, sending failed | high | copied to cache + FileProvider; system photo picker on 13+ (`android-attach.png`) |
+| Downloads (export, .ics, photos, videos) did nothing | high | saved to Downloads (3 MiB test file, byte count exact) |
+| Microphone silenced when leaving the app during a call; screen turned off; media audio mode | high | foreground service + call audio mode + keep-screen-on (checked with dumpsys) (`android-call.png`) |
+| Splash: stretched bitmap, then a blank frame | medium | system splash on the page colour, held until first paint (`android-splash.png`, `android-splash-dark.png`) |
+| Keyboard hid the newest chat messages | medium | chat stays at the bottom (`android-keyboard.png`) |
+| Status-bar icons followed the system, not the page's light/dark choice; content scrolled under the clock | medium | follow `data-mode`; strip behind the status bar (`android-statusbar.png`, `android-scrim.png`) |
+| `navigator.share` missing (the invite card had no Share button) | medium | system share sheet (`android-share.png`) |
+| foss without a UnifiedPush app: "Check your browser settings" | medium | native explanation + link |
+| Release builds not minified (15 MB) | low | R8 + resource shrinking (1.6 MB foss) |
+| No WebView debugging or logs in debug builds | low (dev) | on in debug builds only |
+
+Checked and fine: adaptive + monochrome launcher icon; notification permission asked from the in-app card,
+not at start (`android-notification-permission.png`); microphone permission at the first voice note and
+recording (`android-voice-note.png`); external links open in the browser; the PWA install prompt doesn't show
+in the app; safe areas (status and gesture bar); dark mode.
+
+Not verifiable on the emulator: passkeys with PRF (needs assetlinks + a signed build, §9), FCM push (needs
+Firebase), UnifiedPush delivery (needs a distributor app), biometrics, a call with a second person, Android
+9–12. The emulator was heavily CPU/RAM-starved (7 GB host), so timings measured there say nothing about
+real phones.
+
+Web issues seen in the app, outside this audit's files: "You is calling…" on the caller's chat entry
+(calls), the language picker lists "English" twice, `no_credential` (no passkey on this phone) reads "The
+passkey request was cancelled".

@@ -10,6 +10,9 @@
 //    signalling messages, nothing to reorder). DTLS fingerprints travel inside the signed SDP, so the
 //    DTLS-SRTP keys are authenticated end to end; TURN relays only see ciphertext.
 //  - Frame encryption (insertable streams) is added where both ends support it (e2ee.ts).
+//  - Bad networks (docs §11): a quality controller per peer (quality.ts) reads getStats every 2 s and
+//    sets the video tier / Opus bitrate / RED; Opus is negotiated with FEC + DTX (sdp.ts); ICE restarts
+//    with back-off on disconnects and network changes; handshake messages are retried idempotently.
 import { b64u, randomBytes } from '@kithwall/crypto';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSyncExternalStore } from 'react';
@@ -22,21 +25,44 @@ import { isHiddenChat, isRevealed } from '../safety/hidden';
 import { getAppLock } from '../safety/applock';
 import { getCallPrefs, loadCallPrefs } from './prefs';
 import { IDLE, isLive, step, type MachineEvent, type MachineState } from './machine';
-import { endpointOf, openSignal, parseEndpoint, sealSignal, SeenIds, UUID_RE, type Signal, type SignalBody } from './signal';
-import { FrameCrypto, frameMode, preferVp8, type FrameMode, type FrameStats } from './e2ee';
+import { endpointOf, openSignal, parseEndpoint, sealSignal, SeenIds, UUID_RE, type Signal, type SignalBody, type Wire } from './signal';
+import { FrameCrypto, frameMode, type FrameMode, type FrameStats } from './e2ee';
 import { callSafetyCode, sdpFingerprint, type SafetyCode } from './safety';
 import { endTone, startTone, stopTone } from './tones';
 import { getIceConfig, type IceConfig } from './turn';
+import { capVideoBandwidth, firstAudioCodec, isMobileUa, orderAudioCodecs, orderVideoCodecs, tuneOpus } from './sdp';
+import {
+  meshCeiling, PAUSED, QualityController, SAVER_AUDIO, shareUplink, startTier, videoEncoding,
+  type Decision, type Limitation, type NetSample, type Quality, type QualityReason, type Tier,
+} from './quality';
 
 export const MAX_CALL_PEOPLE = 8;
 const RING_MS = 45_000;
 const CONNECT_MS = 30_000;
+/** Slow links (2G/3G): connecting is given longer before we give up. */
+const CONNECT_SLOW_MS = 45_000;
+/** Vanilla ICE: wait this long for gathering, then send what we have … */
 const ICE_GATHER_MS = 3_000;
-const RECONNECT_MS = 15_000;
+/** … unless we have no candidate yet (a TURN allocation over a slow or TCP/TLS-only link): then up to this. */
+const ICE_GATHER_MAX_MS = 12_000;
+/** A peer that stays unreachable this long is dropped (a network switch on a phone can take a while). */
+const RECONNECT_MS = 30_000;
+/** 'disconnected' often heals by itself (a burst of loss); restart ICE if it hasn't after this. */
+const DISCONNECT_GRACE_MS = 2_000;
+const RESTART_BASE_MS = 1_000;
+const RESTART_MAX_MS = 16_000;
+/** No answer to an offer after this (× 1.5 each try): send it again (Realtime can drop a message). */
+const OFFER_RETRY_MS = 5_000;
+const OFFER_TRIES = 4;
+/** Accepted but nobody has connected yet: say `join` again. */
+const JOIN_RETRY_MS = 4_000;
+/** Still ringing: ring again (a callee whose connection blipped missed the first one). */
+const RERING_MS = 10_000;
+const STATS_MS = 2_000;
 const ENDED_SHOW_MS = 2_500;
 
 export type PeerState = 'connecting' | 'connected' | 'reconnecting';
-export type Quality = 'good' | 'fair' | 'poor';
+export type { Quality, QualityReason };
 
 export interface PeerView {
   ep: string;
@@ -45,12 +71,18 @@ export interface PeerView {
   state: PeerState;
   mic: boolean;
   cam: boolean;
+  /** Their video to me is paused because their link can't carry it. */
+  videoPaused: boolean;
   quality: Quality | null;
+  reason: QualityReason | null;
   relayed: boolean | null;
   safety: SafetyCode | null;
   frames: boolean;
   bytesReceived: number;
 }
+
+/** Whose connection is weak: mine, a named person's, or "somewhere on the link" (can't tell). */
+export type Weak = { who: 'me' } | { who: 'peer'; userId: string } | { who: 'link' } | null;
 
 export interface CallSnapshot {
   m: MachineState;
@@ -75,7 +107,16 @@ export interface CallSnapshot {
   /** 'on': relay-only (IP hidden). 'off': direct allowed. 'unavailable': wanted relay, but no TURN server. */
   relay: 'on' | 'off' | 'unavailable';
   sinkId: string;
+  /** Data saver for this call (from Settings, the browser's Save-Data, or the in-call toggle). */
+  saver: boolean;
+  /** Voice only: my camera is off and I've asked the others not to send video. */
+  voiceOnly: boolean;
+  weak: Weak;
+  /** Offer "Weak connection — switch to voice only?" */
+  suggestVoice: boolean;
 }
+
+interface Applied { audio: string; video: string }
 
 interface Peer {
   ep: string;
@@ -87,13 +128,41 @@ interface Peer {
   state: PeerState;
   mic: boolean;
   cam: boolean;
-  quality: Quality | null;
+  /** Their video is paused for the network (their `vp`). */
+  vp: boolean;
+  /** Their own view of their connection (their `net`), if they sent one. */
+  net: 0 | 1 | 2 | null;
+  /** The best tier they want from me (their `rx`). */
+  rx: Tier;
+  ctl: QualityController;
+  decision: Decision | null;
+  applied: Applied;
+  sentVp: boolean;
   relayed: boolean | null;
   safety: SafetyCode | null;
-  restarted: boolean;
   lostTimer: ReturnType<typeof setTimeout> | null;
-  prev: { lost: number; recv: number };
+  restartTimer: ReturnType<typeof setTimeout> | null;
+  restartAttempts: number;
+  lastRestartAt: number;
+  offerTimer: ReturnType<typeof setTimeout> | null;
+  /** Idempotency: the last offer we answered and our answer to it. */
+  lastOffer: string | null;
+  lastAnswer: string | null;
+  prev: { lost: number; recv: number; t: number; aBytes: number; vBytes: number };
+  /** Uplink to this peer as last measured (debug / tests). */
+  tx: { audioBps: number; videoBps: number; height: number; fps: number; aob: number | null; budget: number | null; rtt: number | null; loss: number; limitation: Limitation | null; red: boolean };
+  uplink: Quality;
   bytesReceived: number;
+  paramQueue: Promise<void>;
+  /** RED (audio redundancy) is first in the audio codec order of the current negotiation. */
+  redNeg: boolean;
+  /** Offerer: the answerer asked for RED (`reneg` red). */
+  peerRed: boolean;
+  /** Answerer: what I last asked the offerer for. */
+  askedRed: boolean;
+  /** The Opus packet time I last asked this peer for (in the SDP I sent), and when we last renegotiated it. */
+  ptime: 20 | 60;
+  lastRenegAt: number;
 }
 
 interface ConvCtx { id: string; audienceId: string; members: string[]; summary: ConversationSummary }
@@ -101,31 +170,74 @@ interface ConvCtx { id: string; audienceId: string; members: string[]; summary: 
 const EMPTY: CallSnapshot = {
   m: IDLE, callId: null, convId: null, conv: null, isCaller: false, caller: null, video: false, masked: false,
   connectedAt: null, local: null, mic: true, cam: false, facing: 'user', peers: [], minimized: false,
-  frameMode: null, frameStats: null, relay: 'on', sinkId: '',
+  frameMode: null, frameStats: null, relay: 'on', sinkId: '', saver: false, voiceOnly: false, weak: null, suggestVoice: false,
 };
 
 const DEV_ID = typeof window === 'undefined' ? 'server' : b64u.encode(randomBytes(9));
 
-async function restBroadcast(topic: string, payload: unknown, keepalive = false): Promise<void> {
+interface NetInfo extends EventTarget { effectiveType?: string; saveData?: boolean; downlink?: number; type?: string }
+function netInfo(): NetInfo | null {
+  return typeof navigator !== 'undefined' ? ((navigator as unknown as { connection?: NetInfo }).connection ?? null) : null;
+}
+const slowLink = () => { const e = netInfo()?.effectiveType; return e === 'slow-2g' || e === '2g' || e === '3g'; };
+const verySlowLink = () => { const e = netInfo()?.effectiveType; return e === 'slow-2g' || e === '2g'; };
+const debugOn = () => { try { return localStorage.getItem('kw.calls.debug') === '1'; } catch { return false; } };
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function restBroadcast(topic: string, payload: unknown, keepalive = false): Promise<boolean> {
   const token = (await sb().auth.getSession()).data.session?.access_token;
-  if (!token) return;
+  if (!token) return false;
   const res = await fetch(`${SUPABASE_URL}/realtime/v1/api/broadcast`, {
     method: 'POST', keepalive, credentials: 'omit', referrerPolicy: 'no-referrer',
     headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages: [{ topic, event: 'sig', payload, private: true }] }),
   });
   await res.body?.cancel().catch(() => undefined);
+  return res.ok;
 }
 
+/**
+ * Vanilla ICE: resolve when gathering completes, or after ICE_GATHER_MS if we have at least one
+ * candidate. With none yet (relay-only over a slow link, or a network where only TURN over TCP/TLS 443
+ * gets through, whose allocation takes several round trips) keep waiting for the first one, then give
+ * the rest a moment, up to ICE_GATHER_MAX_MS.
+ */
 function waitForIce(pc: RTCPeerConnection): Promise<void> {
   if (pc.iceGatheringState === 'complete') return Promise.resolve();
   return new Promise((resolve) => {
-    const done = () => { pc.removeEventListener('icegatheringstatechange', check); clearTimeout(t); resolve(); };
+    let have = false;
+    let soft = false;
+    let grace: ReturnType<typeof setTimeout> | null = null;
+    const done = () => {
+      pc.removeEventListener('icegatheringstatechange', check);
+      pc.removeEventListener('icecandidate', onCand);
+      clearTimeout(t1); clearTimeout(t2); if (grace) clearTimeout(grace);
+      resolve();
+    };
     const check = () => { if (pc.iceGatheringState === 'complete') done(); };
-    const t = setTimeout(done, ICE_GATHER_MS);
+    const onCand = (e: RTCPeerConnectionIceEvent) => {
+      if (!e.candidate?.candidate) return;
+      have = true;
+      if (soft && !grace) grace = setTimeout(done, 400);
+    };
+    const t1 = setTimeout(() => { soft = true; if (have) done(); }, ICE_GATHER_MS);
+    const t2 = setTimeout(done, ICE_GATHER_MAX_MS);
     pc.addEventListener('icegatheringstatechange', check);
+    pc.addEventListener('icecandidate', onCand);
   });
 }
+
+/** Codec order for one transceiver (sdp.ts has the reasoning). `red`: RED first, so it is sent. */
+function setCodecPrefs(t: RTCRtpTransceiver, kind: 'audio' | 'video', frames: boolean, red = false) {
+  try {
+    if (typeof t.setCodecPreferences !== 'function' || typeof RTCRtpReceiver === 'undefined' || !RTCRtpReceiver.getCapabilities) return;
+    const caps = RTCRtpReceiver.getCapabilities(kind);
+    if (!caps?.codecs.length) return;
+    const list = kind === 'audio' ? orderAudioCodecs(caps.codecs, red) : orderVideoCodecs(caps.codecs, { frames, mobile: isMobileUa(navigator.userAgent) });
+    if (list.length && list !== caps.codecs) t.setCodecPreferences(list);
+  } catch { /* keep the browser's defaults */ }
+}
+
 
 class CallEngine {
   private snap: CallSnapshot = EMPTY;
@@ -149,8 +261,20 @@ class CallEngine {
   private statsTimer: ReturnType<typeof setInterval> | null = null;
   private resetTimer: ReturnType<typeof setTimeout> | null = null;
   private probeTimer: ReturnType<typeof setTimeout> | null = null;
+  private netTimer: ReturnType<typeof setTimeout> | null = null;
   private local: MediaStream | null = null;
   private cleanup: (() => void)[] = [];
+  /** My own connection as I see it (sent to the others as `net`), with a little hysteresis. */
+  private myNet: 0 | 1 | 2 = 0;
+  private myNetCand: 0 | 1 | 2 = 0;
+  private sentNet: 0 | 1 | 2 = 0;
+  private weakPolls = 0;
+  private suggestDismissed = false;
+  private offline = false;
+  /** Debug/tests only (kw.calls.debug): stats overrides, so the controller can be driven synthetically. */
+  private netOverride: Partial<NetSample> | null = null;
+  /** ICE restarts this call (debug/tests). */
+  restarts = 0;
   readonly myEp = () => endpointOf(this.userId ?? '', DEV_ID);
 
   // ------------------------------------------------------------------------------------- store
@@ -162,7 +286,8 @@ class CallEngine {
   }
   private peerViews(): PeerView[] {
     return [...this.peers.values()].map((p) => ({
-      ep: p.ep, userId: p.userId, stream: p.stream, state: p.state, mic: p.mic, cam: p.cam, quality: p.quality,
+      ep: p.ep, userId: p.userId, stream: p.stream, state: p.state, mic: p.mic, cam: p.cam, videoPaused: p.vp,
+      quality: p.decision?.quality ?? null, reason: p.decision?.reason ?? null,
       relayed: p.relayed, safety: p.safety, frames: p.fe, bytesReceived: p.bytesReceived,
     }));
   }
@@ -191,9 +316,26 @@ class CallEngine {
     const hide = () => { if (isLive(this.snap.m.phase)) this.hangup(); };
     window.addEventListener('pagehide', hide);
     const offLock = onLock(() => { this.hangup(); this.stop(); });
-    this.cleanup.push(() => window.removeEventListener('pagehide', hide), offLock);
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('kw.calls.debug') === '1') {
-      (window as unknown as { __kwCall?: unknown }).__kwCall = { engine: this, pcs: () => [...this.peers.values()].map((p) => p.pc) };
+    // Network changes (Wi-Fi ↔ mobile data, coming back online): the old ICE path is probably gone, so
+    // restart ICE right away instead of waiting for the connection to time out.
+    const online = () => { this.offline = false; this.onNetworkChange(); };
+    const offline = () => { this.offline = true; if (this.inCall()) this.refreshWeak(); };
+    const conn = netInfo();
+    const change = () => this.onNetworkChange();
+    window.addEventListener('online', online);
+    window.addEventListener('offline', offline);
+    conn?.addEventListener?.('change', change);
+    this.cleanup.push(() => window.removeEventListener('pagehide', hide), offLock,
+      () => window.removeEventListener('online', online), () => window.removeEventListener('offline', offline),
+      () => conn?.removeEventListener?.('change', change));
+    if (debugOn()) {
+      (window as unknown as { __kwCall?: unknown }).__kwCall = {
+        engine: this,
+        pcs: () => [...this.peers.values()].map((p) => p.pc),
+        peers: () => [...this.peers.values()].map((p) => ({ ep: p.ep, tier: p.decision?.tier ?? null, audio: p.decision?.audioBitrate ?? null, red: p.decision?.red ?? false, quality: p.decision?.quality ?? null, reason: p.decision?.reason ?? null, rx: p.rx, vp: p.vp, net: p.net, redNeg: p.redNeg, upHold: p.ctl.upHold, tx: p.tx, state: p.state })),
+        setNet: (o: Partial<NetSample> | null) => { this.netOverride = o; },
+        network: () => this.onNetworkChange(true),
+      };
     }
   }
 
@@ -236,18 +378,32 @@ class CallEngine {
     return { call: this.snap.callId!, from: this.myEp(), ...(to ? { to } : {}), ts: Date.now(), body };
   }
 
-  /** Send to everyone in the call channel (or to one endpoint, still over the channel). */
-  private async send(body: SignalBody, to?: string, keepalive = false) {
+  /** One delivery attempt: the joined channel, else Realtime's REST endpoint. */
+  private async deliver(topic: string, wire: Wire, keepalive: boolean): Promise<boolean> {
+    const ch = this.callCh;
+    if (!keepalive && ch && this.callChConv === this.conv?.id && (ch as unknown as { state?: string }).state === 'joined') {
+      const r = await ch.send({ type: 'broadcast', event: 'sig', payload: wire }).catch(() => 'error');
+      if (r === 'ok') return true;
+    }
+    return restBroadcast(topic, wire, keepalive).catch(() => false);
+  }
+
+  /**
+   * Send to everyone in the call channel (or to one endpoint, still over the channel). With `retries`,
+   * a failed delivery is retried with back-off using the SAME sealed message (same signal id), so a
+   * copy that did get through is dropped as a duplicate by the receiver: retries are idempotent.
+   */
+  private async send(body: SignalBody, to?: string, keepalive = false, retries = 0): Promise<boolean> {
     const conv = this.conv;
     const key = this.convKey;
-    if (!conv || !key || !this.snap.callId || !this.userId) return;
+    if (!conv || !key || !this.snap.callId || !this.userId) return false;
     const wire = this.seal(conv, key, this.signal(body, to));
-    const ch = this.callCh;
-    if (!keepalive && ch && this.callChConv === conv.id && (ch as unknown as { state?: string }).state === 'joined') {
-      const r = await ch.send({ type: 'broadcast', event: 'sig', payload: wire });
-      if (r === 'ok') return;
+    const callId = this.snap.callId;
+    for (let i = 0; ; i++) {
+      if (await this.deliver(`call:${conv.id}`, wire, keepalive)) return true;
+      if (i >= retries || this.snap.callId !== callId || !this.inCall()) return false;
+      await sleep(Math.min(8_000, 500 * 2 ** i));
     }
-    await restBroadcast(`call:${conv.id}`, wire, keepalive).catch(() => undefined);
   }
 
   private joinCallChannel(convId: string): Promise<void> {
@@ -274,10 +430,18 @@ class CallEngine {
   }
 
   // ------------------------------------------------------------------------------------ media
+  /** Capture size: 720p only where it can be used; phones, data saver and slow links capture 360p (less CPU). */
+  private videoConstraints(facing: 'user' | 'environment' | { exact: 'user' | 'environment' }): MediaTrackConstraints {
+    const small = this.snap.saver || slowLink() || (typeof navigator !== 'undefined' && isMobileUa(navigator.userAgent));
+    return small
+      ? { facingMode: facing, width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24, max: 30 } }
+      : { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
+  }
+
   private async getMedia(video: boolean): Promise<MediaStream> {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: video ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      video: video ? this.videoConstraints('user') : false,
     });
     this.local = stream;
     this.set({ local: stream, mic: true, cam: video, facing: 'user' });
@@ -296,6 +460,9 @@ class CallEngine {
     if (mode && this.callKey) this.frames = new FrameCrypto(mode, this.callKey);
   }
 
+  /** Data saver for a new call: the setting, or the browser's Save-Data ("Lite mode"). */
+  private initialSaver() { return getCallPrefs().saver || !!netInfo()?.saveData; }
+
   // ------------------------------------------------------------------------------------ place
   /** Call everyone in a conversation (voice or video). */
   async place(summary: ConversationSummary, video: boolean): Promise<void> {
@@ -305,9 +472,9 @@ class CallEngine {
     const invited = summary.members.filter((m) => m !== this.userId);
     if (!invited.length || summary.members.length > MAX_CALL_PEOPLE) return;
     this.dispatch({ t: 'place', invited });
-    this.set({ conv: summary, convId: summary.id, video, isCaller: true, caller: this.userId, masked: false, minimized: false, connectedAt: null });
+    this.set({ conv: summary, convId: summary.id, video, isCaller: true, caller: this.userId, masked: false, minimized: false, connectedAt: null, saver: this.initialSaver() });
     try {
-      await this.getMedia(video);
+      await this.getMedia(video && !getCallPrefs().camOff);
     } catch {
       this.dispatch({ t: 'failed', reason: 'no-media' });
       return;
@@ -323,16 +490,30 @@ class CallEngine {
       this.set({ callId: res.data });
       await this.prepareTransport();
       await this.joinCallChannel(summary.id);
-      await this.send({ k: 'join', fe: !!this.frames, video });
+      await this.send({ k: 'join', fe: !!this.frames, video: this.snap.cam }, undefined, false, 3);
       startTone('outgoing');
       await this.ringAll(invited, video);
       this.timers.push(setTimeout(() => {
-        if (this.snap.m.phase === 'outgoing') { void this.send({ k: 'cancel' }); this.dispatch({ t: 'timeout' }); }
+        if (this.snap.m.phase === 'outgoing') { void this.send({ k: 'cancel' }, undefined, false, 2); this.dispatch({ t: 'timeout' }); }
       }, RING_MS));
+      this.reRing(video);
     } catch (e) {
       console.warn('call failed to start', e instanceof Error ? e.message : e);
       this.dispatch({ t: 'failed' });
     }
+  }
+
+  /** While nobody has answered, ring again every RERING_MS (callees drop duplicates). */
+  private reRing(video: boolean) {
+    const callId = this.snap.callId;
+    const tick = () => {
+      if (this.snap.callId !== callId || this.snap.m.phase !== 'outgoing') return;
+      const answered = new Set([...this.roster.keys()].map((ep) => parseEndpoint(ep)?.userId));
+      const pending = this.snap.m.invited.filter((u) => !this.snap.m.declined.includes(u) && !answered.has(u));
+      if (pending.length) void this.ringAll(pending, video);
+      this.timers.push(setTimeout(tick, RERING_MS));
+    };
+    this.timers.push(setTimeout(tick, RERING_MS));
   }
 
   private async ringAll(userIds: string[], video: boolean) {
@@ -381,7 +562,7 @@ class CallEngine {
     this.dispatch({ t: 'ring', invited: conv.members.filter((m) => m !== this.userId) });
     this.set({
       callId: s.call, convId: conv.id, conv: conv.summary, video: body.video, isCaller: false, caller: res.author,
-      masked: isHiddenChat(conv.id) && !isRevealed(), minimized: false, connectedAt: null,
+      masked: isHiddenChat(conv.id) && !isRevealed(), minimized: false, connectedAt: null, saver: this.initialSaver(),
     });
     if (this.probeTimer) { clearTimeout(this.probeTimer); this.probeTimer = null; }
     startTone('incoming');
@@ -411,16 +592,25 @@ class CallEngine {
     stopTone();
     this.dispatch({ t: 'accept' });
     try {
-      await this.getMedia(this.snap.video);
+      await this.getMedia(this.snap.video && !getCallPrefs().camOff);
     } catch {
       try { await this.getMedia(false); } catch { this.dispatch({ t: 'failed', reason: 'no-media' }); return; }
     }
     if (this.phaseNow() !== 'connecting') return;
     await this.prepareTransport();
     await this.joinCallChannel(this.conv.id);
-    await this.send({ k: 'join', fe: !!this.frames, video: this.snap.cam });
+    await this.send({ k: 'join', fe: !!this.frames, video: this.snap.cam }, undefined, false, 3);
     void sb().rpc('call_answered', { msg: this.snap.callId }).then(() => undefined, () => undefined);
-    this.timers.push(setTimeout(() => { if (this.snap.m.phase === 'connecting') this.dispatch({ t: 'timeout' }); }, CONNECT_MS));
+    this.timers.push(setTimeout(() => { if (this.snap.m.phase === 'connecting') this.dispatch({ t: 'timeout' }); }, slowLink() ? CONNECT_SLOW_MS : CONNECT_MS));
+    // If our join (or their reply) was dropped, say it again until someone connects.
+    const callId = this.snap.callId;
+    let tries = 0;
+    const again = () => {
+      if (this.snap.callId !== callId || this.snap.m.phase !== 'connecting' || this.peers.size > 0 || ++tries > 6) return;
+      void this.send({ k: 'join', fe: !!this.frames, video: this.snap.cam });
+      this.timers.push(setTimeout(again, JOIN_RETRY_MS));
+    };
+    this.timers.push(setTimeout(again, JOIN_RETRY_MS));
   }
 
   decline() {
@@ -468,7 +658,7 @@ class CallEngine {
           return;
         }
         if (!this.inCall()) return;
-        await this.send({ k: 'here', fe: !!this.frames, video: this.snap.cam }, s.from);
+        await this.send({ k: 'here', fe: !!this.frames, video: this.snap.cam }, s.from, false, 2);
         if (me < s.from) await this.connectTo(s.from);
         return;
       case 'here':
@@ -480,12 +670,39 @@ class CallEngine {
         return;
       case 'answer': {
         const p = this.peers.get(s.from);
-        if (p && p.pc.signalingState === 'have-local-offer') await p.pc.setRemoteDescription({ type: 'answer', sdp: b.sdp }).catch((e) => console.warn('call answer', e));
+        if (p && p.pc.signalingState === 'have-local-offer') {
+          await p.pc.setRemoteDescription({ type: 'answer', sdp: b.sdp }).catch((e) => console.warn('call answer', e));
+          if (p.offerTimer) { clearTimeout(p.offerTimer); p.offerTimer = null; }
+          this.reapply(p);
+        }
         return;
       }
       case 'state': {
         const p = this.peers.get(s.from);
-        if (p) { p.mic = b.mic; p.cam = b.cam; this.bumpPeers(); }
+        if (p) {
+          p.mic = b.mic; p.cam = b.cam;
+          if (b.vp !== undefined) p.vp = b.vp;
+          if (b.net !== undefined) p.net = b.net;
+          if (b.rx !== undefined && b.rx !== p.rx) { p.rx = b.rx as Tier; this.reconfigure(p); }
+          this.bumpPeers();
+        }
+        return;
+      }
+      case 'restart': {
+        const p = this.peers.get(s.from);
+        if (p?.initiator && Date.now() - p.lastRestartAt > 1_500) this.restartIce(p);
+        return;
+      }
+      case 'reneg': {
+        const p = this.peers.get(s.from);
+        if (!p?.initiator) return;
+        if (b.red !== undefined) p.peerRed = b.red;
+        if (p.pc.signalingState === 'stable' && Date.now() - p.lastRenegAt > 3_000) {
+          p.lastRenegAt = Date.now();
+          const red = !!p.decision?.red || p.peerRed;
+          if (red !== p.redNeg) this.setRed(p, red);
+          void this.offer(p, false).catch((e) => console.warn('call renegotiate', e));
+        }
         return;
       }
       case 'leave':
@@ -512,6 +729,13 @@ class CallEngine {
   }
 
   // ------------------------------------------------------------------------------------ peers
+  /** What I want to receive: nothing (voice only), the smallest video (data saver), or anything. */
+  private rxWanted(): Tier { return this.snap.voiceOnly ? PAUSED : this.snap.saver ? 2 : 0; }
+
+  private ceilingFor(p: { rx: Tier }): Tier {
+    return Math.max(meshCeiling(this.peers.size), this.snap.saver ? 2 : 0, p.rx) as Tier;
+  }
+
   private makePeer(ep: string, initiator: boolean, fe: boolean): Peer {
     const userId = parseEndpoint(ep)!.userId;
     const config: RTCConfiguration & { encodedInsertableStreams?: boolean } = {
@@ -521,9 +745,15 @@ class CallEngine {
       ...(fe && this.frames?.mode === 'streams' ? { encodedInsertableStreams: true } : {}),
     };
     const pc = new RTCPeerConnection(config);
+    const rx: Tier = 0;
     const peer: Peer = {
-      ep, userId, pc, stream: new MediaStream(), initiator, fe, state: 'connecting', mic: true, cam: !!this.roster.get(ep)?.video,
-      quality: null, relayed: null, safety: null, restarted: false, lostTimer: null, prev: { lost: 0, recv: 0 }, bytesReceived: 0,
+      ep, userId, pc, stream: new MediaStream(), initiator, fe, state: 'connecting', mic: true, cam: !!this.roster.get(ep)?.video, vp: false, net: null, rx,
+      ctl: new QualityController({ ceiling: 0, saver: this.snap.saver }, startTier(netInfo(), this.snap.saver)),
+      decision: null, applied: { audio: '', video: '' }, sentVp: false,
+      relayed: null, safety: null, lostTimer: null, restartTimer: null, restartAttempts: 0, lastRestartAt: 0, offerTimer: null, lastOffer: null, lastAnswer: null,
+      prev: { lost: 0, recv: 0, t: 0, aBytes: 0, vBytes: 0 },
+      tx: { audioBps: 0, videoBps: 0, height: 0, fps: 0, aob: null, budget: null, rtt: null, loss: 0, limitation: null, red: false },
+      uplink: 'good', bytesReceived: 0, paramQueue: Promise.resolve(), redNeg: false, peerRed: false, askedRed: false, ptime: 20, lastRenegAt: Date.now(),
     };
     pc.ontrack = (e) => {
       if (fe) this.attachTransforms(peer);
@@ -532,6 +762,7 @@ class CallEngine {
     };
     pc.onconnectionstatechange = () => this.onPeerState(peer);
     this.peers.set(ep, peer);
+    this.reconfigureAll();
     this.bumpPeers();
     return peer;
   }
@@ -544,8 +775,46 @@ class CallEngine {
     for (const t of peer.pc.getTransceivers()) {
       if (!this.transformed.has(t.sender)) { this.transformed.add(t.sender); this.frames.sender(t.sender, me); }
       if (!this.transformed.has(t.receiver)) { this.transformed.add(t.receiver); this.frames.receiver(t.receiver, peer.ep); }
-      if (t.receiver.track.kind === 'video') preferVp8(t);
     }
+  }
+
+  private codecPrefs(peer: Peer) {
+    for (const t of peer.pc.getTransceivers()) {
+      const kind = t.receiver.track.kind;
+      if (kind === 'audio' || kind === 'video') setCodecPrefs(t, kind, peer.fe, kind === 'audio' && peer.redNeg);
+    }
+  }
+
+  /** RED on or off for this pair: put it first (or second) in the audio codec order for the next negotiation. */
+  private setRed(peer: Peer, red: boolean) {
+    peer.redNeg = red;
+    const t = peer.pc.getTransceivers().find((x) => x.receiver.track.kind === 'audio');
+    if (t) setCodecPrefs(t, 'audio', peer.fe, red);
+  }
+
+  /**
+   * Opus packet time to ask this peer for. 60 ms instead of 20 ms sends a third of the packets: on a
+   * 12 kbps voice stream the per-packet costs (IP/UDP/SRTP/RTP headers, TURN framing and the 29-byte
+   * frame-encryption trailer) otherwise outweigh the voice itself. Used when either side is saving data
+   * or has a poor link, or the controller has squeezed Opus to 12 kbps or less.
+   */
+  private wantPtime(p: Peer): 20 | 60 {
+    const low = this.snap.saver || p.rx >= 2 || this.myNet === 2 || p.net === 2 || verySlowLink() || (!!p.decision && p.decision.audioBitrate <= SAVER_AUDIO);
+    return low ? 60 : 20;
+  }
+
+  /** The SDP we send: our receive wishes for the other side's Opus encoder (sdp.ts). */
+  private outgoingSdp(sdp: string, p: Peer): string {
+    const saver = this.snap.saver;
+    p.ptime = this.wantPtime(p);
+    let out = tuneOpus(sdp, { maxAverageBitrate: saver ? SAVER_AUDIO : 32_000, ptime: p.ptime });
+    if (debugOn()) {
+      try {
+        const cap = Number(localStorage.getItem('kw.calls.testVideoCapKbps'));
+        if (cap > 0) out = capVideoBandwidth(out, cap);
+      } catch { /* ignore */ }
+    }
+    return out;
   }
 
   private async connectTo(ep: string) {
@@ -556,19 +825,39 @@ class CallEngine {
     pc.addTransceiver(this.audioTrack() ?? 'audio', { direction: 'sendrecv', streams: [this.local] });
     pc.addTransceiver(this.videoTrack() ?? 'video', { direction: 'sendrecv', streams: [this.local] });
     this.attachTransforms(peer);
+    this.codecPrefs(peer);
     await this.offer(peer, false);
   }
 
   private async offer(peer: Peer, iceRestart: boolean) {
     const pc = peer.pc;
+    if (iceRestart) { peer.lastRestartAt = Date.now(); this.restarts++; }
     await pc.setLocalDescription(await pc.createOffer(iceRestart ? { iceRestart: true } : undefined));
     await waitForIce(pc);
     if (pc.connectionState === 'closed' || !pc.localDescription) return;
-    await this.send({ k: 'offer', sdp: pc.localDescription.sdp, fe: peer.fe }, peer.ep);
+    const sdp = this.outgoingSdp(pc.localDescription.sdp, peer);
+    const local = pc.localDescription.sdp;
+    await this.send({ k: 'offer', sdp, fe: peer.fe }, peer.ep, false, 3);
+    // No answer in time (a dropped message): send the same offer again. The answerer recognises it and
+    // repeats its answer rather than renegotiating.
+    if (peer.offerTimer) clearTimeout(peer.offerTimer);
+    let tries = 0;
+    const check = () => {
+      peer.offerTimer = null;
+      if (!this.peers.has(peer.ep) || pc.signalingState !== 'have-local-offer' || pc.localDescription?.sdp !== local || ++tries > OFFER_TRIES) return;
+      void this.send({ k: 'offer', sdp, fe: peer.fe }, peer.ep, false, 1);
+      peer.offerTimer = setTimeout(check, OFFER_RETRY_MS * 1.5 ** tries);
+    };
+    peer.offerTimer = setTimeout(check, OFFER_RETRY_MS);
   }
 
   private async onOffer(ep: string, sdp: string, theirFe: boolean) {
     let peer = this.peers.get(ep);
+    // The same offer again (their retry after our answer was lost): repeat the answer, don't renegotiate.
+    if (peer && peer.lastOffer === sdp && peer.lastAnswer) {
+      await this.send({ k: 'answer', sdp: peer.lastAnswer, fe: peer.fe }, ep, false, 2);
+      return;
+    }
     const fresh = !peer;
     if (!peer) peer = this.makePeer(ep, false, theirFe && !!this.frames);
     const pc = peer.pc;
@@ -581,45 +870,102 @@ class CallEngine {
         await t.sender.replaceTrack(kind === 'audio' ? this.audioTrack() : this.videoTrack());
         try { t.sender.setStreams?.(this.local); } catch { /* older browsers */ }
       }
+      this.codecPrefs(peer);
     }
+    // RED is a property of the pair: the offerer decides (it hears our wish via `reneg`), we mirror it.
+    const red = firstAudioCodec(sdp) === 'red';
+    if (red !== peer.redNeg) this.setRed(peer, red);
     await pc.setLocalDescription(await pc.createAnswer());
+    if (!fresh) this.reapply(peer);
     await waitForIce(pc);
     if (pc.connectionState === 'closed' || !pc.localDescription) return;
-    await this.send({ k: 'answer', sdp: pc.localDescription.sdp, fe: peer.fe }, ep);
+    const answer = this.outgoingSdp(pc.localDescription.sdp, peer);
+    peer.lastOffer = sdp;
+    peer.lastAnswer = answer;
+    await this.send({ k: 'answer', sdp: answer, fe: peer.fe }, ep, false, 3);
   }
 
   private onPeerState(peer: Peer) {
     const st = peer.pc.connectionState;
     if (st === 'connected') {
       if (peer.lostTimer) { clearTimeout(peer.lostTimer); peer.lostTimer = null; }
+      if (peer.restartTimer) { clearTimeout(peer.restartTimer); peer.restartTimer = null; }
+      peer.restartAttempts = 0;
+      const first = !peer.decision;
       peer.state = 'connected';
       this.bumpPeers();
       this.dispatch({ t: 'peer-connected', count: this.connectedCount() });
-      void this.computeSafety(peer);
+      if (!peer.safety) void this.computeSafety(peer);
       this.startStats();
-      void this.send({ k: 'state', mic: this.snap.mic, cam: this.snap.cam }, peer.ep);
+      void this.send(this.stateBody({ vp: peer.sentVp }), peer.ep, false, 2);
+      if (first) void this.applyDecision(peer, peer.ctl.configure({}));
     } else if (st === 'disconnected' || st === 'failed') {
       peer.state = 'reconnecting';
       this.bumpPeers();
-      if (st === 'failed' && peer.initiator && !peer.restarted) {
-        peer.restarted = true;
-        void this.offer(peer, true).catch(() => undefined);
-      }
+      // 'disconnected' often heals on its own; 'failed' won't. Either way, keep the call on screen
+      // ("Reconnecting…") and restart ICE with back-off until RECONNECT_MS runs out.
+      this.scheduleRestart(peer, st === 'failed' ? 0 : DISCONNECT_GRACE_MS);
       peer.lostTimer ??= setTimeout(() => { if (peer.pc.connectionState !== 'connected') this.closePeer(peer.ep); }, RECONNECT_MS);
     } else if (st === 'closed') {
       this.closePeer(peer.ep);
     }
   }
 
+  private scheduleRestart(peer: Peer, delay: number) {
+    if (peer.restartTimer) return;
+    peer.restartTimer = setTimeout(() => {
+      peer.restartTimer = null;
+      if (!this.peers.has(peer.ep) || peer.pc.connectionState === 'connected' || peer.pc.connectionState === 'closed') { peer.restartAttempts = 0; return; }
+      this.restartIce(peer);
+      peer.restartAttempts++;
+      this.scheduleRestart(peer, Math.min(RESTART_MAX_MS, RESTART_BASE_MS * 2 ** peer.restartAttempts));
+    }, delay);
+  }
+
+  /** ICE restart: the offerer re-offers with new credentials; the answerer asks the offerer to. Both sealed. */
+  private restartIce(peer: Peer) {
+    if (peer.initiator) {
+      void this.offer(peer, true).catch((e) => console.warn('call ice restart', e));
+    } else {
+      peer.lastRestartAt = Date.now();
+      void this.send({ k: 'restart' }, peer.ep, false, 2);
+    }
+  }
+
+  /** online / connection 'change': restart ICE on every peer now (debounced). */
+  private onNetworkChange(now = false) {
+    if (this.netTimer) clearTimeout(this.netTimer);
+    const run = () => {
+      this.netTimer = null;
+      if (!this.inCall()) return;
+      for (const p of this.peers.values()) {
+        if (Date.now() - p.lastRestartAt < 1_500) continue;
+        p.restartAttempts = 0;
+        if (p.restartTimer) { clearTimeout(p.restartTimer); p.restartTimer = null; }
+        this.restartIce(p);
+      }
+      this.refreshWeak();
+    };
+    if (now) run(); else this.netTimer = setTimeout(run, 1_000);
+  }
+
   private connectedCount() { return [...this.peers.values()].filter((p) => p.state === 'connected').length; }
+
+  private clearPeerTimers(p: Peer) {
+    if (p.lostTimer) clearTimeout(p.lostTimer);
+    if (p.restartTimer) clearTimeout(p.restartTimer);
+    if (p.offerTimer) clearTimeout(p.offerTimer);
+    p.lostTimer = p.restartTimer = p.offerTimer = null;
+  }
 
   private closePeer(ep: string) {
     const p = this.peers.get(ep);
     if (!p) return;
     this.peers.delete(ep);
-    if (p.lostTimer) clearTimeout(p.lostTimer);
+    this.clearPeerTimers(p);
     try { p.pc.close(); } catch { /* already closed */ }
     p.stream.getTracks().forEach((t) => t.stop());
+    this.reconfigureAll();
     this.bumpPeers();
     this.dispatch({ t: 'peer-left', count: this.peers.size });
   }
@@ -635,41 +981,206 @@ class CallEngine {
     this.bumpPeers();
   }
 
-  // ------------------------------------------------------------------------------------ stats
+  // ------------------------------------------------------------------------------- quality control
+  private stateBody(extra: { vp?: boolean } = {}): SignalBody {
+    return { k: 'state', mic: this.snap.mic, cam: this.snap.cam, net: this.myNet, rx: this.rxWanted() as 0 | 1 | 2 | 3, ...extra };
+  }
+
+  private reconfigure(p: Peer) {
+    const d = p.ctl.configure({ ceiling: this.ceilingFor(p), saver: this.snap.saver || p.rx >= 2 });
+    if (p.state === 'connected') void this.applyDecision(p, d);
+  }
+  private reconfigureAll() { for (const p of this.peers.values()) this.reconfigure(p); }
+
   private startStats() {
     if (this.statsTimer) return;
-    this.statsTimer = setInterval(() => { void this.pollStats(); }, 2000);
+    this.statsTimer = setInterval(() => { void this.pollStats(); }, STATS_MS);
+  }
+
+  /** After a renegotiation, push the current decision to the senders again. */
+  private reapply(p: Peer) {
+    p.applied = { audio: '', video: '' };
+    if (p.decision && p.state === 'connected') void this.applyDecision(p, p.decision);
+  }
+
+  /**
+   * Renegotiate (no ICE restart) when the Opus packet time this peer should use changed, or RED should go
+   * on/off. RED needs a renegotiation: Chrome sends RED only when it is first in the negotiated audio
+   * codec order (setParameters' per-encoding `codec` is accepted for audio but changes nothing). The
+   * offerer decides for the pair (RED if either side's controller wants it); the answerer asks with
+   * `reneg`. Rate-limited to one every 10 s per peer, on top of the controller's own hysteresis.
+   */
+  private maybeRenegotiate(p: Peer) {
+    if (p.state !== 'connected' || Date.now() - p.lastRenegAt < 10_000) return;
+    const ptime = this.wantPtime(p) !== p.ptime;
+    const mine = !!p.decision?.red;
+    if (p.initiator) {
+      const red = mine || p.peerRed;
+      if ((!ptime && red === p.redNeg) || p.pc.signalingState !== 'stable') return;
+      p.lastRenegAt = Date.now();
+      if (red !== p.redNeg) this.setRed(p, red);
+      void this.offer(p, false).catch((e) => console.warn('call renegotiate', e));
+    } else {
+      if (!ptime && mine === p.askedRed) return;
+      p.lastRenegAt = Date.now();
+      p.askedRed = mine;
+      void this.send({ k: 'reneg', red: mine }, p.ep, false, 1);
+    }
   }
 
   private async pollStats() {
-    for (const p of this.peers.values()) {
+    const list = [...this.peers.values()];
+    const samples: (NetSample | null)[] = [];
+    const now = performance.now();
+    for (const p of list) {
       try {
         const report = await p.pc.getStats();
         let pairId: string | null = null;
         let rtt: number | null = null;
-        let lost = 0, recv = 0, bytes = 0;
+        let aob: number | null = null;
+        let lost = 0, recv = 0, bytes = 0, aBytes = 0, vBytes = 0, height = 0, fps = 0, jitter: number | null = null;
+        let outLoss = 0;
+        let limitation: Limitation | null = null;
         report.forEach((s) => {
           if (s.type === 'transport' && s.selectedCandidatePairId) pairId = s.selectedCandidatePairId;
-          if (s.type === 'inbound-rtp') { lost += s.packetsLost ?? 0; recv += s.packetsReceived ?? 0; bytes += s.bytesReceived ?? 0; }
+          if (s.type === 'inbound-rtp') {
+            lost += s.packetsLost ?? 0; recv += s.packetsReceived ?? 0; bytes += s.bytesReceived ?? 0;
+            if (s.kind === 'audio' && typeof s.jitter === 'number') jitter = s.jitter;
+          }
+          if (s.type === 'outbound-rtp') {
+            if (s.kind === 'audio') aBytes += s.bytesSent ?? 0;
+            else {
+              vBytes += s.bytesSent ?? 0;
+              if (typeof s.frameHeight === 'number') height = s.frameHeight;
+              if (typeof s.framesPerSecond === 'number') fps = s.framesPerSecond;
+              if (typeof s.qualityLimitationReason === 'string') limitation = s.qualityLimitationReason as Limitation;
+            }
+          }
+          if (s.type === 'remote-inbound-rtp') {
+            if (typeof s.fractionLost === 'number') outLoss = Math.max(outLoss, s.fractionLost);
+            if (rtt === null && typeof s.roundTripTime === 'number') rtt = s.roundTripTime;
+          }
         });
         if (!pairId) report.forEach((s) => { if (s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded') pairId = s.id; });
         const pair = pairId ? report.get(pairId) : null;
         if (pair) {
-          rtt = typeof pair.currentRoundTripTime === 'number' ? pair.currentRoundTripTime : null;
+          if (typeof pair.currentRoundTripTime === 'number') rtt = pair.currentRoundTripTime;
+          if (typeof pair.availableOutgoingBitrate === 'number') aob = pair.availableOutgoingBitrate;
           const lc = report.get(pair.localCandidateId);
           const rc = report.get(pair.remoteCandidateId);
           p.relayed = lc?.candidateType === 'relay' || rc?.candidateType === 'relay';
         }
         const dl = lost - p.prev.lost;
         const dr = recv - p.prev.recv;
-        p.prev = { lost, recv };
-        const loss = dr + dl > 0 ? dl / (dr + dl) : 0;
+        const dt = p.prev.t ? (now - p.prev.t) / 1000 : 0;
+        const bps = (cur: number, prev: number) => (dt > 0 && cur >= prev ? Math.round(((cur - prev) * 8) / dt) : 0);
+        p.tx = { ...p.tx, audioBps: bps(aBytes, p.prev.aBytes), videoBps: bps(vBytes, p.prev.vBytes), height, fps, aob, rtt, loss: outLoss, limitation, red: p.redNeg && p.pc.signalingState === 'stable' };
+        p.prev = { lost, recv, t: now, aBytes, vBytes };
         p.bytesReceived = bytes;
-        p.quality = rtt === null && dr === 0 ? p.quality
-          : (rtt ?? 0) < 0.3 && loss < 0.02 ? 'good' : (rtt ?? 0) < 0.6 && loss < 0.08 ? 'fair' : 'poor';
-      } catch { /* closed meanwhile */ }
+        const inLoss = dr + dl > 0 ? Math.max(0, dl) / (dr + Math.max(0, dl)) : 0;
+        if (p.state !== 'connected') { samples.push(null); continue; }
+        samples.push({ availableOut: aob, rtt, loss: outLoss, inLoss, jitter, limitation, ...(debugOn() ? this.netOverride ?? {} : {}) });
+      } catch { samples.push(null); /* closed meanwhile */ }
     }
+    // Mesh: every connection shares one uplink.
+    const shared = shareUplink(samples.map((s) => (s ? s.availableOut : null)));
+    list.forEach((p, i) => {
+      const s = samples[i];
+      if (!s) return;
+      p.tx.budget = shared[i] ?? null;
+      const d = p.ctl.update({ ...s, availableOut: p.tx.budget });
+      p.uplink = s.loss >= 0.10 || (s.availableOut !== null && s.availableOut < 100_000) ? 'poor'
+        : s.loss >= 0.03 || (s.availableOut !== null && s.availableOut < 250_000) ? 'fair' : 'good';
+      void this.applyDecision(p, d);
+    });
+    this.refreshWeak();
+    for (const p of list) this.maybeRenegotiate(p);
     this.set({ peers: this.peerViews(), frameStats: this.frames ? this.frames.stats() : null });
+  }
+
+  /** Apply a controller decision to this peer's senders (only what changed), one setParameters at a time. */
+  private applyDecision(p: Peer, d: Decision): Promise<void> {
+    p.decision = d;
+    const job = async () => {
+      if (p.pc.connectionState === 'closed') return;
+      const audio = p.pc.getTransceivers().find((t) => t.receiver.track.kind === 'audio')?.sender;
+      const video = p.pc.getTransceivers().find((t) => t.receiver.track.kind === 'video')?.sender;
+      const aKey = `${d.audioBitrate}`;
+      if (audio && p.applied.audio !== aKey) {
+        const params = audio.getParameters();
+        const enc = params.encodings?.[0];
+        if (enc) {
+          enc.maxBitrate = d.audioBitrate;
+          enc.priority = 'high';
+          enc.networkPriority = 'high';
+          await audio.setParameters(params).catch(() => undefined);
+          p.applied.audio = aKey;
+        }
+      }
+      if (video) {
+        const height = this.videoTrack()?.getSettings().height ?? 0;
+        const v = videoEncoding(d.tier, height, p.tx.budget);
+        const vKey = `${v.active}|${v.scaleResolutionDownBy}|${Math.round(v.maxBitrate / 50_000)}|${v.maxFramerate}`;
+        if (p.applied.video !== vKey) {
+          const params = video.getParameters();
+          const enc = params.encodings?.[0];
+          if (enc) {
+            enc.active = v.active;
+            enc.scaleResolutionDownBy = v.scaleResolutionDownBy;
+            enc.maxBitrate = v.maxBitrate;
+            enc.maxFramerate = v.maxFramerate;
+            enc.priority = 'low';
+            enc.networkPriority = 'low';
+            // Smooth motion while there is room; at 180p, trade a bit of both instead.
+            params.degradationPreference = d.tier <= 1 ? 'maintain-framerate' : 'balanced';
+            try { await video.setParameters(params); } catch {
+              const again = video.getParameters();
+              const e2 = again.encodings?.[0];
+              if (e2) Object.assign(e2, { active: v.active, scaleResolutionDownBy: v.scaleResolutionDownBy, maxBitrate: v.maxBitrate, maxFramerate: v.maxFramerate });
+              await video.setParameters(again).catch(() => undefined);
+            }
+            p.applied.video = vKey;
+          }
+        }
+      }
+      // Tell them when my video to them is paused by the network (they show my avatar, not a frozen frame).
+      const vp = d.tier === PAUSED && this.snap.cam && p.rx < PAUSED;
+      if (vp !== p.sentVp) { p.sentVp = vp; void this.send(this.stateBody({ vp }), p.ep, false, 1); }
+    };
+    p.paramQueue = p.paramQueue.then(job, job).catch(() => undefined);
+    return p.paramQueue;
+  }
+
+  /** Whose connection is weak, and whether to suggest voice only. */
+  private refreshWeak() {
+    const list = [...this.peers.values()].filter((p) => p.state === 'connected' || p.state === 'reconnecting');
+    const et = netInfo()?.effectiveType;
+    // Mine: offline, a 2G link, or every connection's uplink looks bad (with one peer, only a low
+    // bandwidth estimate counts: loss alone could be at either end).
+    const upPoor = list.filter((p) => p.uplink === 'poor');
+    const bwPoor = list.filter((p) => p.tx.budget !== null && p.tx.budget < 100_000);
+    let raw: 0 | 1 | 2 = 0;
+    if (this.offline || et === 'slow-2g' || et === '2g') raw = 2;
+    else if (list.length && (bwPoor.length === list.length || (list.length >= 2 && upPoor.length === list.length))) raw = 2;
+    else if (list.length && list.every((p) => p.uplink !== 'good')) raw = 1;
+    if (raw === this.myNet) this.myNetCand = raw;
+    else if (raw === this.myNetCand || (raw === 2 && this.offline)) this.myNet = raw;
+    else this.myNetCand = raw;
+    if (this.myNet !== this.sentNet && this.snap.m.phase === 'active') { this.sentNet = this.myNet; void this.send(this.stateBody()); }
+
+    let weak: Weak = null;
+    if (this.myNet === 2) weak = { who: 'me' };
+    else {
+      const them = list.find((p) => p.net === 2 || (p.vp && p.decision?.quality === 'poor'));
+      if (them) weak = { who: 'peer', userId: them.userId };
+      else if (list.some((p) => p.decision?.quality === 'poor' || p.state === 'reconnecting')) weak = { who: 'link' };
+    }
+    const videoInvolved = this.snap.cam || list.some((p) => p.cam && !p.vp);
+    const pausedByNet = list.some((p) => p.decision?.tier === PAUSED && p.decision.constrained && this.snap.cam);
+    this.weakPolls = (weak && weak.who !== 'link') || pausedByNet ? this.weakPolls + 1 : weak ? this.weakPolls : 0;
+    const suggestVoice = !this.suggestDismissed && !this.snap.voiceOnly && videoInvolved && this.weakPolls >= 3;
+    const same = JSON.stringify(weak) === JSON.stringify(this.snap.weak);
+    if (!same || suggestVoice !== this.snap.suggestVoice) this.set({ weak, suggestVoice });
   }
 
   // ------------------------------------------------------------------------------------ controls
@@ -678,7 +1189,7 @@ class CallEngine {
     if (!t) return;
     t.enabled = !t.enabled;
     this.set({ mic: t.enabled });
-    void this.send({ k: 'state', mic: t.enabled, cam: this.snap.cam });
+    void this.send(this.stateBody(), undefined, false, 1);
   }
 
   async toggleCam() {
@@ -691,14 +1202,16 @@ class CallEngine {
       this.set({ cam: false, local: this.local });
     } else {
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: this.snap.facing, width: { ideal: 1280 }, height: { ideal: 720 } } });
+        const s = await navigator.mediaDevices.getUserMedia({ video: this.videoConstraints(this.snap.facing) });
         const track = s.getVideoTracks()[0]!;
         this.local.addTrack(track);
         await this.replaceVideo(track);
-        this.set({ cam: true, local: this.local });
+        // Turning the camera back on ends voice-only: I'd like to see them again too.
+        this.set({ cam: true, local: this.local, voiceOnly: false });
+        this.reconfigureAll();
       } catch { return; }
     }
-    void this.send({ k: 'state', mic: this.snap.mic, cam: this.snap.cam });
+    void this.send(this.stateBody(), undefined, false, 1);
   }
 
   async switchCamera() {
@@ -706,7 +1219,7 @@ class CallEngine {
     if (!this.local || !cur) return;
     const facing = this.snap.facing === 'user' ? 'environment' : 'user';
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: facing } } });
+      const s = await navigator.mediaDevices.getUserMedia({ video: this.videoConstraints({ exact: facing }) });
       const track = s.getVideoTracks()[0]!;
       cur.stop();
       this.local.removeTrack(cur);
@@ -720,8 +1233,28 @@ class CallEngine {
     await Promise.all([...this.peers.values()].map(async (p) => {
       const t = p.pc.getTransceivers().find((x) => x.receiver.track.kind === 'video');
       if (t) await t.sender.replaceTrack(track).catch(() => undefined);
+      p.applied.video = ''; // capture size may differ: re-apply the tier
+      if (p.decision) void this.applyDecision(p, p.decision);
     }));
   }
+
+  /** In-call data saver: smallest video both ways, Opus ≤ 12 kbps. */
+  setSaver(on: boolean) {
+    if (on === this.snap.saver) return;
+    this.set({ saver: on });
+    this.reconfigureAll();
+    void this.send(this.stateBody(), undefined, false, 1);
+  }
+
+  /** "Switch to voice": my camera off, and ask the others to stop sending video (saves both directions). */
+  async voiceOnly() {
+    if (this.videoTrack()) await this.toggleCam();
+    this.set({ voiceOnly: true, suggestVoice: false });
+    this.suggestDismissed = true;
+    void this.send(this.stateBody(), undefined, false, 1);
+  }
+
+  dismissSuggestion() { this.suggestDismissed = true; this.set({ suggestVoice: false }); }
 
   setMinimized(v: boolean) { this.set({ minimized: v }); }
   setSink(id: string) { this.set({ sinkId: id }); }
@@ -737,8 +1270,11 @@ class CallEngine {
     this.timers = [];
     if (this.statsTimer) clearInterval(this.statsTimer);
     this.statsTimer = null;
+    if (this.netTimer) clearTimeout(this.netTimer);
+    this.netTimer = null;
     for (const ep of [...this.peers.keys()]) {
       const p = this.peers.get(ep)!;
+      this.clearPeerTimers(p);
       try { p.pc.close(); } catch { /* ignore */ }
       p.stream.getTracks().forEach((t) => t.stop());
     }
@@ -750,7 +1286,10 @@ class CallEngine {
     this.frames = null;
     this.callKey = null;
     this.leaveCallChannel();
-    this.set({ local: null, peers: [], minimized: false });
+    this.myNet = this.myNetCand = this.sentNet = 0;
+    this.weakPolls = 0;
+    this.suggestDismissed = false;
+    this.set({ local: null, peers: [], minimized: false, weak: null, suggestVoice: false });
     if (this.resetTimer) clearTimeout(this.resetTimer);
     this.resetTimer = setTimeout(() => this.resetNow(), ENDED_SHOW_MS);
   }
@@ -761,6 +1300,7 @@ class CallEngine {
     if (isLive(this.snap.m.phase) || this.snap.m.phase === 'incoming') return;
     this.conv = null;
     this.convKey = null;
+    this.restarts = 0;
     this.snap = { ...EMPTY, relay: this.snap.relay, sinkId: this.snap.sinkId };
     this.listeners.forEach((l) => l());
   }

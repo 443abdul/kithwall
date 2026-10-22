@@ -62,4 +62,18 @@
       if (/^sb-.+-auth-token$/.test(store.key(j) || '')) { root.setAttribute('data-kw-session', ''); break; }
     }
   } catch (e) { /* storage blocked */ }
+
+  // ---- install offer: Chromium fires `beforeinstallprompt` once, possibly before the app has hydrated, so
+  // park it here for lib/install.ts (which takes over listening). Never in the Kithwall Android/iOS app.
+  try {
+    var capNative = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+    if (!capNative && window.addEventListener) {
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault(); // no mini-infobar; Kithwall offers installing calmly (components/install)
+        window.__kwInstall = e;
+        try { window.dispatchEvent(new Event('kw:install')); } catch (x) { /* old browser */ }
+      });
+      window.addEventListener('appinstalled', function () { window.__kwInstall = null; window.__kwInstalled = true; });
+    }
+  } catch (e) { /* ignore */ }
 })();

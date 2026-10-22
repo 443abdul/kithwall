@@ -1,17 +1,19 @@
 'use client';
 // Settings → Notifications (Kithwall 2): push on this device, what to push about (every device),
 // a test push, and installing the app. Logic from lib/push.ts (same as the v1 PushSettings section).
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useT, type MessageKey } from '@/i18n';
 import { useSession } from '@/lib/keys/session';
 import {
-  DEFAULT_PUSH_PREFS, disablePush, enablePush, installState, loadPushPrefs, promptInstall, pushEnabledHere,
+  DEFAULT_PUSH_PREFS, disablePush, enablePush, loadPushPrefs, pushEnabledHere,
   pushSupport, savePushPrefs, sendTestPush, usePushValue, usePushVersion, type PushPrefs,
 } from '@/lib/push';
 import { Switch } from '@/components/ui/Switch';
 import { Button } from '@/components/ui/Button';
 import { Callout } from '@/components/ui/Callout';
-import { Badge } from '@/components/ui/Badge';
+import { InstallHere } from '@/components/install/InstallHere';
+import { useShellHref } from '@/components/shell/AppShell';
 import { useToast } from '@/components/ui/Toast';
 import { SettingsPage, Section } from './shared';
 
@@ -54,7 +56,10 @@ function PushSection() {
       if (next) await enablePush(userId); else await disablePush(userId);
       setOn(next);
       toast({ message: next ? t('nudge.pushOn') : t('settings.notifications.offHere') });
-    } catch { toast({ message: t('nudge.pushFailed'), tone: 'danger' }); } finally { setBusy(null); }
+    } catch (e) {
+      // The app's foss build explains a missing UnifiedPush app itself (native dialog).
+      if ((e as { code?: string } | null)?.code !== 'no_distributor') toast({ message: t('nudge.pushFailed'), tone: 'danger' });
+    } finally { setBusy(null); }
   }
   async function setPref(k: keyof PushPrefs, val: boolean) {
     if (!userId) return;
@@ -91,16 +96,12 @@ function PushSection() {
 
 function InstallSection() {
   const t = useT();
-  const canPrompt = usePushValue(() => installState().canPrompt, false);
-  const installed = usePushValue(() => installState().installed, false);
-  const ios = usePushValue(() => pushSupport().ios, false);
-  const [done, setDone] = useState(false);
+  const href = useShellHref();
+  // On iPhone and iPad, push needs the installed app (nudge.pushIos links here).
   return (
     <Section id="install" title={t('settings.install.title')} description={t('settings.install.body')}>
-      {installed || done ? <p><Badge tone="success">{t('settings.install.installed')}</Badge></p>
-        : ios ? <ol className="k-stack-sm k-small"><li>{t('settings.install.ios1')}</li><li>{t('settings.install.ios2')}</li><li>{t('settings.install.ios3')}</li></ol>
-          : canPrompt ? <div><Button variant="primary" icon="phone" onClick={() => void promptInstall().then((r) => { if (r === 'accepted') setDone(true); })}>{t('settings.install.cta')}</Button></div>
-            : <p className="k-small k-muted">{t('settings.install.manual')}</p>}
+      <InstallHere heading={false} />
+      <p className="k-small"><Link href={href('/you/settings/apps')}>{t('install.settings.more')}</Link></p>
     </Section>
   );
 }

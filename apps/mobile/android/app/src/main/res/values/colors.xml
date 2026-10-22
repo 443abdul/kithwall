@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The site's page background (styles/v2/tokens.css, default "warm" style): behind the splash and the
+     WebView, so starting the app never flashes white or black. -->
+<resources>
+    <color name="kw_background">#fbf6f0</color>
+    <color name="kw_splash_icon_background">#b4532a</color>
+</resources>

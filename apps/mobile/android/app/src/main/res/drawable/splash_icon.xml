@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash screen icon: the Kithwall 2 mark (two rings, components/shell/Logo.tsx) in white on an accent
+     disc, like the launcher icon. Canvas = the splash icon's 240dp box, of which the system shows the inner
+     160dp circle (r = 32 of 96 units). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp" android:height="240dp" android:viewportWidth="96" android:viewportHeight="96">
+    <path android:fillColor="#FFB4532A" android:pathData="M16,48a32,32 0,1 1,64 0a32,32 0,1 1,-64 0z"/>
+    <group android:translateX="24" android:translateY="24" android:scaleX="1.5" android:scaleY="1.5">
+        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:fillColor="#00000000"
+            android:pathData="M7,14a5.5,5.5 0,1 1,11 0a5.5,5.5 0,1 1,-11 0z"/>
+        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:fillColor="#00000000"
+            android:pathData="M14,18a5.5,5.5 0,1 1,11 0a5.5,5.5 0,1 1,-11 0z"/>
+    </group>
+</vector>

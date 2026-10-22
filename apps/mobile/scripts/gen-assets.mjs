@@ -5,10 +5,10 @@
 //   node apps/mobile/scripts/gen-assets.mjs
 // Outputs are committed; rerun only when the logo changes.
 //  Android: legacy + round launcher icons, adaptive-icon foreground/monochrome (108dp canvas, glyph inside
-//           the 66dp safe zone), splash images; the background colour and the notification icon are
+//           the 66dp safe zone); the splash icon, the background colour and the notification icon are
 //           vector/XML resources written here too.
 //  iOS:     the 1024 px App Store icon (opaque, square: iOS rounds it) and the 2732 px splash images.
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -55,14 +55,23 @@ for (const [d, k] of Object.entries(DENSITIES)) {
   await png({ w: 108 * k, bg: null, scale: 0.58, fg: '#000000' }, join(dir, 'ic_launcher_monochrome.png'));
 }
 
-// Splash images: overwrite every splash.png the template ships, at its own size.
-for (const dir of await readdir(res)) {
-  if (!dir.startsWith('drawable')) continue;
-  const f = join(res, dir, 'splash.png');
-  if (!existsSync(f)) continue;
-  const { width, height } = await sharp(f).metadata();
-  await png({ w: width, h: height, scale: 0.28 }, f);
-}
+// Splash: Android 12+'s system splash screen (themes in res/values/styles.xml) shows a vector icon on the
+// page colour, so no full-screen splash bitmaps are shipped (they were stretched and only used pre-12).
+await writeFile(join(res, 'drawable', 'splash_icon.xml'), `<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash screen icon: the Kithwall 2 mark (two rings, components/shell/Logo.tsx) in white on an accent
+     disc, like the launcher icon. Canvas = the splash icon's 240dp box, of which the system shows the inner
+     160dp circle (r = 32 of 96 units). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp" android:height="240dp" android:viewportWidth="96" android:viewportHeight="96">
+    <path android:fillColor="#FFB4532A" android:pathData="M16,48a32,32 0,1 1,64 0a32,32 0,1 1,-64 0z"/>
+    <group android:translateX="24" android:translateY="24" android:scaleX="1.5" android:scaleY="1.5">
+        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:fillColor="#00000000"
+            android:pathData="M7,14a5.5,5.5 0,1 1,11 0a5.5,5.5 0,1 1,-11 0z"/>
+        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:fillColor="#00000000"
+            android:pathData="M14,18a5.5,5.5 0,1 1,11 0a5.5,5.5 0,1 1,-11 0z"/>
+    </group>
+</vector>
+`);
 
 await writeFile(join(res, 'values', 'ic_launcher_background.xml'), `<?xml version="1.0" encoding="utf-8"?>
 <resources>

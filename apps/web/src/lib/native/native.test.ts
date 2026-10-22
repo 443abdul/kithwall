@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { androidOrigins, appleAppSiteAssociation, assetLinks, isAppleTeamId, parseCertFingerprints } from './association';
 import { b64urlDecode, b64urlEncode, extractPrf, prfExtension, toAuthenticationJSON, toRegistrationJSON } from './passkey';
+import { backAction, downloadBlob } from './runtime';
+import { notThenable } from './index';
 import { GET as assetLinksRoute } from '../../app/.well-known/assetlinks.json/route';
 import { GET as aasaRoute } from '../../app/.well-known/apple-app-site-association/route';
 
@@ -106,5 +108,73 @@ describe('native passkey JSON', () => {
     expect(a).toEqual({ id: 'abc', rawId: 'abc', type: 'public-key', response: { clientDataJSON: 'cd', authenticatorData: 'ad', signature: 'sig', userHandle: 'dXNlcg' }, clientExtensionResults: {} });
     const noPrf = extractPrf({ clientExtensionResults: { prf: { enabled: false } } });
     expect(noPrf).toEqual({ output: null, enabled: false });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// App frame (lib/native/runtime.ts): Android Back decisions, download links.
+
+type Q = Record<string, unknown[]>;
+function fakeDoc(q: Q): Document {
+  return {
+    querySelector: (s: string) => (q[s] ?? [])[0] ?? null,
+    querySelectorAll: (s: string) => q[s] ?? [],
+  } as unknown as Document;
+}
+
+describe('Android Back (backAction)', () => {
+  it('sends the app to the background during a call instead of leaving the call', () => {
+    expect(backAction(true, fakeDoc({ '.k-call-screen, .k-call-incoming': [{}] }), '/messages/x')).toBe('background');
+  });
+  it('closes the top-most open dialog first, like Esc', () => {
+    const closed: string[] = [];
+    const dialog = (name: string, prevent: boolean) => ({
+      dispatchEvent: (e: Event) => { if (prevent) e.preventDefault(); closed.push(`cancel:${name}`); return !e.defaultPrevented; },
+      close: () => closed.push(`close:${name}`),
+    });
+    // components/ui/Dialog.tsx prevents the default and closes through React state: no close() from us.
+    expect(backAction(true, fakeDoc({ 'dialog[open]': [dialog('a', false), dialog('b', true)] }), '/home')).toBe('handled');
+    expect(closed).toEqual(['cancel:b']);
+    closed.length = 0;
+    expect(backAction(true, fakeDoc({ 'dialog[open]': [dialog('plain', false)] }), '/home')).toBe('handled');
+    expect(closed).toEqual(['cancel:plain', 'close:plain']);
+  });
+  it('leaves the app from Home and the signed-out start pages', () => {
+    for (const p of ['/home', '/home/', '/', '/signin', '/join']) expect(backAction(true, fakeDoc({}), p)).toBe('background');
+  });
+  it('goes Home first when a deep link left no history, else back in history', () => {
+    let clicked = 0;
+    const home = { click: () => { clicked++; } };
+    expect(backAction(false, fakeDoc({ 'a[href="/home"]': [home] }), '/messages/abc')).toBe('handled');
+    expect(clicked).toBe(1);
+    expect(backAction(true, fakeDoc({ 'a[href="/home"]': [home] }), '/messages/abc')).toBe('');
+    expect(backAction(false, fakeDoc({}), '/messages/abc')).toBe('');
+  });
+});
+
+describe('downloads in the app (downloadBlob)', () => {
+  const anchor = (href: string, download: string | null) => ({
+    href, hasAttribute: (n: string) => n === 'download' && download !== null,
+  }) as unknown as HTMLAnchorElement;
+  it('saves data: download links and ignores normal links', async () => {
+    const b = downloadBlob(anchor('data:text/calendar;base64,QkVHSU4=', 'event.ics'));
+    expect(b?.type).toBe('text/calendar');
+    expect(await b?.text()).toBe('BEGIN');
+    expect(downloadBlob(anchor('data:text/plain,a%20b', 'x.txt'))?.size).toBe(3);
+    expect(downloadBlob(anchor('https://www.kithwall.com/x', 'x'))).toBeNull();
+    expect(downloadBlob(anchor('data:text/plain,a', null))).toBeNull();
+    expect(downloadBlob(anchor('blob:https://www.kithwall.com/unknown', 'x'))).toBeNull();
+  });
+});
+
+describe('plugin proxies (notThenable)', () => {
+  it('can be returned from an async function without calling a native "then"', async () => {
+    const calls: string[] = [];
+    // Like Capacitor's registerPlugin(): every property is a native method.
+    const raw = new Proxy({}, { get: (_t, k) => (...a: unknown[]) => { calls.push(String(k)); return Promise.resolve(a); } }) as { info: () => Promise<unknown> };
+    const p = await (async () => notThenable(raw))();
+    expect(await p.info()).toEqual([]);
+    expect(calls).toEqual(['info']);
+    expect('then' in p).toBe(false);
   });
 });

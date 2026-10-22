@@ -75,12 +75,16 @@ function CtlButton({ icon, label, onClick, pressed, tone, big }: { icon: CallIco
   );
 }
 
-function QualityBars({ q }: { q: PeerView['quality'] }) {
+/** Connection bars from the quality controller (lib/calls/quality.ts), with the reason when it isn't good. */
+function QualityBars({ q, reason }: { q: PeerView['quality']; reason?: PeerView['reason'] }) {
   const t = useT();
   if (!q) return null;
   const n = q === 'good' ? 3 : q === 'fair' ? 2 : 1;
+  const label = q !== 'good' && reason
+    ? t('calls.quality.withReason', { quality: t(`calls.quality.${q}` as MessageKey), reason: t(`calls.reason.${reason}` as MessageKey) })
+    : t(`calls.quality.${q}` as MessageKey);
   return (
-    <span className={cx('k-call-quality', `is-${q}`)} role="img" aria-label={t(`calls.quality.${q}` as MessageKey)} title={t(`calls.quality.${q}` as MessageKey)}>
+    <span className={cx('k-call-quality', `is-${q}`)} role="img" aria-label={label} title={label}>
       {[1, 2, 3].map((i) => <i key={i} className={i <= n ? 'is-on' : undefined} />)}
     </span>
   );
@@ -150,21 +154,26 @@ function Incoming({ s }: { s: CallSnapshot }) {
 
 // ------------------------------------------------------------------------------------------ in call
 
-function Tile({ peer, sinkId, big }: { peer: PeerView; sinkId: string; big?: boolean }) {
+function Tile({ peer, sinkId, big, voiceOnly }: { peer: PeerView; sinkId: string; big?: boolean; voiceOnly?: boolean }) {
   const t = useT();
   const nameOf = useNameOf();
   const name = nameOf(peer.userId);
-  const showVideo = peer.cam && peer.stream.getVideoTracks().length > 0;
+  // Their video paused for the network, or I chose voice only: show the avatar, never a frozen frame.
+  const paused = peer.cam && (peer.videoPaused || !!voiceOnly);
+  const showVideo = peer.cam && !paused && peer.stream.getVideoTracks().length > 0;
   return (
     <div className={cx('k-call-tile', big && 'is-big', peer.state !== 'connected' && 'is-waiting')}>
       {showVideo ? <Media stream={peer.stream} muted label={t('calls.videoOf', { name })} /> : (
-        <div className="k-call-tile-avatar"><PersonAvatar id={peer.userId} size={big ? 112 : 72} /></div>
+        <div className="k-call-tile-avatar">
+          <PersonAvatar id={peer.userId} size={big ? 112 : 72} />
+          {paused && peer.videoPaused && !voiceOnly ? <p className="k-call-tile-note">{t('calls.videoPaused')}</p> : null}
+        </div>
       )}
       <PeerAudio stream={peer.stream} sinkId={sinkId} />
       <span className="k-call-tile-name">
         {!peer.mic ? <span className="k-call-tile-muted" role="img" aria-label={t('calls.mutedName', { name })}><CallIcon name="micOff" size={14} /></span> : null}
         <span dir="auto">{name}</span>
-        <QualityBars q={peer.quality} />
+        <QualityBars q={peer.quality} reason={peer.reason} />
       </span>
     </div>
   );
@@ -234,6 +243,9 @@ function InCall({ s }: { s: CallSnapshot }) {
     calls.setSink(outputs[(i + 1) % outputs.length]!.deviceId);
   };
   const who = group ? title : s.peers[0] ? nameOf(s.peers[0].userId) : title;
+  const weak = s.m.phase === 'active' && s.weak
+    ? s.weak.who === 'me' ? t('calls.weak.mine') : s.weak.who === 'peer' ? t('calls.weak.theirs', { name: nameOf(s.weak.userId) }) : null
+    : null;
 
   return (
     <div className={cx('k-call-screen', group ? 'is-group' : 'is-one', ended && 'is-ended')} role="dialog" aria-modal="true" aria-labelledby="k-call-title"
@@ -245,6 +257,7 @@ function InCall({ s }: { s: CallSnapshot }) {
         <div className="k-call-top-text">
           <h2 id="k-call-title" className="k-call-title" dir="auto">{who}</h2>
           <p className="k-call-status" aria-live="polite">{status}</p>
+          {weak ? <p className="k-call-weak" role="status">{weak}</p> : null}
         </div>
         <button type="button" className="k-call-topbtn k-call-lock" onClick={() => setSecurity(true)} aria-label={t('calls.security.open')} title={t('calls.security.open')}>
           <CallIcon name="shield" />
@@ -254,12 +267,12 @@ function InCall({ s }: { s: CallSnapshot }) {
       <div className={cx('k-call-stage', group && 'k-call-grid', group && `n-${Math.min(s.peers.length + 1, 9)}`)}>
         {group ? (
           <>
-            {s.peers.map((p) => <Tile key={p.ep} peer={p} sinkId={s.sinkId} />)}
+            {s.peers.map((p) => <Tile key={p.ep} peer={p} sinkId={s.sinkId} voiceOnly={s.voiceOnly} />)}
             <SelfView s={s} grid />
           </>
         ) : main ? (
           <>
-            <Tile peer={main} sinkId={s.sinkId} big />
+            <Tile peer={main} sinkId={s.sinkId} big voiceOnly={s.voiceOnly} />
             <SelfView s={s} />
           </>
         ) : (
@@ -271,11 +284,22 @@ function InCall({ s }: { s: CallSnapshot }) {
         )}
       </div>
 
+      {s.suggestVoice && !ended ? (
+        <div className="k-call-banner" role="alert">
+          <p>{t('calls.weak.suggest')}</p>
+          <div className="k-call-banner-actions">
+            <button type="button" className="k-call-banner-btn is-primary" onClick={() => void calls.voiceOnly()}>{t('calls.weak.switch')}</button>
+            <button type="button" className="k-call-banner-btn" onClick={() => calls.dismissSuggestion()}>{t('calls.weak.dismiss')}</button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="k-call-controls" ref={hangRef}>
         <CtlButton icon={s.mic ? 'mic' : 'micOff'} label={s.mic ? t('calls.mute') : t('calls.unmute')} pressed={!s.mic} onClick={() => calls.toggleMic()} />
         <CtlButton icon={s.cam ? 'video' : 'videoOff'} label={s.cam ? t('calls.cameraOff') : t('calls.cameraOn')} pressed={s.cam} onClick={() => void calls.toggleCam()} />
         {s.cam && twoCams ? <CtlButton icon="flip" label={t('calls.switchCamera')} onClick={() => void calls.switchCamera()} /> : null}
         {outputs.length > 1 ? <CtlButton icon="speaker" label={t('calls.speaker')} onClick={cycleOutput} /> : null}
+        <CtlButton icon="saver" label={s.saver ? t('calls.saver.off') : t('calls.saver.on')} pressed={s.saver} onClick={() => calls.setSaver(!s.saver)} />
         <CtlButton icon="hangup" tone="danger" label={t('calls.hangup')} onClick={() => (ended ? calls.dismiss() : calls.hangup())} />
       </div>
 

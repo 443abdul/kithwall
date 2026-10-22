@@ -45,8 +45,18 @@ export type SignalBody =
   | { k: 'busy' }
   | { k: 'offer'; sdp: string; fe: boolean }
   | { k: 'answer'; sdp: string; fe: boolean }
-  /** Microphone / camera state, so the others can show "muted" and an avatar instead of black video. */
-  | { k: 'state'; mic: boolean; cam: boolean }
+  /**
+   * Microphone / camera state, so the others can show "muted" and an avatar instead of black video.
+   * Optional (low-bandwidth, docs §11; absent = unchanged, so older clients interoperate):
+   *  net: how my own connection looks (0 good, 1 fair, 2 poor), for "X's connection is weak";
+   *  vp:  my video to you is paused because the link can't carry it (show my avatar, not a frozen frame);
+   *  rx:  the best video tier I want from you (0 any … 2 smallest, 3 none: data saver / voice only).
+   */
+  | { k: 'state'; mic: boolean; cam: boolean; net?: 0 | 1 | 2; vp?: boolean; rx?: 0 | 1 | 2 | 3 }
+  /** "Please restart ICE": the answering side's network changed (only the offerer sends offers). */
+  | { k: 'restart' }
+  /** "Please renegotiate" (no ICE restart): the answering side wants a different Opus packet time, or RED on/off. */
+  | { k: 'reneg'; red?: boolean }
   | { k: 'leave' };
 
 export type SignalKind = SignalBody['k'];
@@ -103,8 +113,12 @@ function validBody(b: unknown): b is SignalBody {
     case 'ring': return bool(x.video) && typeof x.key === 'string' && /^[A-Za-z0-9_-]{43}$/.test(x.key);
     case 'join': case 'here': return bool(x.fe) && bool(x.video);
     case 'offer': case 'answer': return sdp(x.sdp) && bool(x.fe);
-    case 'state': return bool(x.mic) && bool(x.cam);
-    case 'cancel': case 'probe': case 'decline': case 'busy': case 'leave': return true;
+    case 'state': {
+      const small = (v: unknown, max: number) => v === undefined || (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max);
+      return bool(x.mic) && bool(x.cam) && small(x.net, 2) && small(x.rx, 3) && (x.vp === undefined || bool(x.vp));
+    }
+    case 'cancel': case 'probe': case 'decline': case 'busy': case 'leave': case 'restart': return true;
+    case 'reneg': return x.red === undefined || bool(x.red);
     default: return false;
   }
 }

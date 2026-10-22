@@ -1,18 +1,39 @@
 package com.kithwall.app;
 
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+
+import androidx.activity.OnBackPressedCallback;
+import androidx.core.content.ContextCompat;
+import androidx.core.splashscreen.SplashScreen;
 
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.PluginHandle;
+import com.getcapacitor.WebViewListener;
 
 /**
  * Kithwall for Android: a Capacitor WebView showing the deployed web app (docs/v2/05-native.md), plus four
  * app-local plugins. Opening a notification or a verified Kithwall link goes to that path in the app.
+ *
+ * The app frame (docs/v2/05-native.md §1, "App frame"):
+ *  - the system splash (Android 12+ SplashScreen API, back-ported by core-splashscreen) stays up until the
+ *    first page paints (at most SPLASH_MAX_MS), so there is no blank or white frame between splash and page;
+ *  - the WebView and window are painted in the site's background colour (light/dark) from the first frame;
+ *  - Back closes the web app's dialogs and sheets first, then goes back in the app's history, and from Home
+ *    (or with no history left) sends the app to the background like other Android apps;
+ *  - downloads (export, .ics, photos, videos) are saved to Downloads (KwDownloads);
+ *  - only network failures show the bundled offline page (KwWebViewClient).
  */
 public class MainActivity extends BridgeActivity {
     private static volatile boolean foreground = false;
+    private static final long SPLASH_MAX_MS = 4000;
+
+    private volatile boolean firstPaint = false;
 
     static boolean isForeground() {
         return foreground;
@@ -20,16 +41,72 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        final long started = SystemClock.uptimeMillis();
+        SplashScreen splash = SplashScreen.installSplashScreen(this);
         registerPlugin(KithwallShellPlugin.class);
         registerPlugin(KithwallPasskeyPlugin.class);
         registerPlugin(KithwallSecurePlugin.class);
         registerPlugin(KithwallPushPlugin.class);
         super.onCreate(savedInstanceState);
+        splash.setKeepOnScreenCondition(() -> !firstPaint && SystemClock.uptimeMillis() - started < SPLASH_MAX_MS);
         KithwallShellPlugin.applySecure(this, KithwallShellPlugin.secureScreen(this));
         Notifier.ensureChannels(this);
+        if (bridge != null) setUpWebView();
+        getOnBackPressedDispatcher().addCallback(this, back);
         String path = pathFrom(getIntent());
         if (path != null) load(path);
     }
+
+    private void setUpWebView() {
+        WebView w = bridge.getWebView();
+        // The site's background (light/dark) behind the page from the very first frame: no white flash.
+        w.setBackgroundColor(ContextCompat.getColor(this, R.color.kw_background));
+        WebSettings s = w.getSettings();
+        // The page has its own font-size setting and follows the system font size through rem units; WebView's
+        // text autosizing would additionally inflate some paragraphs and not others.
+        s.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
+        s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
+        s.setDisplayZoomControls(false);
+        s.setMediaPlaybackRequiresUserGesture(false); // calls: remote audio/video starts without a second tap
+        bridge.setWebViewClient(new KwWebViewClient(bridge));
+        w.setWebChromeClient(new KwChromeClient(bridge));
+        w.setDownloadListener(new KwDownloads(this, bridge));
+        bridge.addWebViewListener(new WebViewListener() {
+            @Override
+            public void onPageCommitVisible(WebView view, String url) {
+                firstPaint = true;
+            }
+
+            @Override
+            public void onReceivedError(WebView view) {
+                firstPaint = true;
+            }
+        });
+    }
+
+    /**
+     * Android Back / back gesture. Asks the page first (lib/native/runtime.ts, window.__kwBack): it closes the
+     * top dialog, sheet, menu or viewer, or answers "background" on Home / during a call. Otherwise go back
+     * in the WebView's history; with nothing left, leave like other apps (the task stays, so the page and its
+     * unlocked keys are still there when the person comes back; the app lock still applies).
+     */
+    private final OnBackPressedCallback back = new OnBackPressedCallback(true) {
+        @Override
+        public void handleOnBackPressed() {
+            if (bridge == null || bridge.getWebView() == null) { moveTaskToBack(true); return; }
+            WebView w = bridge.getWebView();
+            String url = w.getUrl();
+            if (url == null || url.contains("/offline.html")) { moveTaskToBack(true); return; }
+            boolean canGoBack = w.canGoBack();
+            w.evaluateJavascript("(function(){try{return window.__kwBack?String(window.__kwBack(" + canGoBack + ")):''}catch(e){return ''}})()", (r) -> {
+                String answer = r == null ? "" : r.replace("\"", "");
+                if (answer.equals("handled")) return;
+                if (!answer.equals("background") && w.canGoBack()) { w.goBack(); return; }
+                moveTaskToBack(true);
+            });
+        }
+    };
 
     @Override
     protected void onNewIntent(Intent intent) {
@@ -42,6 +119,15 @@ public class MainActivity extends BridgeActivity {
             ((KithwallPushPlugin) h.getInstance()).emitOpen(path);
         } else {
             load(path);
+        }
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // uiMode is handled here (no restart): keep the WebView's backdrop in step with light/dark.
+        if (bridge != null && bridge.getWebView() != null) {
+            bridge.getWebView().setBackgroundColor(ContextCompat.getColor(this, R.color.kw_background));
         }
     }
 

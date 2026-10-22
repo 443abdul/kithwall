@@ -44,6 +44,7 @@ final class PushProviderImpl {
         String[] known = PushStore.registration(c);
         activity.runOnUiThread(() -> UnifiedPush.tryUseCurrentOrDefaultDistributor(activity, success -> {
             if (!success) {
+                explainNoDistributor(activity);
                 cb.error("no_distributor");
                 return kotlin.Unit.INSTANCE;
             }
@@ -63,6 +64,25 @@ final class PushProviderImpl {
             main.postDelayed(() -> fail("failed"), 30_000);
             return kotlin.Unit.INSTANCE;
         }));
+    }
+
+    /**
+     * The foss build has no Google push: notifications need a UnifiedPush distributor app. Without one, say so
+     * (instead of a generic "couldn't turn on notifications") and offer the list of distributors.
+     */
+    private static void explainNoDistributor(Activity activity) {
+        if (activity.isFinishing()) return;
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(R.string.kw_up_title)
+                .setMessage(R.string.kw_up_body)
+                .setPositiveButton(R.string.kw_up_get, (d, w) -> {
+                    android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://unifiedpush.org/users/distributors/"));
+                    i.addCategory(android.content.Intent.CATEGORY_BROWSABLE);
+                    try { activity.startActivity(i); } catch (Exception ignored) { /* no browser */ }
+                })
+                .setNegativeButton(R.string.kw_up_later, null)
+                .show();
     }
 
     static void unregister(Context c) {

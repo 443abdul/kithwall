@@ -12,12 +12,15 @@ import { LanguagePicker } from '@/components/onboarding/LanguagePicker';
 import { PassphraseField } from '@/components/onboarding/PassphraseField';
 import { AppShell, Page } from './AppShell';
 import { RecoveryNudge } from './Nudges';
+import { InstallNudge } from '@/components/install/InstallNudge';
+import { AppsSettings } from '@/components/settings/AppsSettings';
 
 function ShellDemo() {
   const t = useT();
   return (
     <Page title={t('nav.home')}>
       <RecoveryNudge force />
+      <InstallNudge preview />
       <Card><EmptyState icon="home" title={t('home.emptyTitle')} body={t('home.emptyBody')} /></Card>
     </Page>
   );
@@ -25,6 +28,7 @@ function ShellDemo() {
 
 export function DesignPreview({ screen }: { screen: string }) {
   if (screen === 'shell') return <AppShell base="/design"><ShellDemo /></AppShell>;
+  if (screen === 'apps') return <AppShell base="/design"><AppsSettings /></AppShell>;
   return <Gallery />;
 }
 

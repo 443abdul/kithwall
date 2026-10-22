@@ -6,12 +6,16 @@
 // the default). Every call then goes through Cloudflare's TURN relay, so the other person only ever sees
 // the relay's address. Trade-off: slightly more delay, and Cloudflare sees that two relay addresses
 // exchanged encrypted packets. Off: a direct connection when possible (each side learns the other's IP).
+//
+// saver: "Data saver for calls" (docs §11). Off by default. Calls start at the smallest video size, Opus is
+// capped at 12 kbps and the others are asked to send small video; for 2G/3G, metered or patchy data.
+// camOff: "Start video calls with my camera off". Off by default.
 import { useSyncExternalStore } from 'react';
 import { getSession } from '../keys/session';
 import { vaultGet, vaultUpdate } from '../settings';
 
-export interface CallPrefs { relay: boolean }
-export const DEFAULT_CALL_PREFS: CallPrefs = { relay: true };
+export interface CallPrefs { relay: boolean; saver: boolean; camOff: boolean }
+export const DEFAULT_CALL_PREFS: CallPrefs = { relay: true, saver: false, camOff: false };
 export const CALLS_NS = 'calls';
 const MIRROR = 'kw.calls.prefs';
 
@@ -19,10 +23,14 @@ const listeners = new Set<() => void>();
 let current: CallPrefs = readMirror();
 let loadedFor: string | null = null;
 
+function normalise(m: Partial<CallPrefs> | null | undefined): CallPrefs {
+  const pick = (k: keyof CallPrefs): boolean => { const v = m?.[k]; return typeof v === 'boolean' ? v : DEFAULT_CALL_PREFS[k]; };
+  return { relay: pick('relay'), saver: pick('saver'), camOff: pick('camOff') };
+}
+
 function readMirror(): CallPrefs {
   try {
-    const m = JSON.parse(localStorage.getItem(MIRROR) ?? '{}') as Partial<CallPrefs>;
-    return { relay: typeof m.relay === 'boolean' ? m.relay : DEFAULT_CALL_PREFS.relay };
+    return normalise(JSON.parse(localStorage.getItem(MIRROR) ?? '{}') as Partial<CallPrefs>);
   } catch { return { ...DEFAULT_CALL_PREFS }; }
 }
 
@@ -40,13 +48,13 @@ export async function loadCallPrefs(force = false): Promise<CallPrefs> {
   if (!force && loadedFor === s.userId) return current;
   const v = await vaultGet<Partial<CallPrefs>>(CALLS_NS).catch(() => undefined);
   loadedFor = s.userId;
-  publish({ relay: typeof v?.relay === 'boolean' ? v.relay : DEFAULT_CALL_PREFS.relay });
+  publish(normalise(v));
   return current;
 }
 
 export async function saveCallPrefs(patch: Partial<CallPrefs>): Promise<void> {
   const next = await vaultUpdate<Partial<CallPrefs>>(CALLS_NS, (prev) => ({ ...(prev ?? {}), ...patch }));
-  publish({ relay: typeof next.relay === 'boolean' ? next.relay : DEFAULT_CALL_PREFS.relay });
+  publish(normalise(next));
 }
 
 export function useCallPrefs(): CallPrefs {

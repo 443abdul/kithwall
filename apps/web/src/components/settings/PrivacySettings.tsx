@@ -72,6 +72,10 @@ function CallsPrivacy() {
     <Section id="calls" title={t('calls.settings.title')}>
       <Switch checked={p.relay} label={t('calls.settings.relay')} description={t('calls.settings.relayBody')}
         onChange={(v) => void save(() => saveCallPrefs({ relay: v }))} />
+      <Switch checked={p.saver} label={t('calls.settings.saver')} description={t('calls.settings.saverBody')}
+        onChange={(v) => void save(() => saveCallPrefs({ saver: v }))} />
+      <Switch checked={p.camOff} label={t('calls.settings.camOff')} description={t('calls.settings.camOffBody')}
+        onChange={(v) => void save(() => saveCallPrefs({ camOff: v }))} />
     </Section>
   );
 }

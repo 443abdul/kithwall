@@ -5,7 +5,7 @@
 //
 // The Capacitor JS runtime and the plugin proxies are only imported (dynamically, in their own chunk)
 // when running inside the app, so the browser bundle doesn't grow.
-import type { KithwallPasskeyPlugin, KithwallPushPlugin, KithwallSecurePlugin, KithwallShellPlugin } from './plugins';
+import type { KithwallPasskeyPlugin, KithwallPushPlugin, KithwallSecurePlugin, KithwallShellPlugin, SystemBarsPlugin } from './plugins';
 
 interface CapacitorGlobal { isNativePlatform?: () => boolean; getPlatform?: () => string }
 
@@ -31,6 +31,7 @@ interface PluginMap {
   KithwallSecure: KithwallSecurePlugin;
   KithwallShell: KithwallShellPlugin;
   KithwallPush: KithwallPushPlugin;
+  SystemBars: SystemBarsPlugin;
 }
 
 const cache = new Map<keyof PluginMap, unknown>();

@@ -1,0 +1,65 @@
+/* Installing Kithwall as an app: the landing section, the "On this device" box, the per-device steps and
+   the home-screen nudge (components/install). Tokens only, logical properties only (RTL-safe). */
+
+/* ---- landing section */
+.kw .k-install-grid {
+  display: grid; gap: var(--space-6); align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+}
+.kw .k-install-benefits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.kw .k-install-benefits li { display: flex; gap: var(--space-3); align-items: flex-start; }
+.kw .k-install-benefit-ico {
+  display: grid; place-items: center; flex: none; inline-size: 36px; block-size: 36px;
+  border-radius: var(--radius-md); background: var(--accent-soft); color: var(--accent-text);
+}
+.kw .k-install-benefits li > span:last-child { padding-block-start: 0.4rem; }
+
+/* ---- "On this device": reserves its height so the live version doesn't push the page around */
+.kw .k-install-here {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-5); border-radius: var(--radius-lg);
+  background: var(--surface); border: var(--border-width) solid var(--border); box-shadow: var(--card-shadow);
+  min-block-size: 11rem;
+}
+.kw .k-set-section .k-install-here { min-block-size: 0; padding: 0; border: 0; box-shadow: none; background: none; }
+.kw .k-install-here-title { font-size: var(--text-md); color: var(--text-muted); font-weight: var(--weight-bold); }
+.kw .k-install-done { display: flex; gap: var(--space-2); align-items: flex-start; color: var(--text); font-weight: var(--weight-medium); }
+.kw .k-install-done .k-icon { color: var(--success, var(--accent-text)); margin-block-start: 0.15em; }
+.kw .k-install-note { display: flex; gap: var(--space-2); align-items: flex-start; color: var(--text-muted); font-size: var(--text-sm); }
+.kw .k-install-note .k-icon { margin-block-start: 0.1em; }
+
+/* ---- steps */
+.kw .k-install-steps { margin: 0; padding-inline-start: 1.4em; display: flex; flex-direction: column; gap: var(--space-2); }
+.kw .k-install-steps li { padding-inline-start: var(--space-1); }
+.kw .k-install-steps li::marker { color: var(--accent-text); font-weight: var(--weight-bold); }
+.kw .k-install-browsers { margin: 0; padding-inline-start: 1.2em; display: flex; flex-direction: column; gap: var(--space-2); }
+.kw .k-install-glyph { color: var(--accent-text); }
+
+/* ---- every device (native <details>, works without JavaScript) */
+.kw .k-install-all { display: flex; flex-direction: column; gap: var(--space-2); }
+.kw .k-install-all-title { font-size: var(--text-lg); margin-block-end: var(--space-1); }
+.kw .k-install-details { border: var(--border-width) solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.kw .k-install-details > summary {
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+  cursor: pointer; list-style: none; font-weight: var(--weight-medium); min-block-size: 48px; border-radius: inherit;
+}
+.kw .k-install-details > summary::-webkit-details-marker { display: none; }
+.kw .k-install-details > summary:hover { background: var(--surface-2); }
+.kw .k-install-details > summary:focus-visible { outline: var(--focus-width) solid var(--focus, var(--accent)); outline-offset: var(--focus-offset); }
+.kw .k-install-sum-ico { display: grid; place-items: center; color: var(--accent-text); }
+.kw .k-install-sum-text { flex: 1; }
+.kw .k-install-details > summary > .k-icon:last-child { color: var(--text-muted); transition: transform var(--dur-2) var(--ease-standard); }
+.kw .k-install-details[open] > summary > .k-icon:last-child { transform: rotate(180deg); }
+.kw .k-install-details-body { padding: 0 var(--space-4) var(--space-4); }
+
+.kw .k-install-native { display: flex; gap: var(--space-2); align-items: flex-start; color: var(--text-muted); font-size: var(--text-sm); }
+.kw .k-install-native .k-icon { margin-block-start: 0.1em; }
+
+/* ---- home-screen nudge */
+.kw .k-install-nudge-steps { font-size: var(--text-sm); }
+.kw .k-install-nudge-steps > summary { cursor: pointer; color: var(--accent-text); font-weight: var(--weight-bold); inline-size: fit-content; min-block-size: 32px; display: flex; align-items: center; }
+.kw .k-install-nudge-steps[open] > summary { margin-block-end: var(--space-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .kw .k-install-details > summary > .k-icon:last-child { transition: none; }
+}

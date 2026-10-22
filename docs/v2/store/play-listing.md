@@ -67,6 +67,7 @@ who can't or don't want to use Google Play.
 | `CAMERA` | Video calls; scanning a safety-number QR code | At the first video call / scan |
 | `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION` | Only when the person taps "Attach my location now" on a safety check-in (one reading, end-to-end encrypted) | At that tap; never in the background |
 | `USE_FULL_SCREEN_INTENT` | Incoming calls ring over the lock screen (Kithwall is a calling app: 1:1 and group voice/video calls) | Declared in *App content → Full-screen intent* |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_CAMERA` | A connected call keeps its microphone (and camera, for video) while the person switches to another app; a "Kithwall call in progress" notification shows meanwhile. Only during a call the person started or answered | Declared in *App content → Foreground service permissions* ("ongoing call", with a video) |
 | `USE_BIOMETRIC` | Optional unlock with fingerprint/face instead of the app PIN | When the person turns it on |
 | `DETECT_SCREEN_CAPTURE` | Android 14+: show a local notice after a screenshot (nobody else is told) | — (normal permission) |
 | `VIBRATE` | Notification / ringing vibration | — |

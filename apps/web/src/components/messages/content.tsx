@@ -33,7 +33,7 @@ export function eventLine(p: ChatPayload, actor: string, nameOf: (id: string) =>
       ? t('ephemeral.event.set', { name: actor, duration: t(durationKey(e.secs)) })
       : t('ephemeral.event.off', { name: actor });
     case 'call':
-      if (e.state === 'ringing') return t('calls.event.ringing', { name: actor });
+      if (e.state === 'ringing') return e.mine ? t('calls.event.ringingMine') : t('calls.event.ringing', { name: actor });
       if (e.state === 'missed') return e.mine ? t('calls.event.noAnswer', { name: actor }) : t(e.video ? 'calls.event.missedVideo' : 'calls.event.missedVoice', { name: actor });
       return t(e.video ? 'calls.event.video' : 'calls.event.voice', { name: actor });
     // Server notices about who may read and hand out this chat's keys (security re-review R-K-2).

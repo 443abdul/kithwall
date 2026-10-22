@@ -7,7 +7,10 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.os.Build;
+import android.util.Base64;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.WebStorage;
@@ -89,11 +92,21 @@ public class KithwallShellPlugin extends Plugin {
                     w.clearFormData();
                     w.clearHistory();
                 }
+                // Copies of picked attachments (KwChromeClient) and Android 9 download copies (KwDownloads).
+                deleteTree(new java.io.File(getContext().getCacheDir(), "picked"));
+                deleteTree(new java.io.File(getContext().getCacheDir(), "downloads"));
                 call.resolve();
             } catch (Exception e) {
                 call.reject("could not clear web data", e);
             }
         });
+    }
+
+    private static void deleteTree(java.io.File f) {
+        java.io.File[] kids = f.listFiles();
+        if (kids != null) for (java.io.File k : kids) deleteTree(k);
+        //noinspection ResultOfMethodCallIgnored
+        f.delete();
     }
 
     @PluginMethod
@@ -160,6 +173,154 @@ public class KithwallShellPlugin extends Plugin {
         if (scheme.equals("https") && host.equals("localhost")) return null;        // bundled offline page
         openOutside(url);
         return true;
+    }
+
+    // ---- downloads (KwDownloads): the page streams a blob it made (export, .ics, photo, video) ----------
+
+    @PluginMethod
+    public void downloadStart(PluginCall call) {
+        try {
+            JSObject r = new JSObject();
+            r.put("id", KwDownloads.start(getContext(), call.getString("name"), call.getString("mime")));
+            call.resolve(r);
+        } catch (Exception e) {
+            KwDownloads.toast(getActivity(), getContext().getString(R.string.kw_download_failed));
+            call.reject("could not save", "failed");
+        }
+    }
+
+    @PluginMethod
+    public void downloadChunk(PluginCall call) {
+        String id = call.getString("id");
+        String data = call.getString("data");
+        if (id == null || data == null || data.length() > 4 * 1024 * 1024) { call.reject("bad chunk", "failed"); return; }
+        try {
+            KwDownloads.chunk(id, Base64.decode(data, Base64.DEFAULT));
+            call.resolve();
+        } catch (Exception e) {
+            KwDownloads.abort(getContext(), id);
+            call.reject("could not save", "failed");
+        }
+    }
+
+    @PluginMethod
+    public void downloadFinish(PluginCall call) {
+        String id = call.getString("id");
+        try {
+            JSObject r = new JSObject();
+            r.put("name", KwDownloads.finish(getActivity(), id == null ? "" : id));
+            call.resolve(r);
+        } catch (Exception e) {
+            if (id != null) KwDownloads.abort(getContext(), id);
+            KwDownloads.toast(getActivity(), getContext().getString(R.string.kw_download_failed));
+            call.reject("could not save", "failed");
+        }
+    }
+
+    @PluginMethod
+    public void downloadAbort(PluginCall call) {
+        String id = call.getString("id");
+        if (id != null) KwDownloads.abort(getContext(), id);
+        call.resolve();
+    }
+
+    // ---- share sheet (navigator.share is not implemented by Android WebView) ------------------------------
+
+    @PluginMethod
+    public void share(PluginCall call) {
+        String title = call.getString("title");
+        String text = call.getString("text");
+        String url = call.getString("url");
+        StringBuilder body = new StringBuilder();
+        if (text != null && !text.isEmpty()) body.append(text);
+        if (url != null && !url.isEmpty()) {
+            Uri u = Uri.parse(url);
+            if (!"https".equalsIgnoreCase(u.getScheme())) { call.reject("only https links", "failed"); return; }
+            if (body.length() > 0) body.append(' ');
+            body.append(url);
+        }
+        if (body.length() == 0 || body.length() > 8192) { call.reject("nothing to share", "failed"); return; }
+        Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, body.toString());
+        if (title != null && !title.isEmpty()) send.putExtra(Intent.EXTRA_TITLE, title);
+        getActivity().runOnUiThread(() -> {
+            try {
+                getActivity().startActivity(Intent.createChooser(send, title));
+                call.resolve();
+            } catch (ActivityNotFoundException e) {
+                call.reject("no app to share with", "unavailable");
+            }
+        });
+    }
+
+    // ---- calls: keep the screen on, voice-call audio mode, speaker / earpiece -------------------------------
+
+    private Integer savedAudioMode;
+
+    /**
+     * Called by the web call UI (lib/native/calls.ts) when a call starts, changes route or ends. While active:
+     * the screen stays on, the volume keys control call volume, audio uses the communication mode (echo
+     * cancellation, Bluetooth headsets) and goes to the speaker (video calls) or the earpiece (voice calls),
+     * and a "call in progress" foreground service keeps the microphone (and camera for video) working when
+     * the person switches to another app (KwCallService).
+     */
+    @PluginMethod
+    public void setCallAudio(PluginCall call) {
+        boolean active = Boolean.TRUE.equals(call.getBoolean("active", false));
+        boolean speaker = Boolean.TRUE.equals(call.getBoolean("speaker", true));
+        boolean video = Boolean.TRUE.equals(call.getBoolean("video", false));
+        getActivity().runOnUiThread(() -> {
+            Activity a = getActivity();
+            AudioManager am = (AudioManager) a.getSystemService(Context.AUDIO_SERVICE);
+            try {
+                if (active) {
+                    a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    a.setVolumeControlStream(AudioManager.STREAM_VOICE_CALL);
+                    if (savedAudioMode == null) savedAudioMode = am.getMode();
+                    am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                    route(am, speaker);
+                    KwCallService.start(a, video);
+                } else {
+                    KwCallService.stop(a);
+                    a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    a.setVolumeControlStream(AudioManager.USE_DEFAULT_STREAM_TYPE);
+                    if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice();
+                    else am.setSpeakerphoneOn(false);
+                    am.setMode(savedAudioMode == null ? AudioManager.MODE_NORMAL : savedAudioMode);
+                    savedAudioMode = null;
+                }
+                call.resolve();
+            } catch (Exception e) {
+                call.reject("audio routing failed", "failed");
+            }
+        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void route(AudioManager am, boolean speaker) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            // A wired or Bluetooth headset wins over both; otherwise speaker or earpiece as asked.
+            AudioDeviceInfo pick = null;
+            for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                int t = d.getType();
+                if (t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || t == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || t == AudioDeviceInfo.TYPE_USB_HEADSET
+                        || (Build.VERSION.SDK_INT >= 31 && t == AudioDeviceInfo.TYPE_BLE_HEADSET)) { pick = d; break; }
+                if (t == (speaker ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)) pick = d;
+            }
+            if (pick != null) am.setCommunicationDevice(pick);
+        } else {
+            am.setSpeakerphoneOn(speaker);
+        }
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        KwCallService.stop(getContext());
+        if (savedAudioMode != null) {
+            AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            am.setMode(savedAudioMode);
+            savedAudioMode = null;
+        }
     }
 
     // Android 14+: screenshot detection, registered while the activity is visible.

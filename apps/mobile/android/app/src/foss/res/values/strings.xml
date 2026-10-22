@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- foss flavour only (UnifiedPush). -->
+<resources>
+    <string name="kw_up_title">Notifications need a push app</string>
+    <string name="kw_up_body">This version of Kithwall uses no Google services. To get notifications, install a UnifiedPush app such as ntfy, open it once, then turn notifications on again in Kithwall.</string>
+    <string name="kw_up_get">Choose a push app</string>
+    <string name="kw_up_later">Not now</string>
+</resources>

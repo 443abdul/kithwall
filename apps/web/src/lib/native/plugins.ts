@@ -7,7 +7,8 @@ import type { PluginListenerHandle } from '@capacitor/core';
  * Native passkeys: Android Credential Manager (androidx.credentials, API 28+), iOS AuthenticationServices
  * (iOS 16+; PRF from iOS 18). Requests and responses are WebAuthn JSON (PublicKeyCredential*OptionsJSON
  * in, RegistrationResponseJSON / AuthenticationResponseJSON out) including the `prf` extension, with
- * binary values base64url-encoded. Errors: 'cancelled', 'no_credential', 'exists', 'unsupported', 'failed'.
+ * binary values base64url-encoded. Errors: 'cancelled', 'no_credential', 'exists', 'unsupported', 'not_linked'
+ * (Android: the website's assetlinks.json doesn't list this app's signing key), 'failed'.
  */
 export interface KithwallPasskeyPlugin {
   isAvailable(): Promise<{ available: boolean; prf: boolean }>;
@@ -56,6 +57,22 @@ export interface KithwallShellPlugin {
   exit(opts: { url: string }): Promise<void>;
   /** Panic wipe: delete the WebView's cookies, storage of every origin, caches and history (security review N6). */
   clearWebData(): Promise<void>;
+  /**
+   * Android: save a file the page made (blob) to Downloads, streamed in base64 chunks (≤ 4 MiB each)
+   * (lib/native/runtime.ts). The app shows "Saved to Downloads" / "Couldn't save the file" itself.
+   */
+  downloadStart(opts: { name: string; mime: string }): Promise<{ id: string }>;
+  downloadChunk(opts: { id: string; data: string }): Promise<void>;
+  downloadFinish(opts: { id: string }): Promise<{ name: string }>;
+  downloadAbort(opts: { id: string }): Promise<void>;
+  /** Android: the system share sheet (Android WebView has no navigator.share). https links only. */
+  share(opts: { title?: string; text?: string; url?: string }): Promise<void>;
+  /**
+   * Android: a call is active / changed route / ended: keep the screen on, call audio mode and volume keys,
+   * speaker (true) or earpiece (false), a headset always wins; `video` keeps the camera working in the
+   * background too ("call in progress" foreground service) (lib/native/calls.ts).
+   */
+  setCallAudio(opts: { active: boolean; speaker?: boolean; video?: boolean }): Promise<void>;
   /** A screenshot (iOS; Android 14+) or screen recording started (iOS) on this device. Local notice only: nobody else is told. */
   addListener(event: 'screenshot', fn: (e: { kind: 'screenshot' | 'recording' }) => void): Promise<PluginListenerHandle>;
 }
@@ -94,4 +111,10 @@ export interface KithwallPushPlugin {
    * until a listener is attached, so a tap during page load isn't lost.
    */
   addListener(event: 'open', fn: (e: { url: string }) => void): Promise<PluginListenerHandle>;
+}
+
+/** Capacitor's built-in SystemBars plugin (Android): status / navigation bar icon colour. */
+export interface SystemBarsPlugin {
+  /** 'DARK' = dark content behind the bars (light icons), 'LIGHT' = light content (dark icons). */
+  setStyle(opts: { style: 'DARK' | 'LIGHT' | 'DEFAULT'; bar?: 'StatusBar' | 'NavigationBar' }): Promise<void>;
 }

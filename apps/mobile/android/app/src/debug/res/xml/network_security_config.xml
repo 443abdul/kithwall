@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEBUG builds only (release uses src/main/res/xml/network_security_config.xml): additionally allows plain
+     http to this computer's dev server and local Supabase through `adb reverse` (KITHWALL_ENV=local, see
+     docs/v2/05-native.md "Testing on the emulator"). Everything else stays HTTPS with system CAs only. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

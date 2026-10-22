@@ -68,7 +68,8 @@ export function PushNudge() {
     if (!userId) return;
     setBusy(true);
     try { await enablePush(userId); setHidden(true); toast({ message: t('nudge.pushOn') }); }
-    catch { toast({ message: t('nudge.pushFailed'), tone: 'danger' }); }
+    // The app's foss build explains a missing UnifiedPush app itself (native dialog).
+    catch (e) { if ((e as { code?: string } | null)?.code !== 'no_distributor') toast({ message: t('nudge.pushFailed'), tone: 'danger' }); }
     finally { setBusy(false); }
   }
   return (
