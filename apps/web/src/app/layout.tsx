@@ -18,6 +18,7 @@ import { Providers } from '@/components/Providers';
 import { CallRoot } from '@/components/calls/CallRoot';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.kithwall.com'),
   title: { default: 'Kithwall', template: '%s · Kithwall' },
   description: 'Your people. Your space. Sealed. A private, end-to-end encrypted social network for the people you actually know. No ads, no tracking.',
   applicationName: 'Kithwall',
