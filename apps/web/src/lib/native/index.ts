@@ -43,9 +43,21 @@ export async function nativePlugin<K extends keyof PluginMap>(name: K): Promise<
   if (hit) return hit as PluginMap[K];
   core ??= import('@capacitor/core');
   const { registerPlugin } = await core;
-  const p = registerPlugin<PluginMap[K]>(name);
+  // Capacitor's plugin proxy answers EVERY property with a native-call function, `then` included, so
+  // returning it from an async function makes the promise treat it as a thenable and call
+  // "KithwallPasskey.then()" on the native side, which rejects: every plugin call failed with
+  // '"X.then()" is not implemented on android'. Hide `then` so the proxy can be awaited.
+  const p = notThenable(registerPlugin<PluginMap[K]>(name));
   cache.set(name, p);
   return p;
+}
+
+/** A view of a Capacitor plugin proxy without `then` (exported for tests). */
+export function notThenable<T extends object>(plugin: T): T {
+  return new Proxy(plugin, {
+    get: (target, key) => (key === 'then' ? undefined : Reflect.get(target, key)),
+    has: (target, key) => key !== 'then' && Reflect.has(target, key),
+  });
 }
 
 /** The error code a plugin call rejected with ('cancelled', 'unavailable', …), if any. */
