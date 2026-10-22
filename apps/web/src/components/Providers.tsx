@@ -1,10 +1,11 @@
 'use client';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { initSession, useSession } from '@/lib/keys/session';
 import { sb } from '@/lib/supabase';
 import { keyring } from '@/lib/keys/keyring';
 import { PushManager } from '@/components/push/PushManager';
+import { invalidateSoon } from '@/lib/invalidate';
 
 export function Providers({ children }: { children: ReactNode; nonce?: string }) {
   const [qc] = useState(() => new QueryClient({
@@ -20,28 +21,69 @@ export function Providers({ children }: { children: ReactNode; nonce?: string })
   );
 }
 
+/**
+ * Realtime events arrive in bursts (one message is an INSERT on messages plus updates to its conversation
+ * and read state; a like comes back as our own echo), and every invalidation refetches each mounted query
+ * under that key. Invalidations are coalesced for a moment, so each key is refetched once per burst.
+ */
+function useCoalescedInvalidate() {
+  const qc = useQueryClient();
+  const [batcher] = useState(() => {
+    let likes = false;
+    let all = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      timer = null;
+      if (all) {
+        all = false;
+        // New keys: re-read what may now decrypt. Likes and comments are plain rows decrypted while
+        // rendering (cards re-render through useKeyringVersion), so the per-post queries are left alone.
+        void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'likes' && q.queryKey[0] !== 'comments' });
+      }
+      if (likes) {
+        likes = false;
+        // Loaded on demand: the feed module isn't needed on pages without posts.
+        import('@/lib/feed/feed').then((m) => m.refreshPostLikes(qc)).catch(() => { void qc.invalidateQueries({ queryKey: ['likes'] }); });
+      }
+    };
+    const schedule = () => { if (!timer) timer = setTimeout(flush, 150); };
+    return {
+      key(k: QueryKey) { invalidateSoon(qc, k); },
+      likes() { likes = true; schedule(); },
+      all() { all = true; schedule(); },
+      cancel() { if (timer) clearTimeout(timer); timer = null; likes = false; all = false; },
+    };
+  });
+  return batcher;
+}
+
 /** Invalidate cached queries when the server tells us something changed (RLS-filtered). */
 function RealtimeBridge() {
-  const qc = useQueryClient();
+  const inv = useCoalescedInvalidate();
   const { status, userId } = useSession();
   useEffect(() => {
     if (status !== 'ready' || !userId) return;
     const ch = sb().channel(`live:${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${userId}` },
-        () => { void qc.invalidateQueries({ queryKey: ['notifications'] }); })
+        () => { inv.key(['notifications']); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' },
-        () => { void qc.invalidateQueries({ queryKey: ['friends'] }); void qc.invalidateQueries({ queryKey: ['requests'] }); })
+        () => { inv.key(['friends']); inv.key(['requests']); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
         (p) => {
-          void qc.invalidateQueries({ queryKey: ['conversations'] });
-          void qc.invalidateQueries({ queryKey: ['messages', (p.new as { conversation_id: string }).conversation_id] });
+          inv.key(['conversations']);
+          inv.key(['messages', (p.new as { conversation_id: string }).conversation_id]);
         })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' },
-        () => { void qc.invalidateQueries({ queryKey: ['conversations'] }); })
+        () => { inv.key(['conversations']); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' },
-        (p) => { void qc.invalidateQueries({ queryKey: ['comments', (p.new as { post_id: string | null; photo_id: string | null }).post_id ?? (p.new as { photo_id: string }).photo_id] }); })
+        (p) => { inv.key(['comments', (p.new as { post_id: string | null; photo_id: string | null }).post_id ?? (p.new as { photo_id: string }).photo_id]); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' },
-        () => { void qc.invalidateQueries({ queryKey: ['likes'] }); })
+        (p) => {
+          // Only the post that was liked; anything else re-reads every visible post's likes in one batch.
+          const row = p.new as { target_kind?: string; target_id?: string } | null;
+          if (row?.target_kind === 'post' && row.target_id) inv.key(['likes', 'post', row.target_id]); // lib/feed/feed likesKey
+          else inv.likes();
+        })
       .subscribe();
     // Deletes are not published through postgres_changes (Realtime can't apply RLS to them, security
     // review D1): the database sends a content-free "something of yours changed" on db:<my id>, a private
@@ -49,12 +91,12 @@ function RealtimeBridge() {
     const db = sb().channel(`db:${userId}`, { config: { private: true } })
       .on('broadcast', { event: 'change' }, ({ payload }) => {
         const t = (payload as { t?: unknown } | undefined)?.t;
-        if (t === 'friendships') { void qc.invalidateQueries({ queryKey: ['friends'] }); void qc.invalidateQueries({ queryKey: ['requests'] }); }
-        else if (t === 'likes') void qc.invalidateQueries({ queryKey: ['likes'] });
+        if (t === 'friendships') { inv.key(['friends']); inv.key(['requests']); }
+        else if (t === 'likes') inv.likes();
       })
       .subscribe();
-    const unsub = keyring.subscribe(() => { void qc.invalidateQueries(); });
-    return () => { unsub(); void sb().removeChannel(ch); void sb().removeChannel(db); };
-  }, [status, userId, qc]);
+    const unsub = keyring.subscribe(() => { inv.all(); });
+    return () => { unsub(); inv.cancel(); void sb().removeChannel(ch); void sb().removeChannel(db); };
+  }, [status, userId, inv]);
   return null;
 }

@@ -39,6 +39,12 @@
 
 /* ------------------------------------------------------------------ landing */
 .kw .k-landing main { display: flex; flex-direction: column; gap: var(--space-16); padding-inline: calc(var(--space-4) + var(--safe-left)) calc(var(--space-4) + var(--safe-right)); }
+/* "/" while the session is checked (components/onboarding/Home.tsx, public/theme.js data-kw-session). */
+.kw .k-boot-landing { display: contents; }
+.kw .k-boot-wait { display: none; }
+:root[data-kw-session] .kw .k-boot-landing[data-booting] { display: none; }
+:root[data-kw-session] .kw .k-boot-wait { display: contents; }
+
 .kw .k-hero {
   display: grid; gap: var(--space-10); align-items: center; max-inline-size: 72rem; margin-inline: auto; inline-size: 100%;
   padding-block: var(--space-8) 0;

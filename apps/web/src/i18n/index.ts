@@ -139,13 +139,27 @@ export function useLocale(): { locale: Locale; pref: Locale | null; dir: 'ltr' |
   return { locale: s.locale, pref: s.pref, dir: dirOf(s.locale), tag: langTag(s.locale) };
 }
 
+// Constructing Intl formatters is expensive (locale data lookup on every call); feeds and chats format
+// hundreds of timestamps per render, so formatters are reused per language + options.
+const formatters = new Map<string, Intl.NumberFormat | Intl.DateTimeFormat | Intl.RelativeTimeFormat | Intl.ListFormat>();
+function cached<T extends Intl.NumberFormat | Intl.DateTimeFormat | Intl.RelativeTimeFormat | Intl.ListFormat>(kind: string, tag: string, o: object | undefined, make: () => T): T {
+  const key = `${kind}|${tag}|${o ? JSON.stringify(o) : ''}`;
+  let f = formatters.get(key) as T | undefined;
+  if (!f) {
+    if (formatters.size > 200) formatters.clear();
+    f = make();
+    formatters.set(key, f);
+  }
+  return f;
+}
+
 /** Intl formatters for the active language. */
 export function useFormat() {
   const { tag } = useLocale();
   return useMemo(() => ({
-    number: (n: number, o?: Intl.NumberFormatOptions) => new Intl.NumberFormat(tag, o).format(n),
-    date: (d: Date | number, o: Intl.DateTimeFormatOptions = { dateStyle: 'medium' }) => new Intl.DateTimeFormat(tag, o).format(d),
-    relative: (value: number, unit: Intl.RelativeTimeFormatUnit) => new Intl.RelativeTimeFormat(tag, { numeric: 'auto' }).format(value, unit),
-    list: (items: string[]) => new Intl.ListFormat(tag, { style: 'long', type: 'conjunction' }).format(items),
+    number: (n: number, o?: Intl.NumberFormatOptions) => cached('n', tag, o, () => new Intl.NumberFormat(tag, o)).format(n),
+    date: (d: Date | number, o: Intl.DateTimeFormatOptions = { dateStyle: 'medium' }) => cached('d', tag, o, () => new Intl.DateTimeFormat(tag, o)).format(d),
+    relative: (value: number, unit: Intl.RelativeTimeFormatUnit) => cached('r', tag, undefined, () => new Intl.RelativeTimeFormat(tag, { numeric: 'auto' })).format(value, unit),
+    list: (items: string[]) => cached('l', tag, undefined, () => new Intl.ListFormat(tag, { style: 'long', type: 'conjunction' })).format(items),
   }), [tag]);
 }

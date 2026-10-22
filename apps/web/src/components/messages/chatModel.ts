@@ -102,11 +102,18 @@ export function previewOffer(text: string, opts: { hasFiles: boolean; enabled: b
   return url && url !== opts.dismissed ? url : null;
 }
 
+let graphemes: Intl.Segmenter | null | undefined;
+function segmenter(): Intl.Segmenter | null {
+  if (graphemes === undefined) graphemes = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+  return graphemes;
+}
+
 /** A message that is only emoji (1–3) is shown large, without a bubble. */
 export function isEmojiOnly(text: string): boolean {
   const t = text.trim();
   if (!t || t.length > 24) return false;
-  const seg = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].map((s) => s.segment) : Array.from(t);
+  const g = segmenter();
+  const seg = g ? [...g.segment(t)].map((s) => s.segment) : Array.from(t);
   const parts = seg.filter((s) => s.trim());
   return parts.length >= 1 && parts.length <= 3 && parts.every((s) => /\p{Extended_Pictographic}/u.test(s));
 }

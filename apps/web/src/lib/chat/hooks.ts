@@ -9,6 +9,7 @@ import type { MessageRow } from '../types';
 import { signals, useSignalsVersion } from './signals';
 import { visibleNow } from './ephemeral';
 import { useClock } from './clock';
+import { invalidateSoon } from '../invalidate';
 
 export { useClock };
 
@@ -51,7 +52,7 @@ export function useMarkRead(conv: ConversationSummary | null | undefined, active
   const unread = conv?.unread;
   const run = useCallback(() => {
     if (!conv || !active || document.visibilityState !== 'visible' || !unread) return;
-    void markRead(conv).then(() => qc.invalidateQueries({ queryKey: ['conversations'] })).catch(() => undefined);
+    void markRead(conv).then(() => invalidateSoon(qc, ['conversations'])).catch(() => undefined);
   }, [conv, active, unread, qc]);
   useEffect(() => { run(); }, [run, lastId]);
   useEffect(() => {

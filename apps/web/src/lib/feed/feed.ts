@@ -37,6 +37,23 @@ export async function prefetchEngagement(qc: QueryClient, rows: PostRow[]) {
   }
 }
 
+/**
+ * Re-read the likes of posts in batched queries (default: every post whose likes are on screen) instead
+ * of refetching one query per post. Likes are metadata rows; nothing here is decrypted.
+ */
+export async function refreshPostLikes(qc: QueryClient, ids?: string[]) {
+  const targets = [...new Set(ids ?? qc.getQueryCache().findAll({ queryKey: ['likes', 'post'], type: 'active' }).map((q) => q.queryKey[2] as string))];
+  // Likes on screens that are not mounted now are re-read when they mount again.
+  void qc.invalidateQueries({ queryKey: ['likes'], refetchType: 'none' });
+  if (!targets.length) return;
+  const likes: LikeRow[] = [];
+  for (const part of chunk(targets, 100)) {
+    likes.push(...(must(await sb().from('likes').select('*').eq('target_kind', 'post').in('target_id', part)) as LikeRow[]));
+  }
+  await people.ensure(likes.map((l) => l.user_id));
+  for (const id of targets) qc.setQueryData(likesKey('post', id), likes.filter((x) => x.target_id === id));
+}
+
 export async function fetchPostLikes(kind: 'post' | 'comment', id: string): Promise<LikeRow[]> {
   return must(await sb().from('likes').select('*').eq('target_kind', kind).eq('target_id', id)) as LikeRow[];
 }

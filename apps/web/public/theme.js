@@ -53,4 +53,13 @@
   root.setAttribute('dir', RTL[locale] ? 'rtl' : 'ltr');
   // Hide v2 text until a non-English catalogue has loaded (styles/v2/base.css; cleared by i18n/index.ts).
   if (locale !== 'en') root.setAttribute('data-i18n-pending', '');
+
+  // ---- signed in on this device? "/" sends the server-rendered landing page; while the session is being
+  // checked it stays hidden (a spinner instead) only when a stored Supabase session says this visitor is
+  // about to be sent on to /home (components/onboarding/Home.tsx, styles/v2/onboarding.css).
+  try {
+    for (var j = 0; store && j < store.length; j++) {
+      if (/^sb-.+-auth-token$/.test(store.key(j) || '')) { root.setAttribute('data-kw-session', ''); break; }
+    }
+  } catch (e) { /* storage blocked */ }
 })();

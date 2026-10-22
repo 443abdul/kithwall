@@ -23,7 +23,7 @@ import { usePeopleVersion, usePerson } from '@/lib/people';
 import { useFileUrl } from '@/lib/media';
 import type { LikeRow, PostPayload, PostRow } from '@/lib/types';
 import { AudienceTag, NoteText, RelativeTime, RichText } from './bits';
-import { Comments, useComments } from './Comments';
+import { Comments, ENGAGEMENT_STALE, useComments } from './Comments';
 import { audienceOf, deletePostFully } from './data';
 import { Lightbox, LinkCard, PhotoGrid, VideoPlayer } from './Media';
 import { Menu } from './Menu';
@@ -66,7 +66,9 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
   const now = useClock([row]);
   const when = useWhen();
 
-  const likes = useQuery({ queryKey: likesKey('post', row.id), queryFn: () => fetchPostLikes('post', row.id) });
+  // ENGAGEMENT_STALE: feeds seed these per-post caches in two batched queries per page (prefetchEngagement)
+  // and Realtime keeps them current, so remounting a feed doesn't refetch every card's likes one by one.
+  const likes = useQuery({ queryKey: likesKey('post', row.id), queryFn: () => fetchPostLikes('post', row.id), staleTime: ENGAGEMENT_STALE });
   const comments = useComments(row.id);
   const liked = !!likes.data?.some((l) => l.user_id === userId);
   const likeCount = likes.data?.length ?? 0;

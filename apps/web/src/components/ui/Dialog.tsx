@@ -2,7 +2,10 @@
 // Modal dialog / bottom sheet on the native <dialog> element: showModal() puts it in the top layer and
 // makes everything else inert (focus can't leave it), Esc closes it, and focus returns to the opener.
 // We add: initial focus, close on backdrop click, scroll lock, and a labelled close button.
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+// A dialog that has never been opened renders nothing: lists render one or two closed dialogs per item
+// (delete, report…), which would otherwise be thousands of hidden elements on a long feed. Once opened
+// it stays in the document, so closing behaves exactly like before (focus returns to the opener).
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useT } from '@/i18n';
 import { IconButton } from './Button';
 import { cx } from './cx';
@@ -21,7 +24,13 @@ export interface DialogProps {
   className?: string;
 }
 
-export function Dialog({ open, onClose, title, children, footer, sheet, dismissible = true, className }: DialogProps) {
+export function Dialog(props: DialogProps) {
+  const [opened, setOpened] = useState(props.open);
+  if (props.open && !opened) setOpened(true);
+  return opened ? <OpenedDialog {...props} /> : null;
+}
+
+function OpenedDialog({ open, onClose, title, children, footer, sheet, dismissible = true, className }: DialogProps) {
   const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();

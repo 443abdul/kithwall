@@ -30,7 +30,7 @@ relays encrypted packets.
 | Safety code | `lib/calls/safety.ts` |
 | Ring tones (WebAudio, no files) | `lib/calls/tones.ts` |
 | Relay preference (vault, namespace `calls`) | `lib/calls/prefs.ts`, Settings → Privacy → Calls |
-| UI | `components/calls/CallButtons.tsx` (chat header), `CallRoot.tsx` (mounted in `app/layout.tsx`), `CallScreens.tsx`, `CallIcon.tsx`, `styles/v2/calls.css` |
+| UI | `components/calls/CallButtons.tsx` (chat header), `CallRoot.tsx` (mounted in `app/layout.tsx`; loads `CallRuntime.tsx` once unlocked), `CallScreens.tsx`, `CallIcon.tsx`, `styles/v2/calls.css` |
 | Thread notice | `lib/messages.ts` `readNotice` (event `{kind:'call'}`), `components/messages/content.tsx` `eventLine` |
 | Push | `app/api/push/dispatch/route.ts` (`kind: 'call'`), `app/api/push/_lib/push-server.ts` `describeCall`, `public/sw.js` |
 

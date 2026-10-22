@@ -7,7 +7,7 @@
 //    so the tab keeps its unlocked keys.
 //  - Clears the installed app's icon badge while Kithwall is on screen.
 //  - In the Kithwall app: notification taps arrive from the native push plugin instead; they get the
-//    same in-app navigation and are re-broadcast as a 'kw:navigate' window event (CallRoot listens).
+//    same in-app navigation and are re-broadcast as a 'kw:navigate' window event (components/calls/CallRuntime listens).
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/keys/session';

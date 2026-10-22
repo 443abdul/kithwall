@@ -6,7 +6,7 @@ import {
   type Envelope, type EnvelopeHeader,
 } from '@kithwall/crypto';
 import { sb, must } from './supabase';
-import { identity, me } from './keys/session';
+import { identity, me, onLock } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
 import { people } from './people';
 import type { CommentPayload, CommentRow, PostKind, PostPayload, PostRow } from './types';
@@ -115,14 +115,31 @@ export function readPost(row: PostRow): Decrypted<PostPayload> {
   return res;
 }
 
+// Verified content keys and comments. Verifying an Ed25519 signature costs several milliseconds on a
+// phone, and post cards and comment lists re-render often (keys or people arriving, typing a comment),
+// so results are kept for the exact inputs that produced them: the row, its envelope signature, the
+// signer key this device trusts and the audience key. Any change to one of them is a cache miss.
+const contentKeys = new Map<string, Uint8Array>();
+const commentCache = new Map<string, Decrypted<CommentPayload>>();
+const keyIds = new WeakMap<Uint8Array, string>();
+const keyId = (k: Uint8Array) => { let id = keyIds.get(k); if (!id) { id = b64u.encode(k); keyIds.set(k, id); } return id; };
+const sigOf = (env: unknown) => (env && typeof env === 'object' && typeof (env as Envelope).sig === 'string' ? (env as Envelope).sig : '');
+function remember<V>(m: Map<string, V>, k: string, v: V) { if (m.size > 5000) m.clear(); m.set(k, v); }
+onLock(() => { cache.clear(); contentKeys.clear(); commentCache.clear(); });
+
 /** The post's content key (needed for comments, poll votes and abuse reports). */
 export function postContentKey(row: PostRow): Uint8Array | null {
   if (row.is_public) return null;
   const key = keyring.get(row.audience_id!, row.epoch!);
   const author = people.get(row.author_id);
   if (!key || !author) return null;
+  const ck = `${row.id}|${row.edited_at ?? ''}|${sigOf(row.envelope)}|${author.sign_pub}|${keyId(key)}`;
+  const hit = contentKeys.get(ck);
+  if (hit) return hit;
   try {
-    return extractContentKey({ header: postHeader(row), envelope: row.envelope, audienceKey: key, signPub: b64u.decode(author.sign_pub) });
+    const out = extractContentKey({ header: postHeader(row), envelope: row.envelope, audienceKey: key, signPub: b64u.decode(author.sign_pub) });
+    remember(contentKeys, ck, out);
+    return out;
   } catch { return null; }
 }
 
@@ -162,6 +179,16 @@ export async function editComment(row: CommentRow, parentKey: Uint8Array | null,
 export function readComment(row: CommentRow, parentKey: Uint8Array | null): Decrypted<CommentPayload> {
   const author = people.get(row.author_id);
   if (!author) return { ok: false, reason: 'waiting' };
+  const ck = `${row.id}|${row.edited_at ?? ''}|${sigOf(row.envelope)}|${author.sign_pub}|${parentKey ? keyId(parentKey) : 'public'}`;
+  const hit = commentCache.get(ck);
+  if (hit) return hit;
+  const res = openComment(row, parentKey, author.sign_pub);
+  remember(commentCache, ck, res);
+  return res;
+}
+
+function openComment(row: CommentRow, parentKey: Uint8Array | null, authorSignPub: string): Decrypted<CommentPayload> {
+  const author = { sign_pub: authorSignPub };
   try {
     const signPub = b64u.decode(author.sign_pub);
     const header = commentHeader(row);

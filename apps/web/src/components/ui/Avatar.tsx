@@ -12,11 +12,28 @@ export interface AvatarProps {
   label?: string;
 }
 
+let graphemes: Intl.Segmenter | null | undefined;
+function segmenter(): Intl.Segmenter | null {
+  if (graphemes === undefined) graphemes = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+  return graphemes;
+}
+
+const initialsCache = new Map<string, string>();
+
 export function initials(name: string): string {
+  const hit = initialsCache.get(name);
+  if (hit !== undefined) return hit;
+  const out = computeInitials(name);
+  if (initialsCache.size > 1000) initialsCache.clear();
+  initialsCache.set(name, out);
+  return out;
+}
+
+function computeInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (!words.length) return '';
   // Graphemes, so emoji and combining marks (Devanagari, Bengali) stay intact.
-  const seg = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+  const seg = segmenter();
   const first = (w: string) => (seg ? [...seg.segment(w)][0]?.segment ?? '' : Array.from(w)[0] ?? '');
   const a = first(words[0]!);
   const b = words.length > 1 ? first(words[words.length - 1]!) : '';

@@ -8,6 +8,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useEffect } from 'react';
 import { useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
 import { sb } from '../supabase';
+import { invalidateSoon } from '../invalidate';
 import { getSession } from '../keys/session';
 import type { MessageRow } from '../types';
 import { rotateConversation, type ConversationSummary } from '../messages';
@@ -110,7 +111,7 @@ export function useMessagesLive(uid: string | null | undefined) {
         if (!m?.id || !m.conversation_id) return;
         if (m.envelope == null) delete (m as Partial<MessageRow>).envelope;
         patchCachedMessage(qc, m);
-        void qc.invalidateQueries({ queryKey: ['conversations'] });
+        invalidateSoon(qc, ['conversations']);
       })
       .subscribe();
     return () => { void sb().removeChannel(ch); };

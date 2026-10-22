@@ -27,9 +27,12 @@ import { deriveSubkey } from '@kithwall/crypto';
 
 interface Item { row: CommentRow; text: string | null; replyTo?: string; created_at: string; id: string }
 
+/** Per-post likes and comments: seeded in batches by the feed and kept current by Realtime (see PostCard). */
+export const ENGAGEMENT_STALE = 2 * 60_000;
+
 export function useComments(postId: string) {
   return useQuery({
-    queryKey: commentsKey(postId),
+    queryKey: commentsKey(postId), staleTime: ENGAGEMENT_STALE,
     queryFn: async () => { const rows = await fetchComments(postId); await people.ensure(rows.map((r) => r.author_id)); return rows; },
   });
 }

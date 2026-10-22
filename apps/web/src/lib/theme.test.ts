@@ -12,6 +12,8 @@ function memoryStorage(init: Record<string, string> = {}) {
     setItem: (k: string, v: string) => { m.set(k, String(v)); },
     removeItem: (k: string) => { m.delete(k); },
     dump: () => Object.fromEntries(m),
+    get length() { return m.size; },
+    key: (i: number) => [...m.keys()][i] ?? null,
   };
 }
 
@@ -83,6 +85,12 @@ describe('public/theme.js (pre-paint)', () => {
     runInNewContext(src, { window, document, navigator: { languages, language: languages[0] }, location: { pathname: path } });
     return { attrs, meta: meta.content, store: store.dump() };
   }
+
+  it('marks a device with a stored session (the landing page then waits for the redirect)', () => {
+    expect(run({ storage: { 'sb-127-auth-token': '{}' } }).attrs['data-kw-session']).toBe('');
+    expect(run({ storage: { 'sb-127-auth-token-code-verifier': 'x' } }).attrs['data-kw-session']).toBeUndefined();
+    expect(run().attrs['data-kw-session']).toBeUndefined();
+  });
 
   it('applies defaults', () => {
     const r = run();

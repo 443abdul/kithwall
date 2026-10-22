@@ -8,6 +8,7 @@ import { isHiddenChat } from '@/lib/safety/hidden';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateSoon } from '@/lib/invalidate';
 import { useFormat, useT, type MessageKey } from '@/i18n';
 import { useSession } from '@/lib/keys/session';
 import { useKeyringVersion } from '@/lib/hooks';
@@ -187,7 +188,7 @@ function Thread({ c }: { c: ConversationSummary }) {
         await sendDraft(c, draft, (x) => setPending((p) => p.map((q) => (q.tempId === tempId ? { ...q, progress: x } : q))));
         await qc.invalidateQueries({ queryKey: ['messages', c.id] });
         setPending((p) => p.filter((q) => q.tempId !== tempId));
-        void qc.invalidateQueries({ queryKey: ['conversations'] });
+        invalidateSoon(qc, ['conversations']);
       } catch (e) {
         const code = e instanceof SendError ? e.code : 'failed';
         setPending((p) => p.map((q) => (q.tempId === tempId ? { ...q, status: 'failed', error: t(`messages.error.${code}` as MessageKey) } : q)));
