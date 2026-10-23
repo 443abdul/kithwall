@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { createPrivateKey, sign as nodeSign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { b64u, documentPublicKey, randomBytes, signDocument, verifyDocument } from '../src/index';
