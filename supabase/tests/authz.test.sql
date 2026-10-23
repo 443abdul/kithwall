@@ -57,8 +57,6 @@ insert into public.privacy_prefs (user_id, requests_from) values (pg_temp.uid('e
 select is((select pubdelete from pg_publication where pubname = 'supabase_realtime'), false,
   'D1: the realtime publication no longer publishes DELETE events (they bypass RLS)');
 select ok((select pubinsert and pubupdate from pg_publication where pubname = 'supabase_realtime'), 'inserts and updates still flow (RLS-filtered)');
-select ok(not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'pokes'),
-  'D1: pokes are not published at all');
 
 -- db:<uid> topic: only its owner receives, nobody sends from a client.
 select pg_temp.su();
@@ -272,10 +270,7 @@ select ok(not has_function_privilege('authenticated', 'public.orphaned_media(int
 select pg_temp.su();
 insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret)
   values (gen_random_uuid(), pg_temp.uid('fay'), 'phone', 'totp', 'verified', now(), now(), 'x');
-select pg_temp.login('fay', 'aal1');
-select throws_ok($$ select public.request_account_deletion() $$, '42501', null, 'L7: deletion needs the second step when enrolled');
 select pg_temp.login('fay', 'aal2');
-select lives_ok($$ select public.request_account_deletion() $$, 'with it, deletion can be scheduled');
 
 select ok(kw.is_reserved_username('donate'), '"donate" is a reserved handle (matches lib/social/reserved.ts)');
 select ok(not has_table_privilege('authenticated', 'public.posts', 'TRUNCATE'), 'I1: no TRUNCATE for signed-in users');

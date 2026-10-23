@@ -6,7 +6,6 @@
 // the duress PIN stays on the pad, docs/v2/05-native.md §4).
 import { useCallback, useEffect, useState } from 'react';
 import { useT } from '@/i18n';
-import { afterLogin } from '@/lib/auth/login';
 import { pinWait, unlockWithPin } from '@/lib/safety/applock';
 import { biometricOn, unlockWithBiometrics } from '@/lib/safety/biometric';
 import { Button } from '@/components/ui/Button';
@@ -49,7 +48,7 @@ function PinLockInner({ onUseOther }: { onUseOther: () => void }) {
     setBusy(true); setErr(null);
     try {
       const r = await unlockWithBiometrics({ title: t('safety.bio.prompt'), cancel: t('safety.bio.cancel') });
-      if (r === 'ok') { await afterLogin(); return; }
+      if (r === 'ok') return;
       if (r === 'invalidated') { setBio(false); setErr(t('safety.bio.invalidated')); }
       else if (r === 'lockout') setErr(t('safety.bio.lockout'));
       else if (r !== 'cancelled') setErr(t('errors.unknown'));
@@ -62,7 +61,7 @@ function PinLockInner({ onUseOther }: { onUseOther: () => void }) {
     setBusy(true); setErr(null);
     try {
       const r = await unlockWithPin(pin);
-      if (r === 'ok') { await afterLogin(); return; }
+      if (r === 'ok') return;
       if (r === 'decoy') return;
       if (r === 'wiped') { location.replace('/'); return; }
       setErr(r === 'wait' ? t('safety.lock.wait') : t('safety.lock.wrong'));

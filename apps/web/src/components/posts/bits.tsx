@@ -9,10 +9,11 @@ import { useKeyringVersion } from '@/lib/hooks';
 import { usePeopleVersion } from '@/lib/people';
 import { renderMarkdown } from '@/components/auth/Markdown';
 import { safeLink } from '@/components/notes/format';
+import { ExternalLink } from '@/components/links/ExternalLink';
 import { segmentText, whenParts } from './logic';
 import type { AudienceBadge } from './data';
 
-export const EXTERNAL_REL = 'noopener noreferrer nofollow ugc';
+export { EXTERNAL_REL } from '@/lib/links/leave';
 
 /** "5 min ago", "Yesterday", "12 Mar" in the active language; the full date is in the tooltip. */
 export function RelativeTime({ iso, className }: { iso: string; className?: string }) {
@@ -26,7 +27,7 @@ export function RelativeTime({ iso, className }: { iso: string; className?: stri
   return <time className={className} dateTime={d.toISOString()} title={f.date(d, { dateStyle: 'full', timeStyle: 'short' })}>{text}</time>;
 }
 
-/** Post/comment text: newlines kept, http(s) links made safe anchors, long text folded. */
+/** Post/comment text: newlines kept, http(s) links open through "Leaving Kithwall", long text folded. */
 export function RichText({ text, clamp = 700, className }: { text: string; clamp?: number; className?: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -35,7 +36,7 @@ export function RichText({ text, clamp = 700, className }: { text: string; clamp
   return (
     <div className={className ? `k-rich ${className}` : 'k-rich'} dir="auto">
       {segmentText(shown).map((s, i) => s.kind === 'link'
-        ? <a key={i} href={s.href} target="_blank" rel={EXTERNAL_REL} className="k-ltr">{s.text}</a>
+        ? <ExternalLink key={i} href={s.href} text={s.text} className="k-ltr">{s.text}</ExternalLink>
         : <span key={i}>{s.text}</span>)}
       {long ? (
         <> <button type="button" className="k-linkbtn" aria-expanded={open} onClick={() => setOpen(!open)}>

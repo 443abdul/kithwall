@@ -6,7 +6,7 @@
 // The answer must not reveal which kind of account a handle has (security review W3), so it is
 // computed WITHOUT looking at the account type:
 //  * a handle that exists → the synthetic address derived from its profile id, whatever kind of account
-//    it is (for passkey and email accounts the password sign-in then simply fails);
+//    it is (for passkey accounts the passphrase sign-in then simply fails);
 //  * a handle that doesn't → a deterministic decoy of exactly the same shape (a version-4 UUID derived
 //    from an HMAC of the handle under a server secret), so repeated lookups agree.
 // Both paths make the same single query. With no server secret configured the route fails closed.

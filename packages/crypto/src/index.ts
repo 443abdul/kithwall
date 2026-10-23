@@ -90,3 +90,5 @@ export {
   signKeyChange,
   verifyKeyChange,
 } from './safety';
+
+export { signDocument, verifyDocument, documentPublicKey } from './signed';

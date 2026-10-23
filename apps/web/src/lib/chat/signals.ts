@@ -18,6 +18,7 @@ import { signChallenge, verifyChallenge, b64u } from '@kithwall/crypto';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSyncExternalStore } from 'react';
 import { sb, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '../supabase';
+import { netUrl } from '../net/runtime';
 import { getSession, identity } from '../keys/session';
 import { people } from '../people';
 import { chatVisible } from '../settings';
@@ -241,7 +242,7 @@ class Signals {
     for (let i = 0; i < signals.length; i += BATCH) {
       const messages = signals.slice(i, i + BATCH).map((p) => ({ topic: `inbox:${p.t}`, event: 'sig', payload: p, private: true }));
       try {
-        const res = await fetch(`${SUPABASE_URL}/realtime/v1/api/broadcast`, {
+        const res = await fetch(netUrl(`${SUPABASE_URL}/realtime/v1/api/broadcast`), {
           method: 'POST', keepalive, credentials: 'omit', referrerPolicy: 'no-referrer',
           headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages }),

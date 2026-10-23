@@ -90,9 +90,11 @@ Pages, Questions, Places, Pokes, Kithville and games, the "Wall" metaphor, the 2
 
 Bot and spam protection stays invisible: proof-of-work (ALTCHA) plus rate limits. There is no CAPTCHA puzzle.
 
-**Migration:** existing v1 accounts keep their keys, connections and content. At first sign-in with their
-password, the app offers to add a passkey. Old posts appear in the new feed. 2010-only content (pokes,
-Kithville, questions) is dropped after export is offered.
+**Migration:** ~~existing v1 accounts keep their keys, connections and content; at first sign-in with their
+password, the app offers to add a passkey; 2010-only content is dropped after export is offered.~~ Superseded
+2026-10-23: Kithwall starts fresh. Production accounts and data are wiped, every account is created new with a
+passkey or a passphrase, and the v1 email sign-in, the Classic export and the 2010-only tables were removed
+(`07-launch.md` status, `01-accounts.md` §3 "No email accounts", `02-cleanup.md` §4).
 
 ## 6. Design
 

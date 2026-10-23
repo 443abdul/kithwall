@@ -47,14 +47,50 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(KithwallPasskeyPlugin.class);
         registerPlugin(KithwallSecurePlugin.class);
         registerPlugin(KithwallPushPlugin.class);
+        registerPlugin(KithwallNetPlugin.class);
+        // Censorship resistance (KwNet, docs/v2/08-censorship.md): start on the mirror that worked last time
+        // when the usual origin was unreachable (null = the bundled config, i.e. the usual origin).
+        config = KwNet.capConfig(this);
+        KwNet.checkPrimaryLater(this);
         super.onCreate(savedInstanceState);
         splash.setKeepOnScreenCondition(() -> !firstPaint && SystemClock.uptimeMillis() - started < SPLASH_MAX_MS);
         KithwallShellPlugin.applySecure(this, KithwallShellPlugin.secureScreen(this));
         Notifier.ensureChannels(this);
-        if (bridge != null) setUpWebView();
         getOnBackPressedDispatcher().addCallback(this, back);
-        String path = pathFrom(getIntent());
-        if (path != null) load(path);
+        pendingPath = pathFrom(getIntent());
+        if (bridge != null) afterBridge();
+    }
+
+    private String pendingPath;
+    private static volatile boolean proxyApplied = false;
+
+    /**
+     * "Use Tor (Orbot)": the WebView proxy must be in effect BEFORE the first request, or that request
+     * would leave without Tor. BridgeActivity.onCreate calls load(), which creates the bridge and loads
+     * the start page, so it waits here until ProxyController confirms the override.
+     */
+    @Override
+    protected void load() {
+        if (!proxyApplied && KwNet.torEnabled(this) && KwNet.proxySupported()) {
+            KwNet.applyProxy(this, () -> runOnUiThread(() -> {
+                proxyApplied = true;
+                if (isFinishing() || isDestroyed()) return;
+                load();
+                afterBridge();
+                // onStart/onResume already ran without a bridge: catch the plugins up.
+                if (bridge != null && getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) bridge.onStart();
+                if (bridge != null && getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) bridge.onResume();
+            }));
+            return;
+        }
+        super.load();
+    }
+
+    private void afterBridge() {
+        if (bridge == null) return;
+        setUpWebView();
+        if (pendingPath != null) load(pendingPath);
+        pendingPath = null;
     }
 
     private void setUpWebView() {

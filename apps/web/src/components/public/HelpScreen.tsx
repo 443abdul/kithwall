@@ -53,6 +53,7 @@ export function HelpScreen() {
             </section>
           ))}
           {!sections.length ? <EmptyState icon="search" title={t('help.noMatch', { query: q.trim() })} /> : null}
+          <p className="k-small"><Link href="/help/blocked">{t('net.help.link')}</Link></p>
           <p className="k-muted k-small k-doc-foot">
             {t('help.more')} <Link href="/legal/privacy">{t('footer.privacy')}</Link> · <Link href="/legal/terms">{t('footer.terms')}</Link> · <Link href="/legal/community">{t('footer.community')}</Link>
           </p>

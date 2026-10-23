@@ -1,6 +1,5 @@
 'use client';
-// Account recovery (/recover, and /recover/reset after a v1 password-reset email). Starts from the
-// @handle, so accounts without an email work: recovery key (24 words) or trusted friends, then a new
+// Account recovery (/recover). Starts from the @handle (accounts have no email): recovery key (24 words) or trusted friends, then a new
 // passkey or passphrase. Logic in lib/auth/recover-client.ts; design in docs/v2/01-accounts.md §3.
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -9,9 +8,7 @@ import type { Unlocked } from '@kithwall/crypto';
 import { useFormat, useT } from '@/i18n';
 import { accountApi } from '@/lib/auth/account';
 import { finishMfaLogin } from '@/lib/auth/login';
-import { authedPost } from '@/lib/auth/api';
-import { sb } from '@/lib/supabase';
-import { confirmRecoverySaved, signOut, useSession } from '@/lib/keys/session';
+import { confirmRecoverySaved } from '@/lib/keys/session';
 import {
   afterFriendsRecovery, cancelFriends, findAccount, finishRecovery, forgetPending, friendsStatus, hasEphHere, openWithPhrase,
   pendingRecovery, rebuildFromFriends, setNewPassphrase, sixWords, startFriends, type RecoveryTarget,
@@ -30,15 +27,15 @@ import { normalizeHandle } from '@/components/onboarding/JoinFlow';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { RecoveryPhrase } from '@/components/settings/RecoveryPhrase';
 
-type Step = 'who' | 'method' | 'phrase' | 'friends' | 'email' | 'emailSent' | 'mfa' | 'secure' | 'newKey' | 'done' | 'lost';
+type Step = 'who' | 'method' | 'phrase' | 'friends' | 'mfa' | 'secure' | 'newKey' | 'done';
 
-export function RecoverFlow({ viaEmail = false, initialHandle }: { viaEmail?: boolean; initialHandle?: string }) {
+export function RecoverFlow() {
   const t = useT();
   const router = useRouter();
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [step, setStep] = useState<Step>('who');
-  const [handle, setHandle] = useState(initialHandle ?? '');
+  const [handle, setHandle] = useState('');
   const [target, setTarget] = useState<RecoveryTarget | null>(null);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [viaFriends, setViaFriends] = useState(false);
@@ -48,7 +45,6 @@ export function RecoverFlow({ viaEmail = false, initialHandle }: { viaEmail?: bo
   useDocumentTitle(t('recover.docTitle'));
 
   useEffect(() => { headingRef.current?.focus(); }, [step]);
-  useEffect(() => { if (initialHandle) setHandle(initialHandle); }, [initialHandle]);
 
   // A trusted-friend request started earlier in this browser: offer to pick it up again.
   const [pending, setPending] = useState<ReturnType<typeof pendingRecovery>>(null);
@@ -104,7 +100,6 @@ export function RecoverFlow({ viaEmail = false, initialHandle }: { viaEmail?: bo
         {err ? <Callout tone="danger">{err}</Callout> : null}
         <div className="k-flow-actions k-flow-actions-stack">
           <Button type="submit" variant="primary" size="lg" block busy={busy} disabled={!normalizeHandle(handle)}>{t('common.continue')}</Button>
-          {!viaEmail ? <Button variant="ghost" icon="mail" onClick={() => go('email')}>{t('recover.useEmail')}</Button> : null}
         </div>
       </form>
       <p className="k-center k-small k-muted">{t('recover.remembered')} <Link href="/signin">{t('landing.signIn')}</Link> · <Link href="/help#recovery">{t('recover.howItWorks')}</Link></p>
@@ -123,7 +118,6 @@ export function RecoverFlow({ viaEmail = false, initialHandle }: { viaEmail?: bo
           <Choice icon="users" title={t('recover.friendsChoice')}
             body={target.trusted ? t('recover.friendsChoiceBody', { count: target.trusted.count, threshold: target.trusted.threshold }) : t('recover.friendsNone')}
             disabled={!target.trusted} onClick={() => { setRequestId(null); go('friends'); }} />
-          {viaEmail ? <Choice icon="alert" title={t('recover.lostChoice')} body={t('recover.lostChoiceBody')} onClick={() => go('lost')} /> : null}
         </div>
         <div className="k-flow-actions"><Button variant="ghost" icon="back" onClick={() => go('who')}>{t('common.back')}</Button></div>
       </>
@@ -182,12 +176,6 @@ export function RecoverFlow({ viaEmail = false, initialHandle }: { viaEmail?: bo
       </div>
     </>
   );
-
-  if (step === 'email' || step === 'emailSent') body = (
-    <EmailStep headingId={headingId} headingRef={headingRef} sent={step === 'emailSent'} onSent={() => go('emailSent')} onBack={() => go('who')} />
-  );
-
-  if (step === 'lost') body = <LostStep headingId={headingId} headingRef={headingRef} onBack={() => go('method')} />;
 
   return (
     <AuthFrame cta={step === 'done' || step === 'secure' || step === 'newKey' ? 'none' : 'signin'}>
@@ -370,7 +358,6 @@ function MfaStep({ headingId, headingRef, onDone }: StepProps & { onDone: () => 
 
 function SecureStep({ headingId, headingRef, handle, onDone }: StepProps & { handle: string; onDone: () => Promise<void> }) {
   const t = useT();
-  const { email } = useSession();
   const [canPasskey, setCanPasskey] = useState<boolean | null>(null);
   const [phrase, setPhrase] = useState('');
   const [phrase2, setPhrase2] = useState('');
@@ -391,7 +378,7 @@ function SecureStep({ headingId, headingRef, handle, onDone }: StepProps & { han
   function onPhrase(e: FormEvent) {
     e.preventDefault();
     if (phrase !== phrase2) { setErr(t('passphrase.mismatch')); return; }
-    if (!passphraseOk(phrase, [handle, email ?? ''])) { setErr(t('errors.weak_passphrase')); return; }
+    if (!passphraseOk(phrase, [handle])) { setErr(t('errors.weak_passphrase')); return; }
     void run('phrase', () => setNewPassphrase(phrase));
   }
 
@@ -412,105 +399,6 @@ function SecureStep({ headingId, headingRef, handle, onDone }: StepProps & { han
         <Button type="submit" variant={canPasskey ? 'secondary' : 'primary'} size="lg" block busy={busy === 'phrase'}>{t('recover.securePhrase')}</Button>
       </form>
       <Button variant="ghost" onClick={() => void run('skip', async () => undefined)} disabled={!!busy}>{t('recover.secureSkip')}</Button>
-    </>
-  );
-}
-
-function EmailStep({ headingId, headingRef, sent, onSent, onBack }: StepProps & { sent: boolean; onSent: () => void; onBack: () => void }) {
-  const t = useT();
-  const [email, setEmail] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setErr(t('recover.emailInvalid')); return; }
-    setBusy(true); setErr(null);
-    try {
-      const { error } = await sb().auth.resetPasswordForEmail(email.trim(), { redirectTo: `${location.origin}/recover/reset` });
-      // Same answer whether or not the account exists (no account enumeration).
-      if (error && !/not.?found|no user/i.test(error.message)) {
-        setErr(/rate|seconds|too many/i.test(error.message) ? t('errors.rate_limited') : t('errors.network'));
-        return;
-      }
-      onSent();
-    } finally { setBusy(false); }
-  }
-  if (sent) return (
-    <>
-      <Heading id={headingId} ref={headingRef} icon="mail">{t('recover.emailSentTitle')}</Heading>
-      <p>{t('recover.emailSentBody', { email: email.trim() })}</p>
-      <Button variant="ghost" icon="back" onClick={onBack}>{t('common.back')}</Button>
-    </>
-  );
-  return (
-    <>
-      <Heading id={headingId} ref={headingRef} icon="mail">{t('recover.emailTitle')}</Heading>
-      <p className="k-muted">{t('recover.emailBody')}</p>
-      <form className="k-stack" onSubmit={(e) => void submit(e)} noValidate>
-        <TextField label={t('signin.email')} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" dir="ltr" required />
-        {err ? <Callout tone="danger">{err}</Callout> : null}
-        <div className="k-flow-actions k-flow-actions-stack">
-          <Button type="submit" variant="primary" size="lg" block busy={busy}>{t('recover.emailCta')}</Button>
-          <Button variant="ghost" icon="back" onClick={onBack}>{t('common.back')}</Button>
-        </div>
-      </form>
-    </>
-  );
-}
-
-/** "I've lost everything" (only in a password-reset session, which proves email control). */
-function LostStep({ headingId, headingRef, onBack }: StepProps & { onBack: () => void }) {
-  const t = useT();
-  const f = useFormat();
-  const [sched, setSched] = useState<string | null | undefined>(undefined);
-  const [ack, setAck] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    void sb().from('account_deletion_requests').select('execute_after').maybeSingle()
-      .then(({ data }) => setSched((data?.execute_after as string | undefined) ?? null));
-  }, []);
-  const call = async (fn: () => Promise<void>) => {
-    setBusy(true); setErr(null);
-    try { await fn(); } catch (x) { setErr((x as Error).message); } finally { setBusy(false); }
-  };
-  const due = sched ? new Date(sched).getTime() <= Date.now() : false;
-  return (
-    <>
-      <Heading id={headingId} ref={headingRef} icon="alert">{t('recover.lostTitle')}</Heading>
-      <Callout tone="danger">{t('recover.lostBody')}</Callout>
-      {sched === undefined ? <div className="k-center"><Spinner /></div> : sched ? (
-        <>
-          <Callout tone="warning">{due ? t('recover.lostDue') : t('recover.lostScheduled', { time: f.date(new Date(sched), { dateStyle: 'medium', timeStyle: 'short' }) })}</Callout>
-          <div className="k-flow-actions k-flow-actions-stack">
-            {due ? <Button variant="danger" block busy={busy} onClick={() => void call(async () => {
-              await authedPost('/api/account/delete', { mode: 'scheduled' });
-              await signOut().catch(() => undefined);
-              // A full page load drops every in-memory key and cache.
-              // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-              location.href = '/';
-            })}>{t('recover.lostDeleteNow')}</Button> : null}
-            <Button variant="secondary" disabled={busy} onClick={() => void call(async () => { await authedPost('/api/account/deletion-request', {}, 'DELETE'); setSched(null); })}>{t('recover.lostCancel')}</Button>
-          </div>
-        </>
-      ) : (
-        <>
-          <ul className="k-recover-steps">
-            <li>{t('recover.lostStep1')}</li>
-            <li>{t('recover.lostStep2')}</li>
-            <li>{t('recover.lostStep3')}</li>
-          </ul>
-          <label className="k-check-row"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> {t('recover.lostAck')}</label>
-          {err ? <Callout tone="danger">{err}</Callout> : null}
-          <div className="k-flow-actions k-flow-actions-stack">
-            <Button variant="danger" block disabled={!ack} busy={busy} onClick={() => void call(async () => {
-              const r = await authedPost<{ executeAfter: string }>('/api/account/deletion-request', {});
-              setSched(r.executeAfter);
-            })}>{t('recover.lostSchedule')}</Button>
-            <Button variant="ghost" icon="back" onClick={onBack}>{t('common.back')}</Button>
-          </div>
-        </>
-      )}
     </>
   );
 }

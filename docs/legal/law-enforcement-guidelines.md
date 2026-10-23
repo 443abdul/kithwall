@@ -31,11 +31,11 @@ and log data. Content a user marks **Public** (not available at launch) is unenc
 
 | Category | Details | How long it exists |
 |---|---|---|
-| Basic subscriber information | Email address, username, display name (if stored unencrypted), account creation date, last sign-in time, whether MFA is on | Until account deletion |
-| IP address records | From our hosting providers' authentication, API and request logs (sign-in, sign-up, password reset, API calls, page requests) | Short: 7 days (Supabase Pro plan) (Supabase), 1 hour (Vercel Hobby plan runtime logs) (Vercel). Our own app tables store no IP addresses |
+| Basic subscriber information | Username, display name (if stored unencrypted), notice email address (only if the user added one), account creation date, last sign-in time, number of passkeys, whether MFA is on | Until account deletion |
+| IP address records | From our hosting providers' authentication, API and request logs (sign-in, sign-up, account recovery, API calls, page requests) | Short: 7 days (Supabase Pro plan) (Supabase), 1 hour (Vercel Hobby plan runtime logs) (Vercel). Our own app tables store no IP addresses |
 | Public keys | Current keys and key-change history | Until account deletion |
-| Social graph | Friendships and friend requests (with dates), blocks, membership of friend lists (not list names), group and event membership and roles, RSVPs, page likes, trusted-friend recovery contacts | Until removed by the user or account deletion |
-| Activity metadata | Who posted to whose wall and when, item sizes; who commented/liked/voted on which item and when (not what they said or how they voted); pokes; that a user was tagged in an item | Until removed or account deletion |
+| Social graph | Friendships and friend requests (with dates), blocks, membership of friend lists (not list names), group and event membership and roles, RSVPs, trusted-friend recovery contacts | Until removed by the user or account deletion |
+| Activity metadata | Who posted to whose wall and when, item sizes; who commented on or liked which item and when (not what they said); that a user was tagged in an item | Until removed or account deletion |
 | Messaging metadata | Which accounts are in a conversation; when each message was sent; size; read receipts | Until deleted or account deletion |
 | Notification metadata | Recipient, type, triggering account, item reference, read/unread | 90 days |
 | Recovery requests | Requests to restore an account via trusted friends, their timing and status | 7 days after they close |
@@ -47,9 +47,9 @@ and log data. Content a user marks **Public** (not available at launch) is unenc
 
 | Category | Why |
 |---|---|
-| Content of posts, comments, photos, messages, chats, profile details, tags, notes, polls and votes, check-ins, private groups/events, notification text, game state | End-to-end encrypted; we hold no keys |
-| Passwords, private keys, recovery keys, recovery shares | Never sent to us, or only in encrypted form we cannot open |
-| Location data | Check-ins are encrypted; we never collect device location; photo location data is stripped on the device before upload |
+| Content of posts, comments, photos, messages, chats, profile details, tags, notes, private groups/events, notification text | End-to-end encrypted; we hold no keys |
+| Passkey secrets, passphrases, private keys, recovery keys, recovery shares | Never sent to us, or only in encrypted form we cannot open |
+| Location data | We never collect device location; photo location data is stripped on the device before upload |
 | Contact lists / address books | Never collected |
 | Phone numbers, payment data, device identifiers | Never collected (browser user-agent strings appear only in short-lived hosting logs) |
 | Deleted data | Account deletion is immediate; encrypted backup copies are unreadable once keys are destroyed, and all backups age out within 7 days |
@@ -80,7 +80,7 @@ us to respond directly. [LAWYER: confirm, including India IT Rules 2021 obligati
 information within 72 hours of a lawful order.]
 
 **Every request must include:** the issuing authority and officer's name, badge/ID, official email
-and phone; the legal basis; the specific Kithwall username(s) or account email(s); the specific
+and phone; the legal basis; the specific Kithwall username(s); the specific
 data sought; the date range; and the response deadline. We reject requests that are vague,
 overbroad, or not legally valid, and we may challenge them in court.
 

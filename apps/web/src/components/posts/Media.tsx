@@ -1,18 +1,20 @@
 'use client';
-// Post media: photo grid + lightbox (swipe, arrow keys, pinch/double-tap zoom), the encrypted video
+// Post media: photo grid, the lightbox (profile photos; posts use components/gallery), the encrypted video
 // player, link preview cards and click-to-play embeds. Every image is decrypted on this device into a
 // blob: URL (lib/media useFileUrl); embeds load nothing from the provider until the viewer presses play.
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { useFormat, useLocale, useT } from '@/i18n';
 import { Icon } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/Button';
+import { Button, IconButton } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { downloadFile, useFileUrl } from '@/lib/media';
 import { EMBED_PROVIDERS, embedSrc, validEmbed, type Embed } from '@/lib/embeds';
 import { displayHost } from '@/lib/feed/linkMeta';
 import { isWide } from '@/lib/feed/linkPreview';
 import type { FileRef, PhotoFiles, PostPayload } from '@/lib/types';
-import { EXTERNAL_REL, formatBytes, formatDuration } from './bits';
+import { formatBytes, formatDuration } from './bits';
+import { ExternalLink } from '@/components/links/ExternalLink';
+import { isolate } from '@/lib/links/leave';
 import { gridLayout, safeHref, stepIndex } from './logic';
 
 type Photo = NonNullable<PostPayload['photos']>[number];
@@ -182,30 +184,53 @@ export function LinkCard({ link, onRemove, localImg }: {
   );
   return (
     <div className={wide && has ? 'k-lc k-lc-col' : 'k-lc'}>
-      {href && !onRemove ? <a className="k-lc-a" href={href} target="_blank" rel={EXTERNAL_REL}>{body}</a> : <span className="k-lc-a">{body}</span>}
+      {href && !onRemove ? <ExternalLink className="k-lc-a" href={href} text={link.title}>{body}</ExternalLink> : <span className="k-lc-a">{body}</span>}
       {onRemove ? <IconButton className="k-lc-x" icon="close" size="sm" variant="soft" label={t('feed.removeLink')} onClick={onRemove} /> : null}
     </div>
   );
 }
 
+const EMBED_OK_KEY = 'kw.embeds.ok';
+function embedAllowed(p: string): boolean {
+  try { return (JSON.parse(localStorage.getItem(EMBED_OK_KEY) ?? '[]') as unknown[]).includes(p); } catch { return false; }
+}
+function allowEmbed(p: string) {
+  try {
+    const list = (JSON.parse(localStorage.getItem(EMBED_OK_KEY) ?? '[]') as unknown[]).filter((x) => typeof x === 'string' && x !== p);
+    localStorage.setItem(EMBED_OK_KEY, JSON.stringify([...list, p]));
+  } catch { /* ask again next time */ }
+}
+
+/**
+ * Click-to-play: nothing loads from the provider until the viewer agrees. The first tap explains that the
+ * player comes from the provider's site, which then sees their IP address ("don't ask again" per provider,
+ * on this device). The player iframe is sandboxed to what a video player needs (scripts + its own origin):
+ * no popups, no top navigation, no forms; the page CSP only allows these player origins (frame-src).
+ */
 function EmbedCard({ embed, url, title, img, hasImage, onRemove }: {
   embed: Embed; url: string; title?: string; img: string | null; hasImage: boolean; onRemove?: () => void;
 }) {
   const t = useT();
-  const [playing, setPlaying] = useState(false);
+  const [state, setState] = useState<'face' | 'ask' | 'playing'>('face');
+  const [remember, setRemember] = useState(false);
   const prov = EMBED_PROVIDERS[embed.provider];
   const src = embedSrc(embed);
   const href = safeHref(url);
+  const host = <span className="k-ltr" translate="no">{prov.host}</span>;
+  const play = () => {
+    if (remember) allowEmbed(embed.provider);
+    setState('playing');
+  };
   return (
     <div className="k-emb" data-tall={embed.aspect === '9:16' ? '' : undefined}>
       <div className="k-emb-box">
-        {playing && src ? (
+        {state === 'playing' && src ? (
           <iframe className="k-emb-frame" src={src} title={title ? `${prov.name}: ${title}` : prov.name}
             allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
-            referrerPolicy="strict-origin-when-cross-origin"
-            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox" />
+            referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin" />
         ) : (
-          <button type="button" className="k-emb-face" disabled={!!onRemove || !src} onClick={() => setPlaying(true)}
+          <button type="button" className="k-emb-face" disabled={!!onRemove || !src || state === 'ask'}
+            onClick={() => setState(embedAllowed(embed.provider) ? 'playing' : 'ask')}
             aria-label={t('feed.playFrom', { host: prov.host })}>
             {hasImage ? (img
               // eslint-disable-next-line @next/next/no-img-element
@@ -215,11 +240,26 @@ function EmbedCard({ embed, url, title, img, hasImage, onRemove }: {
             <span className="k-emb-prov" aria-hidden>{prov.name}</span>
           </button>
         )}
+        {state === 'ask' ? (
+          <div className="k-emb-ask" role="group" aria-labelledby={`emb-ask-${embed.provider}-${embed.id}`}>
+            <p id={`emb-ask-${embed.provider}-${embed.id}`}>
+              <Icon name="globe" /> {t('feed.embedNotice', { host: isolate(prov.host) })}
+            </p>
+            <label className="k-emb-remember">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              <span>{t('feed.embedRemember', { provider: prov.name })}</span>
+            </label>
+            <div className="k-emb-ask-row">
+              <Button size="sm" variant="ghost" onClick={() => setState('face')}>{t('links.cancel')}</Button>
+              <Button size="sm" variant="primary" icon="play" autoFocus onClick={play}>{t('feed.embedPlay')}</Button>
+            </div>
+          </div>
+        ) : null}
       </div>
       <div className="k-emb-text">
-        {href && !onRemove ? <a className="k-lc-title" href={href} target="_blank" rel={EXTERNAL_REL} dir="auto">{title || url}</a>
+        {href && !onRemove ? <ExternalLink className="k-lc-title" href={href} text={title} dir="auto">{title || url}</ExternalLink>
           : <span className="k-lc-title" dir="auto">{title || url}</span>}
-        <span className="k-lc-host">{playing ? t('feed.playingFrom', { host: prov.host }) : <span className="k-ltr">{prov.host}</span>}</span>
+        <span className="k-lc-host">{state === 'playing' ? t('feed.playingFrom', { host: prov.host }) : host}</span>
       </div>
       {onRemove ? <IconButton className="k-lc-x" icon="close" size="sm" variant="soft" label={t('feed.removeLink')} onClick={onRemove} /> : null}
     </div>
@@ -235,7 +275,8 @@ type VState =
   | { s: 'ready'; url: string }
   | { s: 'error'; url?: string };
 
-export function VideoPlayer({ video }: { video: NonNullable<PostPayload['video']> }) {
+/** `onOpen`: a tap opens the gallery (which plays it full screen) instead of playing here. */
+export function VideoPlayer({ video, onOpen }: { video: NonNullable<PostPayload['video']>; onOpen?: () => void }) {
   const t = useT();
   const f = useFormat();
   const poster = useFileUrl(video.poster);
@@ -283,7 +324,7 @@ export function VideoPlayer({ video }: { video: NonNullable<PostPayload['video']
         <video className="k-video-el" src={st.url} controls playsInline autoPlay preload="auto" style={{ aspectRatio: ratio }}
           onError={() => setSt({ s: 'error', url: st.url })} />
       ) : (
-        <button type="button" className="k-video-poster" style={{ aspectRatio: ratio }} onClick={() => void play()} disabled={st.s === 'loading'}
+        <button type="button" className="k-video-poster" style={{ aspectRatio: ratio }} onClick={() => (onOpen ? onOpen() : void play())} disabled={st.s === 'loading'}
           aria-label={`${t('feed.playVideo')}${video.title ? `: ${video.title}` : ''}${dur ? ` (${dur})` : ''}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {poster ? <img src={poster} alt="" decoding="async" /> : <span className="k-media-ph" />}

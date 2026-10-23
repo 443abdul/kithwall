@@ -1,0 +1,11 @@
+# Kithwall onion service (docs/v2/08-censorship.md §4). /etc/tor/torrc on the VPS (apt install tor).
+# The address: cat /var/lib/tor/kithwall/hostname. Back up /var/lib/tor/kithwall/hs_ed25519_secret_key
+# OFFLINE: it IS the address, and anyone holding it can impersonate the service.
+HiddenServiceDir /var/lib/tor/kithwall/
+HiddenServiceVersion 3
+# Tor forwards onion port 80 to Caddy on localhost only (never exposed to the internet).
+HiddenServicePort 80 127.0.0.1:8080
+# Proof-of-work DoS defence for onion services (tor 0.4.8+).
+HiddenServicePoWDefensesEnabled 1
+# Not a relay, not an exit. (Set SocksPort 9050 temporarily to test the service from this machine.)
+SocksPort 0

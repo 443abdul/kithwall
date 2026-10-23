@@ -2,7 +2,7 @@
 // Security notices at the top of every signed-in screen (spec §3.5 step 2: every signed-in session
 // hears about recovery requests). Trusted-friend recovery can be started by anyone who knows a handle
 // (docs/v2/01-accounts.md §5), so the owner's devices must show it with a one-tap cancel. Also:
-// a cancelled "I've lost everything" deletion, friends asking me for help, and moderation decisions.
+// friends asking me for help, and moderation decisions.
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useFormat, useT } from '@/i18n';
@@ -28,18 +28,11 @@ export function AccountNotices() {
   const f = useFormat();
   const toast = useToast();
   const { status, userId } = useSession();
-  const [cancelledDeletion, setCancelledDeletion] = useState(false);
   const [ownRecovery, setOwnRecovery] = useState<RequestRow[]>([]);
   const [helpNeeded, setHelpNeeded] = useState<string[]>([]);
   const [actions, setActions] = useState<ModAction[]>([]);
   const [hidden, setHidden] = useState<string[]>([]);
   usePeopleVersion();
-
-  useEffect(() => {
-    const on = () => { setCancelledDeletion(true); try { sessionStorage.removeItem('kw.deletionCancelled'); } catch { /* ignore */ } };
-    window.addEventListener('kw:deletion-cancelled', on);
-    return () => window.removeEventListener('kw:deletion-cancelled', on);
-  }, []);
 
   useEffect(() => {
     if (status !== 'ready' || !userId) return;
@@ -48,9 +41,6 @@ export function AccountNotices() {
     void loadSettings().catch(() => undefined);
     void (async () => {
       try {
-        if (sessionStorage.getItem('kw.deletionCancelled')) { setCancelledDeletion(true); sessionStorage.removeItem('kw.deletionCancelled'); }
-        const { data: del } = await sb().from('account_deletion_requests').select('user_id').maybeSingle();
-        if (del) { const { data } = await sb().rpc('cancel_account_deletion'); if (data === true && live) setCancelledDeletion(true); }
         const { data: reqs } = await sb().from('recovery_requests').select('*').eq('owner_id', userId).eq('status', 'pending')
           .gt('expires_at', new Date().toISOString());
         if (live) setOwnRecovery((reqs ?? []) as RequestRow[]);
@@ -72,7 +62,7 @@ export function AccountNotices() {
     try { localStorage.setItem(DISMISS, JSON.stringify(next.slice(-50))); } catch { /* ignore */ }
   };
   const shownActions = actions.filter((a) => !hidden.includes(a.id));
-  if (!cancelledDeletion && !ownRecovery.length && !helpNeeded.length && !shownActions.length) return null;
+  if (!ownRecovery.length && !helpNeeded.length && !shownActions.length) return null;
   const time = (iso: string) => f.date(new Date(iso), { dateStyle: 'medium', timeStyle: 'short' });
 
   return (
@@ -100,16 +90,6 @@ export function AccountNotices() {
             <strong>{t('notices.helpTitle', { names: helpNeeded.map((id) => people.person(id)?.name ?? '…').join(', '), count: helpNeeded.length })}</strong>
             <p>{t('notices.helpBody')} <Link href="/you/settings/security#trusted">{t('notices.helpCta')}</Link></p>
           </div>
-        </div>
-      ) : null}
-      {cancelledDeletion ? (
-        <div className="k-notice">
-          <Icon name="shield" />
-          <div className="k-notice-body">
-            <strong>{t('notices.deletionTitle')}</strong>
-            <p>{t('notices.deletionBody')} <Link href="/you/settings/security">{t('settings.security.title')}</Link></p>
-          </div>
-          <IconButton icon="close" size="sm" label={t('common.dismiss')} onClick={() => setCancelledDeletion(false)} />
         </div>
       ) : null}
       {shownActions.map((a) => (

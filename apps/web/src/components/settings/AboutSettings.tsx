@@ -1,5 +1,5 @@
 'use client';
-// Settings → Help & about (Kithwall 2). Legal pages still render in the classic layout for now.
+// Settings → Help & about (Kithwall 2).
 import { useT } from '@/i18n';
 import { Card } from '@/components/ui/Card';
 import { List, ListItem } from '@/components/ui/ListItem';

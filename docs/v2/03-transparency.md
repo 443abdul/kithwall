@@ -13,7 +13,8 @@ Built from the server's actual rows, not copy. Linked from You and from Settings
 
 | Table | Contents |
 |---|---|
-| `kw.data_map_tables` | one row per table in `public` and `kw`: `category` (account, content, social, messages, activity, housekeeping, legacy, system), `owner_pred` (SQL over row alias `t` and the caller `$1`; null = never about a person), `time_col`, `size_col`, `retention`, `note` |
+| `kw.data_map_tables` | one row per table in `public` and `kw`: `category` (account, content, social, messages, activity, housekeeping, system; `legacy` was removed with the
+classic tables in `20261030000100_drop_classic.sql`), `owner_pred` (SQL over row alias `t` and the caller `$1`; null = never about a person), `time_col`, `size_col`, `retention`, `note` |
 | `kw.data_map_columns` | one row per column: `class` = `id` · `time` · `plaintext` · `ciphertext` · `hashed`, plus a note |
 
 `supabase/tests/transparency.test.sql` **fails if any column of any table in `public` or `kw` is not

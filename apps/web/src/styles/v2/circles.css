@@ -36,6 +36,10 @@
 .kw .kc-filebtn label[aria-disabled] { opacity: 0.55; pointer-events: none; }
 .kw .kc-phone-only { display: block; }
 @media (min-width: 1024px) { .kw .kc-phone-only { display: none; } }
+/* The Circles page shows these links in its own body on phones; the side-panel copy (which drops below the
+   page under 1024px) is for wide screens only, so phones never show them twice. */
+.kw .kc-wide-only { display: none; }
+@media (min-width: 1024px) { .kw .kc-wide-only { display: block; } }
 
 .kw .kc-stack { display: inline-flex; align-items: center; }
 .kw .kc-stack > .k-avatar { box-shadow: 0 0 0 2px var(--surface); }

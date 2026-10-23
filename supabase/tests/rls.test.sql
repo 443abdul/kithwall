@@ -170,13 +170,11 @@ select is((select count(*)::int from public.messages), 0, 'non-member reads no m
 select throws_ok($$ insert into public.messages (id, conversation_id, sender_id, epoch, envelope)
   values ('32000000-0000-0000-0000-000000000002', '31000000-0000-0000-0000-000000000001', pg_temp.uid('carol'), 1, '{"v":1}') $$,
   '42501', null, 'non-member cannot send');
-select throws_ok($$ insert into public.notifications (recipient_id, actor_id, type)
-  values (pg_temp.uid('bob'), pg_temp.uid('carol'), 'poke') $$, '42501', null, 'strangers cannot notify people');
+select throws_ok($$ insert into public.notifications (recipient_id, actor_id, type, object_kind, object_id)
+  values (pg_temp.uid('bob'), pg_temp.uid('carol'), 'friend_request', 'profile', pg_temp.uid('carol')) $$, '42501', null, 'strangers cannot notify people');
 select pg_temp.login('alice');
 select lives_ok($$ insert into public.notifications (recipient_id, actor_id, type, object_kind, object_id) values (pg_temp.uid('bob'), pg_temp.uid('alice'), 'friend_accept', 'profile', pg_temp.uid('alice')) $$,
   'friends can notify each other');
-select throws_ok($$ insert into public.pokes (from_id, to_id) values (pg_temp.uid('alice'), pg_temp.uid('carol')) $$,
-  '42501', null, 'cannot poke a stranger');
 
 -- ---------------------------------------------------------------------------
 -- Recovery

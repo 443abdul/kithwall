@@ -232,7 +232,7 @@ select throws_ok($$ insert into public.notifications (recipient_id, actor_id, ty
   values (pg_temp.uid('ali'), pg_temp.uid('mel'), 'comment', 'post', gen_random_uuid()) $$, '42501', null,
   'N-A2: a co-member cannot send a comment notification about a post that does not exist');
 select throws_ok($$ insert into public.notifications (recipient_id, actor_id, type, object_kind, object_id)
-  values (pg_temp.uid('ali'), pg_temp.uid('mel'), 'poke', 'profile', pg_temp.uid('mel')) $$, '42501', null,
+  values (pg_temp.uid('ali'), pg_temp.uid('mel'), 'mention', 'profile', pg_temp.uid('mel')) $$, '42501', null,
   'N-A2: nor any type the app does not send');
 select throws_ok($$ insert into public.notifications (recipient_id, actor_id, type, object_kind, object_id)
   values (pg_temp.uid('ali'), pg_temp.uid('mel'), 'group_invite', 'group', 'b3100000-0000-0000-0000-000000000004') $$, '42501', null,

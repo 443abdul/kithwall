@@ -24,7 +24,7 @@ export interface ActivityGroup {
 export interface ActivityDay { day: string; at: string; groups: ActivityGroup[] }
 
 /** Types where several people doing the same thing to the same object collapse into one line. */
-const COLLAPSIBLE = new Set(['like', 'comment', 'share', 'mention', 'tag', 'question_vote', 'wall_post', 'reaction', 'story_reaction']);
+const COLLAPSIBLE = new Set(['like', 'comment', 'share', 'mention', 'tag', 'wall_post', 'reaction', 'story_reaction']);
 
 export function groupActivity(rows: ActivityRow[]): ActivityDay[] {
   const sorted = [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -77,7 +77,7 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
   switch (type) {
     case 'like': case 'reaction': case 'story_reaction': case 'relationship': return 'heart';
     case 'comment': case 'mention': case 'wall_post': return 'messages';
-    case 'friend_request': case 'friend_accept': case 'poke': return 'users';
+    case 'friend_request': case 'friend_accept': return 'users';
     case 'group_invite': case 'group_request': return 'circles';
     case 'event_invite': return 'calendar';
     case 'recovery_request': case 'recovery_trustee': return 'key';
@@ -92,7 +92,7 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
 
 /** Known activity types (others fall back to a generic line). */
 export const ACTIVITY_TYPES = [
-  'friend_request', 'friend_accept', 'wall_post', 'comment', 'like', 'tag', 'poke', 'group_invite', 'group_request',
-  'event_invite', 'mention', 'share', 'question_vote', 'checkin_tag', 'relationship', 'recovery_request', 'recovery_trustee',
-  'game', 'key_waiting', 'post_published', 'security_notice',
+  'friend_request', 'friend_accept', 'wall_post', 'comment', 'like', 'tag', 'group_invite', 'group_request',
+  'event_invite', 'mention', 'share', 'relationship', 'recovery_request', 'recovery_trustee',
+  'key_waiting', 'post_published', 'security_notice',
 ] as const;

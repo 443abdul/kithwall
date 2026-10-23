@@ -12,15 +12,17 @@
 
 - What you share on Kithwall with friends, lists, groups and events is **end-to-end encrypted on
   your device**. We store it, but **we cannot read it**.
-- We **can** see metadata: your email address, who your friends are, who you message and when, how
+- We **can** see metadata: your @handle, who your friends are, who you message and when, how
   big things are, which groups and events you're in, and similar facts listed in section 4.3. We are
   honest about this because encryption cannot hide it.
 - Anything you post as **Public** is **not encrypted**. (Public posting is switched off at launch;
   see section 3.)
 - No ads. No tracking. No third-party analytics or scripts. We never sell or share your data for
   advertising. We never upload your address book. No facial recognition. No AI reads your content.
-- If you lose your password **and** your 24-word recovery key **and** cannot get help from your
-  trusted friends, **your encrypted content is gone for good**. We cannot recover it for you.
+- There is no email address and no password. You sign in with a **passkey** (or a passphrase, with
+  your @handle). If you lose every passkey and your passphrase **and** your 24-word recovery key **and**
+  cannot get help from your trusted friends, **your encrypted content is gone for good**. We cannot
+  recover it for you.
 - You can export everything (decrypted on your device) and delete your account at any time.
   Deletion is immediate.
 
@@ -64,20 +66,25 @@ update this policy and tell you in the app before Public is switched on.
 
 | Data | Why it is not encrypted |
 |---|---|
-| Email address | Needed to sign you in, confirm your account, reset your password and send service emails |
-| Username | Needed to address your profile and find friends |
+| Username (@handle) | Needed to address your profile, find friends and sign in with a passphrase |
+| An internal sign-in identifier made from your account number | Our authentication provider needs one. It is not an email address and never receives mail |
+| Notice email address, **only if you add one** (Settings → Account) | To send content-free account notices (for example "someone started recovering your account"). It is verified by a link and never used to sign in |
+| Your passkeys' public keys, labels ("Chrome on Android"), signature counters and when they were added and last used | Needed to check a passkey sign-in |
 | Display name, if you set one and either turn on "discoverable" or share it with friends | Needed for people search and friend requests. [OWNER: confirm which name fields are stored unencrypted] |
 | Whether you are in the people directory ("discoverable") | Needed for search |
 | Profile picture, **only if** you mark it Public | Public by your choice |
 | Your public keys and a history of key changes | Other people's devices need them to encrypt to you and to check that a key change is genuine |
 | Authentication records: account created date, last sign-in, MFA enabled (yes/no), active sessions | Needed to run sign-in and show you your sessions |
 
-**Your password never reaches us.** Your device turns it into two separate keys. One signs you in
-(our authentication provider stores only a one-way hash of it). The other unlocks your encryption
-keys and never leaves your device.
+**Your passkey and passphrase never reach us.** A passkey stays on your device (or in your
+platform's passkey sync): your device proves it holds it, and the passkey itself unlocks your
+encryption keys on your device. A passphrase is turned into two separate keys on your device. One
+signs you in (we store only a one-way hash of it). The other unlocks your encryption keys and never
+leaves your device.
 
 We also store your **key bundle**: your encryption keys, each locked with a key we never see
-(derived from your password or your 24-word recovery key). We cannot unlock it.
+(made by your passkey, or derived from your passphrase or your 24-word recovery key). We cannot
+unlock it.
 
 ### 4.2 Encrypted content (not readable by us)
 
@@ -89,11 +96,11 @@ Encrypted on your device before it is sent. We store only ciphertext.
   tag notification row in 4.3)
 - Messages and chat
 - Profile details (Education & Work, Basic Info, Likes, Contact, Philosophy, Arts, Sports and similar)
-- Notes, questions/polls and your poll votes, Places check-ins (place and tagged friends)
+- Notes
 - Events and groups that are private, closed or secret: names, descriptions, details, walls
 - Names of your friend lists
 - Readable notification previews (e.g. "Kevin commented: …")
-- Your private settings and your Kithville game state
+- Your private settings
 - Optional notes attached to friend requests
 
 Because we cannot read this content, we **do not and cannot** scan it, analyse it, profile you from
@@ -114,10 +121,7 @@ people, our servers can see:
 | Who commented on which post, and when | |
 | Group and event membership, roles, RSVPs | "A is an admin of group #9; B was invited to event #4" |
 | Who is a member of each of your friend lists (but not the list's name) | |
-| Pokes | "A poked B at 10:15" |
 | That a person was tagged in a particular photo or post, and whether they approved | "B was tagged in photo #77 (approved)" |
-| Who voted in a poll (but not how they voted) | |
-| Pages you like (visible only to you in the app, but stored on our servers) | |
 | Notification records: recipient, type, who triggered it, which item, read/unread | |
 | Your trusted friends for recovery, and recovery requests and their status | |
 | Invite links you created and how often they were used | |
@@ -129,7 +133,7 @@ people, our servers can see:
 
 | Data | Who holds it | Notes |
 |---|---|---|
-| IP address, time, and request details of sign-in, sign-up and password reset | Supabase (authentication logs) | Our app tables do not store IP addresses or user agents. For spam limits on sign-in, sign-up and account-recovery pages we keep a keyed hash of your IP address that changes every day (it can't be turned back into the address without our key), deleted within two days |
+| IP address, time, and request details of sign-in, sign-up and account recovery | Supabase (authentication logs) | Our app tables do not store IP addresses or user agents. For spam limits on sign-in, sign-up and account-recovery pages we keep a keyed hash of your IP address that changes every day (it can't be turned back into the address without our key), deleted within two days |
 | IP address and request details of API calls from your browser | Supabase (platform/API gateway logs) | Kept per Supabase's log retention (section 10) |
 | IP address, user agent, page address requested (which can include a username, e.g. /alice) | Vercel (hosting/CDN request logs) | Vercel Web Analytics is **off**. Kept per Vercel's log retention (section 10) |
 | Proof-of-work captcha challenge result at sign-up | Our server (self-hosted ALTCHA) | No third party, no cookies, not stored after the check |
@@ -148,8 +152,8 @@ encrypted.** Please don't send us sensitive content unless you need to.
 ### 4.7 What we never collect
 
 - Your address book or contacts (we never upload it)
-- Your location in the background (location is used only when you press Check In, and the place you
-  choose is encrypted)
+- Your location, ever, except when you choose "attach my location" to a safety check-in alert: it is
+  taken once, at that moment, and sealed so only the people you chose can read it
 - Photo location/camera metadata (stripped on your device)
 - Biometric data; we do no facial recognition
 - Payment details (Kithwall is free; there is nothing to buy)
@@ -204,7 +208,7 @@ the push service tells us so), or block notifications for Kithwall in your brows
 |---|---|---|---|
 | Create and run your account; sign you in; keep sessions | Account data, auth records, technical data | Contract (Art. 6(1)(b)) | Consent given at sign-up (s. 6); legitimate use where applicable (s. 7) |
 | Store and deliver your encrypted content to the audiences you choose | Encrypted content, metadata | Contract | Consent |
-| Send service emails: sign-up confirmation, password reset, security alerts, recovery-request alerts | Email address | Contract; legitimate interests in account security (Art. 6(1)(f)) | Consent |
+| Send content-free account notices to your notice email, if you added one: security alerts, recovery-request alerts | Notice email address | Contract; legitimate interests in account security (Art. 6(1)(f)) | Consent |
 | Send content-free notification emails ("You have a new notification") | Email address, notification records | Contract — you can turn these off in settings | Consent (withdrawable) |
 | Send push notifications to devices where you turned them on ("dan sent you a message") | Push subscription, push preferences, notification and message metadata, the actor's username | Consent (Art. 6(1)(a)) — you turn it on per device and can turn it off at any time | Consent (withdrawable) |
 | People search and friend suggestions | Username, display name, discoverable setting | Contract — only if you opt into the directory | Consent |
@@ -236,9 +240,9 @@ device.
 
 | We cannot | Because |
 |---|---|
-| Read your encrypted posts, photos, messages, profile details, tags, check-ins, polls, notes, notification previews or game state | They are encrypted on your device with keys we never receive |
-| Reset your password **and** keep your content | Your content keys are locked with your password or 24-word key, which we never see |
-| Recover your content if you lose your password, recovery key and trusted-friend access | Nobody holds a spare key. This is by design |
+| Read your encrypted posts, photos, messages, profile details, tags, notes or notification previews | They are encrypted on your device with keys we never receive |
+| Reset your passphrase **and** keep your content | Your content keys are locked with your passkey, passphrase or 24-word key, which we never see |
+| Recover your content if you lose every passkey, your passphrase, your recovery key and trusted-friend access | Nobody holds a spare key. This is by design |
 | Hand your encrypted content to anyone, including the police | We don't have it in readable form |
 | Search, scan, or analyse your encrypted content | Same reason |
 
@@ -351,7 +355,7 @@ unreadable to us and our providers. Metadata and account data are readable.
 |---|---|
 | Your content (encrypted or public) | Until you delete it. Deletion from the database is immediate; backup copies age out within **7 days** |
 | Account data and key bundle | Until you delete your account |
-| Metadata rows (friendships, memberships, likes, pokes, tags, votes, etc.) | Until you or the other person removes them, or until account deletion; backups age out within 7 days |
+| Metadata rows (friendships, memberships, likes, tags, etc.) | Until you or the other person removes them, or until account deletion; backups age out within 7 days |
 | Your whole account, when you delete it | Removed immediately. Your keys are destroyed, so encrypted copies left in backups can never be read. Unencrypted account data and metadata in backups age out within 7 days |
 | Notifications | 90 days |
 | Push subscriptions (per device) | Until you turn push off on that device, or the push service tells us the subscription has ended (e.g. after you log out or clear site data), or you delete your account |
@@ -383,8 +387,8 @@ Depending on where you live, you have some or all of these rights:
 |---|---|
 | **Access** — get a copy of your data | **Encrypted content:** use **Settings → Download Your Information**. Your device decrypts everything and builds a ZIP (HTML + JSON + photos). We can't do this for you, because we can't decrypt it. **Account data and metadata we hold:** email [PRIVACY CONTACT EMAIL] and we will send it to you |
 | **Portability** | The export is in machine-readable JSON |
-| **Correction** | Edit your profile and content in the app. Change your email in settings. For anything else, contact us |
-| **Deletion** | Delete items in the app, or delete your account in **Settings → Account** (immediate). If you can no longer unlock your account (lost all keys), contact us: after confirming you control the email address, we will delete it for you. [OWNER: confirm this manual process exists before launch] |
+| **Correction** | Edit your profile and content in the app. Change or remove your notice email in settings. For anything else, contact us |
+| **Deletion** | Delete items in the app, or delete your account in **Settings → Your data** (immediate; your device confirms it with your keys). If you can no longer unlock your account, first try getting back in with your recovery key or trusted friends at /recover. Accounts have no email address, so we have no other way to confirm that an account is yours. [OWNER: decide what happens to accounts nobody can unlock any more] |
 | **Restriction / objection** | Contact us. You can object to processing based on legitimate interests; we will stop unless we have compelling grounds (e.g. security) |
 | **Withdraw consent** | Turn off optional features (directory, trusted friends, email notifications, push notifications, online status) in settings, or delete your account. Withdrawal doesn't affect earlier processing |
 | **Nominate someone (India)** | You may nominate a person to exercise your rights if you die or become incapable. Email the Grievance Officer with the nominee's name and email. Note: a nominee **cannot** read your encrypted content unless you have given them your recovery key |
@@ -393,11 +397,11 @@ Depending on where you live, you have some or all of these rights:
 
 ### 11.2 How to make a request
 
-- Email **[PRIVACY CONTACT EMAIL]** from the email address on your account, or sign in and use
+- Email **[PRIVACY CONTACT EMAIL]** with your @handle, or sign in and use
   [IN-APP REQUEST LOCATION, if any].
-- We may ask you to confirm you control the account (for example, by replying from the account
-  email or signing in). We will not ask for your password or recovery key — **never give these to
-  anyone**.
+- We may ask you to confirm you control the account (for example, by signing in, or by replying from
+  the notice email you verified in the app). We will not ask for your passphrase or recovery key —
+  **never give these to anyone**.
 - We reply within **one month** (GDPR/UK GDPR; extendable by two months for complex requests, and we
   will tell you why), **45 days** (California; extendable once by 45 days), and as required under
   Indian law. Requests are free unless clearly unfounded or excessive.
@@ -438,7 +442,7 @@ e-privacy rules, strictly necessary storage does not need consent, so **we show 
 | Item | Where | Purpose | Lifetime |
 |---|---|---|---|
 | Sign-in session token (and refresh token) | Your browser (local storage and/or a first-party cookie) | Keeps you signed in | Until you log out; access tokens expire after 1 hour and are refreshed |
-| Wrapped account key ("Keep me logged in" only) | IndexedDB | Lets the app unlock without re-typing your password. It is locked with a device key that the browser will not let be exported | Until you log out |
+| Wrapped account key ("Keep me logged in" only) | IndexedDB | Lets the app unlock without your passkey or passphrase. It is locked with a device key that the browser will not let be exported | Until you log out |
 | Encrypted local cache | IndexedDB | Makes the app fast; content is encrypted with a key from your account | Until you log out |
 | Service worker | Your browser | Receives push notifications (if you turn them on) and shows them. It **caches nothing** — no pages, no data | Until you clear site data |
 | Push settings flags | Local storage | Whether you turned push on for this device, and when you dismissed the "turn on notifications" card | Until you clear site data |
@@ -462,17 +466,17 @@ If we ever add non-essential cookies or storage, we will ask for your consent fi
 
 | CCPA category | Collected? | Example |
 |---|---|---|
-| Identifiers | Yes | Email, username, IP address (in provider logs) |
-| Customer records (Cal. Civ. Code 1798.80) | Yes | Email address |
+| Identifiers | Yes | Username, notice email address if you add one, IP address (in provider logs) |
+| Customer records (Cal. Civ. Code 1798.80) | Only if you add a notice email | Notice email address |
 | Characteristics of protected classifications | Only if you post them; encrypted content is unreadable to us | — |
 | Commercial information | No | — |
 | Biometric information | No | — |
 | Internet or network activity | Yes, limited | Sign-in logs, request logs, in-app metadata (section 4.3) |
-| Geolocation | No precise location readable by us (check-ins are encrypted); approximate location may be inferable from IP address in provider logs | — |
+| Geolocation | No precise location readable by us; approximate location may be inferable from IP address in provider logs | — |
 | Audio, electronic, visual | Encrypted photos/content; unreadable to us | — |
 | Professional / education information | Only if you post it; encrypted | — |
 | Inferences / profiles | No | — |
-| Sensitive personal information | Account login (email + authentication credential hash); content of messages is encrypted and unreadable to us | — |
+| Sensitive personal information | Account login (passkey public keys, or a one-way hash of the key derived from your passphrase); content of messages is encrypted and unreadable to us | — |
 
 Sources, purposes, retention and recipients are described in sections 4, 5, 7 and 10.
 
@@ -494,18 +498,18 @@ you may complain to the Data Protection Board of India.
 ## 16. Security
 
 - End-to-end encryption with audited libraries (XChaCha20-Poly1305, X25519, Ed25519, Argon2id).
-- Your password and recovery key never leave your device.
+- Your passkeys' secrets, your passphrase and your recovery key never leave your device.
 - Every item is signed by its author, so the server can't alter or swap it without detection.
 - Database access rules deny everything by default; each user can fetch only what they're allowed to.
 - Strict browser security headers; no third-party scripts.
 - Optional two-factor authentication (authenticator app), session list with "log out other
   sessions".
 - Sensitive actions (deleting your account, changing recovery) require proof from your own device's
-  keys, so a stolen email or session alone can't destroy your account.
+  keys, so a stolen session alone can't destroy your account.
 - Recovery requests notify you and wait 24 hours before trusted friends can help.
 
-No system is perfectly secure. Please use a strong unique password, turn on two-factor
-authentication, and keep your 24-word recovery key somewhere safe offline.
+No system is perfectly secure. Please use a passkey (or a strong unique passphrase), consider
+two-factor authentication, and keep your 24-word recovery key somewhere safe offline.
 
 ---
 

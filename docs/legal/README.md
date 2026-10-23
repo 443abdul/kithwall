@@ -10,7 +10,7 @@
 | File | Audience | Purpose |
 |---|---|---|
 | [privacy-policy.md](privacy-policy.md) | Public | GDPR / UK GDPR, India DPDP Act 2023, CCPA/CPRA-aware privacy notice: data categories, E2EE limits, legal bases, processors, transfers, retention, rights, children, cookies/storage, breach, grievance officer |
-| [terms-of-service.md](terms-of-service.md) | Public | Eligibility, key responsibilities, narrow content licence, audiences, acceptable use, moderation and appeals, Kithville, IP, disclaimers, liability, termination, disputes |
+| [terms-of-service.md](terms-of-service.md) | Public | Eligibility, key responsibilities, narrow content licence, audiences, acceptable use, moderation and appeals, stories and disappearing content, IP, disclaimers, liability, termination, disputes |
 | [community-standards.md](community-standards.md) | Public | Plain-language rules, how reporting works with E2EE, enforcement ladder, crisis resources |
 | [moderator-policy.md](moderator-policy.md) | **Internal only** | Moderator appointment, access limits, report verification, decision log, CSAM procedure, legal requests, conflicts, appeals SLA |
 | [law-enforcement-guidelines.md](law-enforcement-guidelines.md) | Public | What data exists and can/can't be produced, required process, preservation, emergencies, user notice, transparency |
@@ -123,9 +123,8 @@ These are places where the documents need a product change or a decision to be a
 **Terms**
 - [ ] Is the "lost keys = no liability" clause enforceable as drafted, especially for EU/UK consumers?
 - [ ] Liability cap, indemnity and disclaimers per market; arbitration/class waiver for US users?
-- [ ] Trade dress / trademark risk from recreating a 2010-era social network's look, layout and
-      feature names (Wall, News Feed, Poke, etc.); clearance for "Kithwall"/"Kithville".
-- [ ] Virtual items clause: any gaming or consumer law issues if Kithville ever adds purchases?
+- [ ] Trademark
+      clearance for the "Kithwall" name.
 - [ ] Law-enforcement guidelines: correct process mapping for the operator's jurisdiction, cross-border
       requests (MLAT, CLOUD Act, EU e-Evidence), gag orders, and whether the encryption stance in §7
       creates risk.

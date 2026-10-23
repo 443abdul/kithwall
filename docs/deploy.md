@@ -27,18 +27,17 @@ first. Everything here is configuration; no secrets belong in the repository.
 |---|---|
 | **Site URL** | `https://<your-domain>` |
 | **Redirect URLs** | `https://<your-domain>/**` (and the Vercel preview pattern if you use previews, e.g. `https://*-<team>.vercel.app/**`) |
-| Email confirmations | **On** ("Confirm email") |
-| Secure email change | On (email change isn't offered in v1 anyway; see below) |
-| **Leaked password protection** | **On** (Password security → "Prevent use of leaked passwords"). Minimum length 10 |
+| Email provider | Enabled (Supabase needs it for the synthetic `u…@id.kithwall.invalid` sign-in addresses, which are created already confirmed; no email is ever sent to them). Public email sign-ups are refused by the before-user-created hook below |
+| Email confirmations | On (irrelevant for Kithwall accounts, which are created confirmed by the server) |
 | **MFA** | TOTP **enabled** (enroll + verify). Phone MFA off |
 | **JWT expiry** | 3600 s; refresh-token rotation **on**, reuse interval 10 s |
 | Session timebox / inactivity | Optional (e.g. inactivity 30 days) |
 | Anonymous sign-ins | Off. Manual linking off. All OAuth providers off |
-| **Rate limits** | Emails sent: 30/h (raise once SMTP is set), Sign-ups/sign-ins: 30 per 5 min per IP, Token verifications: 30 per 5 min, Token refreshes: 150 per 5 min |
+| **Rate limits** | Sign-ups/sign-ins: 30 per 5 min per IP, Token verifications: 30 per 5 min, Token refreshes: 150 per 5 min |
 
-**Email change is not supported in v1.** The Argon2 salt is derived from the email, so an email change
-must re-wrap the key bundle in the same step. Until that flow exists, users are told to keep their email
-account secure. Don't build a dashboard-side email change for users either: their keys would stop opening.
+Accounts have **no email and no password** (docs/v2/01-accounts.md): passkey accounts and passphrase accounts
+(@handle + passphrase, Argon2id salted with the synthetic address) only. Never change a user's auth email
+from the dashboard: the passphrase salt is derived from it, so the passphrase would stop opening the keys.
 
 ### Custom SMTP (Spacemail Pro)
 
@@ -53,7 +52,8 @@ Authentication → Emails → SMTP Settings:
 | Sender name / email | `Kithwall` / `no-reply@<your-domain>` |
 
 Set SPF, DKIM and DMARC for the domain as Spaceship/Spacemail documents, then send a test email.
-Email templates: keep them content-free (they only contain the confirm / reset link).
+Supabase's own email templates are never used by Kithwall (no confirm or reset emails); the app sends its
+content-free notices itself through `SMTP_URL`.
 
 ### Before-user-created hook (sign-up anti-abuse)
 
@@ -63,11 +63,12 @@ Authentication → Hooks → **Before User Created** → HTTP:
 - Generate a secret in the dashboard (it looks like `v1,whsec_<base64>`) and put **the same string** in
   Vercel as `AUTH_HOOK_SECRET`.
 
-The route verifies the Standard-Webhooks signature, refuses sign-ups when `app_settings.signups_enabled`
-is false, and requires a valid, unexpired, single-use ALTCHA proof-of-work (the sign-up form solves it
-in the browser and sends it as `user_metadata.altcha`). If the hook is down, sign-ups fail closed.
-Users created from the dashboard also pass through the hook; temporarily disable it if you need to
-create one by hand.
+Kithwall accounts are created by `/api/auth/passkey/register/*` with the admin API, which doesn't run this
+hook; those routes check `app_settings.signups_enabled` and a single-use ALTCHA proof-of-work themselves.
+The hook verifies the Standard-Webhooks signature and **refuses every other sign-up** (GoTrue's public
+`/signup` with an email and password), letting through only users whose `app_metadata.kw_account` the admin
+API set, in case a newer GoTrue also runs it for admin creation. If the hook is down, public sign-ups fail
+closed.
 
 **Local development:** `supabase/config.toml` already configures the hook for
 `http://host.docker.internal:3000/api/hooks/before-user-created` with a local-only secret that matches
@@ -89,7 +90,7 @@ Import the GitHub repo, **Root Directory `apps/web`**, framework Next.js. Enviro
 | `ALTCHA_HMAC_KEY` | server only | 32+ random characters (`openssl rand -base64 48`) |
 | `AUTH_HOOK_SECRET` | server only | the hook secret from Supabase (`v1,whsec_…`) |
 | `CRON_SECRET` | server only | 32+ random characters; Vercel Cron sends it as `Authorization: Bearer …` |
-| `SMTP_URL` | server only | `smtps://no-reply%40<your-domain>:<url-encoded password>@mail.spacemail.com:465` — content-free notices (recovery started, deletion scheduled) |
+| `SMTP_URL` | server only | `smtps://no-reply%40<your-domain>:<url-encoded password>@mail.spacemail.com:465` — content-free notices to verified notice addresses (notice-email verification, recovery started, account recovered, new sign-in method) |
 | `MAIL_FROM` | server only | `Kithwall <no-reply@<your-domain>>` |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | all | Web Push public key (public by design) — see "Push notifications" below |
 | `VAPID_PRIVATE_KEY` | server only | Web Push private key |
@@ -114,16 +115,9 @@ are replaced by a pointer to the website (App Store rules for donation links).
 
 ### Cron
 
-Scheduled deletions ("I've lost everything", 72-hour wait) are carried out by
-`GET /api/cron/account-deletions`, which removes the user's storage folder and then the auth user.
-`apps/web/vercel.json` already contains (daily works on every Vercel plan; set `CRON_SECRET` in Vercel):
-
-```json
-{ "crons": [{ "path": "/api/cron/account-deletions", "schedule": "0 3 * * *" }] }
-```
-
-If the web cron never runs, the database job deletes overdue accounts after one extra day (rows and keys
-are gone; the encrypted blobs left in storage are unreadable but should be swept — rerun the cron).
+`apps/web/vercel.json` has two daily crons (daily works on every Vercel plan; set `CRON_SECRET` in Vercel):
+`/api/cron/stories` and `/api/cron/ephemeral`. Account deletion is immediate (`/api/account/delete`, proof-of-key),
+so no cron is involved.
 
 Stories (24 h) expire in the database: expired stories are hidden at once and a `pg_cron` job
 (`kithwall-story-maintenance`, every 10 minutes) deletes the rows. Their encrypted photos stay in the
@@ -182,8 +176,9 @@ Admins should turn on two-step verification.
 
 ## 4. After deploying
 
-- Visit `/`, sign up a test account, confirm the email, save the recovery key, log in on a second browser
-  with two-step verification, and delete the test account from Account Settings.
+- Visit `/join`, create a test account with a passkey, save the recovery key, sign in on a second browser
+  (passkey, or @handle + passphrase for a passphrase account), and delete the test account from
+  You → Settings → Your data.
 - Check response headers on `/`: CSP with a per-request nonce + `strict-dynamic` (Trusted Types is deferred, spec §12), HSTS,
   `Referrer-Policy: no-referrer`, COOP `same-origin`.
 - Check `/manifest.webmanifest`, `/icons/icon-192.png` and `/sw.js` load (installable PWA; the service worker
@@ -192,7 +187,7 @@ Admins should turn on two-step verification.
 
 ## 5. Operational notes
 
-- **Recovery requests** notify trustees in-app and email the owner; the waiting period comes from
+- **Recovery requests** notify trustees in-app and email the owner's verified notice address, if any; the waiting period comes from
   `app_settings.recovery_wait_hours` (default 24, max 168). Closed requests are purged after 7 days.
 - **MFA is enforced by the database**: once a user has a verified TOTP factor, every table and the media
   bucket require an `aal2` session (restrictive policy `require mfa when enrolled`). New tables in later

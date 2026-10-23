@@ -1,0 +1,171 @@
+/* Pop-out gallery (components/gallery), "Leaving Kithwall" sheet (components/links) and the embed
+   consent step (components/posts/Media.tsx). Tokens only, logical properties only (RTL). */
+
+/* ------------------------------------------------------------------ gallery */
+.kw .kg {
+  inline-size: 100vw; max-inline-size: 100vw; block-size: 100dvh; max-block-size: 100dvh; margin: 0; padding: 0; border: 0;
+  background: var(--bg); color: var(--text); overflow: hidden;
+}
+.kw .kg[open] { display: grid; grid-template-columns: minmax(0, 1fr); animation: k-fade var(--dur-2) var(--ease-standard); }
+.kw .kg::backdrop { background: var(--bg); }
+.kw .kg-media { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-block-size: 0; min-inline-size: 0; }
+
+/* Top bar and bottom caption float over the media on phones (a tap hides them). */
+.kw .kg-top {
+  position: absolute; inset-block-start: 0; inset-inline: 0; z-index: 3;
+  display: flex; align-items: center; gap: var(--space-1);
+  padding: calc(var(--space-2) + var(--safe-top)) var(--space-2) var(--space-2);
+  background: color-mix(in srgb, var(--chrome) 88%, transparent);
+  transition: opacity var(--dur-2) var(--ease-standard), visibility var(--dur-2);
+}
+.kw .kg-count { font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; padding-inline: var(--space-2); direction: ltr; unicode-bidi: isolate; }
+.kw .kg-main { position: relative; grid-row: 1; min-block-size: 0; min-inline-size: 0; display: grid; overflow: hidden; }
+.kw .kg-main > .kv-stage, .kw .kg-main > .kg-video, .kw .kg-main > .kg-video-wait { grid-area: 1 / 1; block-size: 100%; min-block-size: 0; }
+.kw .kg .kv-stage { cursor: grab; }
+.kw .kg .kv-content { inline-size: 100%; block-size: 100%; }
+.kw .kg-img {
+  display: block; max-inline-size: 100%; max-block-size: 100%; inline-size: auto; block-size: auto; object-fit: contain;
+  -webkit-user-drag: none; pointer-events: none; user-select: none;
+}
+.kw .kg-wait { display: grid; place-items: center; inline-size: 80px; block-size: 80px; }
+.kw .kg-video { inline-size: 100%; block-size: 100%; object-fit: contain; background: var(--surface-3); }
+.kw .kg-video-wait { display: grid; place-items: center; padding: var(--space-4); touch-action: none; }
+.kw .kg-video-poster {
+  position: relative; display: grid; place-items: center; inline-size: min(100%, 960px); max-block-size: 100%;
+  border-radius: var(--radius-md); overflow: hidden; background: var(--surface-3);
+}
+.kw .kg-video-poster > img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: contain; opacity: 0.85; pointer-events: none; }
+.kw .kg-play {
+  position: relative; display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-4);
+  border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit;
+}
+.kw .kg-play-meta {
+  padding: 2px 10px; border-radius: var(--radius-pill); background: var(--surface); color: var(--text); box-shadow: var(--shadow-1);
+}
+.kw .kg-video-status {
+  position: relative; display: inline-flex; align-items: center; gap: var(--space-2); margin: 0;
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill); background: var(--surface); box-shadow: var(--shadow-2);
+}
+
+.kw .kg-nav {
+  position: absolute; inset-block-start: 50%; translate: 0 -50%; z-index: 2;
+  inline-size: 48px; block-size: 48px; display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow-2); cursor: pointer; opacity: 0.92;
+}
+.kw .kg-nav:hover { opacity: 1; }
+.kw .kg-nav .k-icon { inline-size: 24px; block-size: 24px; }
+.kw .kg-prev { inset-inline-start: var(--space-3); }
+.kw .kg-next { inset-inline-end: var(--space-3); }
+@media (hover: none) { .kw .kg-nav { display: none; } }
+
+.kw .kg-bottom {
+  position: absolute; inset-block-end: 0; inset-inline: 0; z-index: 3; display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) calc(var(--space-3) + var(--safe-bottom));
+  background: color-mix(in srgb, var(--chrome) 88%, transparent);
+  transition: opacity var(--dur-2) var(--ease-standard), visibility var(--dur-2);
+}
+.kw .kg-caption {
+  margin: 0; white-space: pre-line; overflow-wrap: anywhere; max-block-size: 30dvh; overflow: auto;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+}
+.kw .kg-actions { display: flex; gap: var(--space-2); }
+.kw .kg-action {
+  display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: 44px; padding-inline: var(--space-3);
+  border: 0; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text); font: inherit; font-weight: var(--weight-medium); cursor: pointer;
+}
+.kw .kg-action[data-on] { color: var(--accent-text); background: var(--accent-soft); }
+.kw .kg-action[data-on] .k-icon { fill: currentColor; }
+.kw .kg[data-ui="off"] .kg-top, .kw .kg[data-ui="off"] .kg-bottom { opacity: 0; visibility: hidden; }
+
+/* Desktop: media + thumbnails on the left, the post on the right. */
+@media (min-width: 1024px) {
+  .kw .kg[data-panel][open] { grid-template-columns: minmax(0, 1fr) 380px; }
+  .kw .kg-media { grid-template-rows: auto minmax(0, 1fr) auto auto; }
+  .kw .kg-top { position: static; grid-row: 1; background: transparent; padding-block-start: calc(var(--space-2) + var(--safe-top)); }
+  .kw .kg-main { grid-row: 2; }
+  .kw .kg[data-ui="off"] .kg-top { opacity: 1; visibility: visible; }
+  .kw .kg-caption-wide { grid-row: 3; margin: 0; padding: var(--space-2) var(--space-6); text-align: center; -webkit-line-clamp: 2; }
+  .kw .kg-thumbs { grid-row: 4; }
+}
+.kw .kg-thumbs {
+  display: flex; gap: var(--space-2); justify-content: center; overflow-x: auto; padding: var(--space-2) var(--space-4) calc(var(--space-3) + var(--safe-bottom));
+  scrollbar-width: thin;
+}
+.kw .kg-thumb {
+  position: relative; flex: none; inline-size: 64px; block-size: 64px; padding: 0; border: 2px solid transparent; border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--surface-3); cursor: pointer; opacity: 0.7;
+}
+.kw .kg-thumb:hover { opacity: 1; }
+.kw .kg-thumb[aria-current] { border-color: var(--accent); opacity: 1; }
+.kw .kg-thumb img, .kw .kg-thumb .k-media-ph { inline-size: 100%; block-size: 100%; object-fit: cover; display: block; }
+.kw .kg-thumb-play {
+  position: absolute; inset: 0; margin: auto; inline-size: 26px; block-size: 26px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--surface); color: var(--text);
+}
+.kw .kg-thumb-play .k-icon { inline-size: 14px; block-size: 14px; margin-inline-start: 2px; }
+
+.kw .kg-panel {
+  display: flex; flex-direction: column; gap: var(--space-3); min-block-size: 0; overflow: auto;
+  padding: calc(var(--space-4) + var(--safe-top)) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
+  background: var(--surface); border-inline-start: 1px solid var(--border);
+}
+.kw .kg-panel-head { display: flex; align-items: center; gap: var(--space-3); }
+.kw .kg-panel-who { display: flex; flex-direction: column; min-inline-size: 0; }
+.kw .kg-panel-text { overflow-wrap: anywhere; }
+.kw .kg-panel .k-post-actions { border-block: 1px solid var(--border); padding-block: var(--space-1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .kw .kg[open] { animation: none; }
+  .kw .kg-top, .kw .kg-bottom { transition: none; }
+}
+
+/* ------------------------------------------------------------------ "Leaving Kithwall" sheet */
+.kw .kl { display: flex; flex-direction: column; gap: var(--space-4); }
+.kw .kl > p { margin: 0; }
+.kw .kl-label { display: block; font-size: var(--text-xs); font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.kw .kl-dest {
+  display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border-radius: var(--radius-md);
+  background: var(--surface-2); border: var(--border-width) solid var(--border); border-inline-start-width: 4px;
+}
+.kw .kl-dest[data-tone="ok"] { border-inline-start-color: var(--success); }
+.kw .kl-dest[data-tone="warning"] { border-inline-start-color: var(--warning); }
+.kw .kl-dest[data-tone="danger"] { border-inline-start-color: var(--danger); background: var(--danger-soft); }
+.kw .kl-host { font-size: var(--text-xl); line-height: var(--leading-tight); overflow-wrap: anywhere; word-break: break-all; text-align: start; }
+.kw .kl-sub { color: var(--text-muted); font-weight: var(--weight-regular); }
+.kw .kl-domain { font-weight: var(--weight-bold); color: var(--text); }
+.kw .kl-scheme { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); color: var(--danger); font-weight: var(--weight-medium); }
+.kw .kl-scheme[data-secure] { color: var(--success); }
+.kw .kl-scheme .k-icon { inline-size: 16px; block-size: 16px; }
+.kw .kl-idn { display: grid; gap: var(--space-2); margin: 0; }
+.kw .kl-idn > div { display: grid; grid-template-columns: minmax(7em, auto) 1fr; gap: var(--space-2); align-items: baseline; }
+.kw .kl-idn dt { color: var(--text-muted); font-size: var(--text-sm); }
+.kw .kl-idn dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; word-break: break-all; }
+.kw .kl-warns { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--text); }
+.kw .kl-warns[data-tone="danger"] { background: var(--danger-soft); }
+.kw .kl-warns h3 { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2); font-size: var(--text-md); }
+.kw .kl-warns[data-tone="danger"] h3 { color: var(--danger); }
+.kw .kl-warns h3 .k-icon { inline-size: 18px; block-size: 18px; flex: none; }
+.kw .kl-warns ul { margin: 0; padding-inline-start: var(--space-5); display: grid; gap: var(--space-1); }
+.kw .kl-full { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
+.kw .kl-url {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; align-self: stretch;
+  font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; word-break: break-all;
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--surface-2); text-align: start;
+}
+.kw .kl-url[data-open] { -webkit-line-clamp: unset; display: block; max-block-size: 40dvh; overflow: auto; }
+.kw .kl-tracking { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin: 0; color: var(--success); }
+.kw .kl-tracking .k-icon { inline-size: 16px; block-size: 16px; }
+.kw .kl-tracking .k-muted { overflow-wrap: anywhere; }
+.kw .kl-blocked { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0; }
+.kw .kl-sheet .k-dialog-foot { flex-wrap: wrap; }
+
+/* ------------------------------------------------------------------ embed consent (click-to-play) */
+.kw .k-emb-ask {
+  position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; gap: var(--space-3);
+  padding: var(--space-4); background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--text); overflow: auto;
+}
+.kw .k-emb-ask p { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0; font-weight: var(--weight-medium); }
+.kw .k-emb-ask p .k-icon { flex: none; inline-size: 20px; block-size: 20px; margin-block-start: 2px; }
+.kw .k-emb-remember { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); cursor: pointer; }
+.kw .k-emb-remember input { inline-size: 18px; block-size: 18px; accent-color: var(--accent); }
+.kw .k-emb-ask-row { display: flex; gap: var(--space-2); justify-content: flex-end; flex-wrap: wrap; }

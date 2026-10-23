@@ -49,6 +49,6 @@ export async function POST(req: Request) {
     console.error('identity key change', error.message);
     return json({ error: 'Please try again.' }, 503);
   }
-  await noticeSecurityChange(req, userId, 'identity', String(body.challengeId), caller.user.email);
+  await noticeSecurityChange(req, userId, 'identity', String(body.challengeId));
   return json({ keyVersion: data as number });
 }

@@ -1,5 +1,5 @@
 // POST /api/auth/passkey/add/options (Authorization: Bearer <access token>) — add a passkey to the
-// signed-in account (a second device, or a v1 account moving to passkeys). The browser wraps the
+// signed-in account (a second device, or a new passkey after recovery). The browser wraps the
 // account master key for the new credential before calling /add/verify.
 import { randomBytes } from 'node:crypto';
 import { generateRegistrationOptions } from '@simplewebauthn/server';

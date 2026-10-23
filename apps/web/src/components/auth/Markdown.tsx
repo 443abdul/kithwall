@@ -1,8 +1,9 @@
-// Tiny, safe Markdown → React renderer for our own legal/help documents. It produces React
+// Tiny, safe Markdown → React renderer for our own legal/help documents and for notes. It produces React
 // elements only (no innerHTML), so the strict CSP / Trusted Types stay intact.
 // Supports: # headings, paragraphs, > blockquotes, - / 1. lists (nested by indent), | tables |,
 // --- rules, **bold**, *italic* / _italic_, `code`, [links](url).
 import type { ReactNode } from 'react';
+import { ExternalLink } from '@/components/links/ExternalLink';
 
 export type LinkMapper = (href: string) => string | null;
 
@@ -44,7 +45,9 @@ function inline(text: string, map: LinkMapper, keyPrefix: string): ReactNode[] {
           const target = map(href);
           flush();
           if (target === null) out.push(...inline(label, map, key()));
-          else if (/^https?:\/\//i.test(target)) out.push(<a key={key()} href={target} target="_blank" rel="noopener noreferrer nofollow">{inline(label, map, key())}</a>);
+          // External links (notes are user content) open through the "Leaving Kithwall" sheet, which also
+          // compares the visible label with the real destination.
+          else if (/^https?:\/\//i.test(target)) out.push(<ExternalLink key={key()} href={target} text={label.replace(/[*_`\\]/g, '')}>{inline(label, map, key())}</ExternalLink>);
           else out.push(<a key={key()} href={target}>{inline(label, map, key())}</a>);
           i = pend + 1;
           continue;

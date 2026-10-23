@@ -1,12 +1,12 @@
 # Kithwall 2: retiring the v1 app
 
-Status: done (end of phase 2) · 2026-10-21 · see also `00-brief.md` §4 "Dropped" and §10
+Status: done (end of phase 2) · 2026-10-21; §4 completed 2026-10-23 (fresh start: the classic tables were dropped
+instead of exported, `supabase/migrations/20261030000100_drop_classic.sql`) · see also `00-brief.md` §4 "Dropped" and §10
 
 The 2010-style app (`src/app/(classic)`) is gone from `apps/web`. It lives on as **Classicbook**
 (`v1-classic` tag). Everything a Kithwall 2 user still needs from it was ported to the v2 design
-system and translated into the 12 launch languages; the rest was deleted. **No database table,
-column or migration was dropped**: v1 data stays where it is until the launch phase decides what
-to export and drop (see §4).
+system and translated into the 12 launch languages; the rest was deleted. At the time no database table
+was dropped; that happened on 2026-10-23, when Kithwall chose a fresh start over a cutover (see §4).
 
 ## 1. Ported to Kithwall 2
 
@@ -14,8 +14,8 @@ to export and drop (see §4).
 |---|---|---|
 | `/legal/{privacy,terms,community,law-enforcement}` | `(public)/legal/[doc]` | Public header/footer from the landing page. The documents stay in English (`src/content/legal/*.md`); the page around them is translated, with a note outside English. |
 | `/help` | `(public)/help` | Rewritten for Kithwall 2 (passkeys, recovery, connections, circles, stories, notes, safety defaults). Questions and answers are i18n messages (`help.*`), structure in `src/content/help.ts`. Pokes, games, pages, questions, places and the Wall are gone from it. |
-| `/recover`, `/recover/reset` | `(public)/recover`, `(public)/recover/reset` | Starts from the **@handle**, so email-less accounts can recover (01-accounts.md §3 "Recovering an account"). The v1 email link still works and lands on `/recover/reset`. |
-| `/welcome` (first login without keys) | `(auth)/setup` | v1 email accounts that never created keys, and sessions still waiting for the 6-digit code. `/welcome` itself redirects to `/join`. |
+| `/recover` | `(public)/recover` | Starts from the **@handle** (01-accounts.md §3 "Recovering an account"). The v1 email link and `/recover/reset` were removed on 2026-10-23. |
+| `/welcome` (first login without keys) | `(auth)/setup` | Now only sessions still waiting for the 6-digit code (v1 key creation removed 2026-10-23). `/welcome` itself redirects to `/join`. |
 | `/mod` | `(app)/mod` | Reports queue with verified disclosures, decisions, staff appointment, operator settings (sign-ups, the Public audience, the recovery waiting period). Same RPCs and RLS. Linked from You for staff. |
 | `/post/[id]` | `(app)/post/[id]` | One `PostCard` with comments open. Activity lines and push notifications about posts and comments now lead here. |
 | Account notices in the v1 header | `components/shell/AccountNotices.tsx` | Recovery requests for my account (with cancel), friends asking for help, cancelled deletions, moderation decisions. |
@@ -67,27 +67,27 @@ The service worker (`public/sw.js`) also maps v1 paths in pushes queued by older
   now follows the chosen language and direction). The one-time migration of the v1 `kw.theme` setting
   stays, so returning v1 users keep their light/dark choice.
 
-## 4. Database left in place (for the launch phase)
+## 4. Database: dropped on 2026-10-23
 
-Nothing in the app reads or writes these any more. They stay so v1 data can be exported first
-(brief §5 "Migration": 2010-only content is dropped after export is offered).
+Kithwall starts fresh (every account new, made with a passkey or passphrase), so nothing from v1 is exported or
+carried over. `supabase/migrations/20261030000100_drop_classic.sql` (formerly the +30-days script
+`supabase/launch/drop_classic_tables.sql`) dropped:
 
-| Table / column | v1 feature | Suggested at launch |
-|---|---|---|
-| `pokes` | Pokes | Offer export, then drop. |
-| `pages`, `page_likes`, `posts.page_id` (page walls) | Pages | Drop after export. |
-| `poll_votes`, posts with `kind = 'question'` | Questions | Drop votes; keep the question text as an ordinary post or drop. |
-| posts with `kind = 'checkin'` / `'life_event'` | Places, life events | Their text still shows in v2 feeds; convert or drop. |
-| `game_state`, `game_actions`, posts with `kind = 'game'` | Kithville | Drop after export. |
-| `tag_notices` | Photo tag approvals | Unused in v2 albums; drop or port. |
-| `posts.wall_owner_id` (posts on someone else's Wall) | The Wall | Still readable on profiles; decide whether to keep. |
-| `audiences` with `kind = 'list'` | Friend lists | v2 shows them as "some connections"; no UI to edit them. |
-| notification types `poke`, `game`, `question_vote`, `checkin_tag`, `wall_post`, object kind `page` | v1 notifications | Delete old rows; tighten the check constraints. |
-| `key_changes` | Signed identity-key changes | Not v1-only: it is for safety numbers (phase 3). Keep. |
-| `app_settings.public_audience_enabled` | Public posts / Pages / open groups | Still an admin switch in `/mod`; the v2 composer doesn't offer Public yet. |
+| Removed | v1 feature |
+|---|---|
+| `pokes`, `push_preferences.pokes`, notification type `poke` | Pokes |
+| `pages`, `page_likes`, `posts.page_id`, notification / report object `page`, `page_like_count`, `classic_*` RPCs | Pages and their export |
+| `poll_votes`, post kind `question`, notification type `question_vote` | Questions |
+| post kinds `checkin` / `life_event`, notification type `checkin_tag` | Places, life events |
+| `game_state`, `game_actions`, post kind `game`, notification type `game` | Kithville |
+| `account_deletion_requests` and its RPCs, the account-deletions cron | "I've lost everything" (email reset only) |
+| data-map category `legacy` | |
 
-Also still in place: reserved usernames for the old routes (`lib/social/reserved.ts`), which stop
-anyone from taking handles such as `pokes` or `games`.
+Kept, because Kithwall 2 uses them: `tag_notices` (album photo tags), `posts.wall_owner_id` (every profile post),
+audiences of kind `list` (part of the audience authorization functions; the app no longer creates lists),
+`key_changes`, `app_settings.public_audience_enabled`, and the reserved usernames for the old routes
+(`lib/social/reserved.ts`). The client code for these features (classic export, Classic data card, poll/check-in/
+life-event/game payloads, Page posts, poke pushes) was removed in the same change.
 
 ## 5. Verification (2026-10-21)
 

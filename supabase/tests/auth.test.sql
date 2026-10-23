@@ -62,25 +62,6 @@ select throws_ok($$ insert into public.altcha_spent (signature) values (repeat('
 select throws_ok($$ select * from public.notice_emails $$, '42501', null, 'users cannot read the notice log');
 
 -- ---------------------------------------------------------------------------
--- Delayed deletion
--- ---------------------------------------------------------------------------
-select pg_temp.login('ann');
-select ok((select public.request_account_deletion() > now() + interval '71 hours'), 'deletion waits 72 hours');
-select is((select count(*)::int from public.account_deletion_requests), 1, 'owner sees the scheduled deletion');
-select lives_ok($$ select public.request_account_deletion() $$, 'requesting again is idempotent');
-select throws_ok($$ insert into public.account_deletion_requests (user_id, execute_after) values (pg_temp.uid('ann'), now()) $$,
-  '42501', null, 'the waiting period cannot be bypassed with a direct insert');
-update public.account_deletion_requests set execute_after = now() - interval '1 day';
-select ok((select execute_after > now() from public.account_deletion_requests), 'the waiting period cannot be shortened');
-select throws_ok($$ select * from public.due_account_deletions() $$, '42501', null, 'only the server lists due deletions');
-select pg_temp.login('ben');
-select is((select count(*)::int from public.account_deletion_requests), 0, 'others cannot see a scheduled deletion');
-select is((select public.cancel_account_deletion()), false, 'others cannot cancel it');
-select pg_temp.login('ann');
-select is((select public.cancel_account_deletion()), true, 'owner cancels by logging in');
-select is((select count(*)::int from public.account_deletion_requests), 0, 'cancelled');
-
--- ---------------------------------------------------------------------------
 -- MFA enforcement
 -- ---------------------------------------------------------------------------
 select pg_temp.su();
@@ -183,13 +164,10 @@ select ok((select moderator_id is null from public.moderation_actions where targ
   'their past actions remain');
 
 -- ---------------------------------------------------------------------------
--- Housekeeping backstop deletes overdue accounts
+-- Housekeeping
 -- ---------------------------------------------------------------------------
-insert into public.account_deletion_requests (user_id, requested_at, execute_after)
-  values (pg_temp.uid('cat'), now() - interval '5 days', now() - interval '2 days');
 select lives_ok($$ select kw.auth_maintenance() $$, 'maintenance runs');
-select is((select count(*)::int from auth.users where id = pg_temp.uid('cat')), 0, 'overdue scheduled deletion is carried out');
-select is((select count(*)::int from public.profiles where id = pg_temp.uid('cat')), 0, 'and cascades to the profile');
+select is((select count(*)::int from auth.users where id = pg_temp.uid('cat')), 1, 'and never deletes accounts');
 
 select * from finish();
 rollback;

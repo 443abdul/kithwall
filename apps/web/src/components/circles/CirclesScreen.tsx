@@ -98,7 +98,7 @@ export function CirclesScreen() {
       title={t('nav.circles')}
       description={t('circles.description')}
       actions={<ButtonLink href="/circles/new" variant="primary" icon="plus" size="sm">{t('circles.create')}</ButtonLink>}
-      context={<MoreLinks />}
+      context={<div className="kc-wide-only"><MoreLinks /></div>}
     >
       {q.isLoading ? <Loading /> : q.isError ? (
         <Card><EmptyState icon="alert" title={t('circles.ui.error')} actions={<Button onClick={() => void q.refetch()} icon="refresh">{t('circles.ui.retry')}</Button>} /></Card>

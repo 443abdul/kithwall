@@ -25,8 +25,8 @@ export type Verification =
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
 export async function verifyReport(r: ReportRow): Promise<Verification> {
-  if (r.target_kind === 'profile' || r.target_kind === 'group' || r.target_kind === 'event' || r.target_kind === 'page') {
-    return { state: 'unverifiable', why: 'Reports about a profile, group, event or Page carry no encrypted item; judge them from the account\'s behaviour and other reports.' };
+  if (r.target_kind === 'profile' || r.target_kind === 'group' || r.target_kind === 'event') {
+    return { state: 'unverifiable', why: 'Reports about a profile, circle or event carry no encrypted item; judge them from the account\'s behaviour and other reports.' };
   }
   const env = r.stored_envelope;
   const meta = r.stored_meta;
@@ -84,7 +84,6 @@ export function payloadText(p: unknown): string {
   if (typeof o.caption === 'string') parts.push(o.caption);
   if (o.note && typeof o.note === 'object') { const n = o.note as { title?: string; body?: string }; parts.push([n.title, n.body].filter(Boolean).join('\n')); }
   if (o.link && typeof o.link === 'object') parts.push(String((o.link as { url?: string }).url ?? ''));
-  if (o.question && typeof o.question === 'object') { const q = o.question as { text?: string; options?: string[] }; parts.push(`${q.text ?? ''}\n${(q.options ?? []).map((x) => `• ${x}`).join('\n')}`); }
   if (typeof o.subject === 'string') parts.unshift(o.subject);
   return parts.filter(Boolean).join('\n\n');
 }

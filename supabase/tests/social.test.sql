@@ -79,18 +79,14 @@ select lives_ok($$ with ins as (insert into public.posts (id, author_id, wall_ow
           pg_temp.friends_aud('alice'), 1, '{"v":1}') returning id) select * from ins $$,
   'INSERT ... RETURNING works for a new post (insert().select() in the client)');
 select lives_ok($$ insert into public.posts (id, author_id, wall_owner_id, kind, audience_id, epoch, envelope)
-  values ('30000000-0000-0000-0000-0000000005a2', pg_temp.uid('alice'), pg_temp.uid('alice'), 'question',
-          pg_temp.friends_aud('alice'), 1, '{"v":1}') $$, 'owner asks a question');
+  values ('30000000-0000-0000-0000-0000000005a2', pg_temp.uid('alice'), pg_temp.uid('alice'), 'status',
+          pg_temp.friends_aud('alice'), 1, '{"v":1}') $$, 'owner posts to her friends');
 
 select pg_temp.login('bob');
 select is((select count(*)::int from public.posts where id = '30000000-0000-0000-0000-0000000005a1'), 1, 'list member reads the list post');
 select is((select count(*)::int from public.audiences where id = '20000000-0000-0000-0000-0000000005a1'), 1, 'list member sees the list audience row');
 select throws_ok($$ insert into public.audience_members (audience_id, member_id) values ('20000000-0000-0000-0000-0000000005a1', pg_temp.uid('dave')) $$,
   '42501', null, 'list members cannot add others');
-select lives_ok($$ insert into public.poll_votes (post_id, voter_id, envelope) values ('30000000-0000-0000-0000-0000000005a2', pg_temp.uid('bob'), '{"v":1}') $$,
-  'a friend votes on a question');
-select throws_ok($$ insert into public.poll_votes (post_id, voter_id, envelope) values ('30000000-0000-0000-0000-0000000005a1', pg_temp.uid('bob'), '{"v":1}') $$,
-  '42501', null, 'votes only on question posts');
 
 select pg_temp.login('dave');
 select is((select count(*)::int from public.posts where id = '30000000-0000-0000-0000-0000000005a1'), 0, 'a friend outside the list cannot read the list post');
@@ -98,9 +94,6 @@ select is((select count(*)::int from public.posts where id = '30000000-0000-0000
 
 select pg_temp.login('carol');
 select is((select count(*)::int from public.posts where id in ('30000000-0000-0000-0000-0000000005a1', '30000000-0000-0000-0000-0000000005a2')), 0, 'a stranger reads nothing');
-select is((select count(*)::int from public.poll_votes where post_id = '30000000-0000-0000-0000-0000000005a2'), 0, 'a stranger sees no votes');
-select throws_ok($$ insert into public.poll_votes (post_id, voter_id, envelope) values ('30000000-0000-0000-0000-0000000005a2', pg_temp.uid('carol'), '{"v":1}') $$,
-  '42501', null, 'a stranger cannot vote');
 select throws_ok($$ insert into public.posts (id, author_id, wall_owner_id, kind, audience_id, epoch, envelope)
   values ('30000000-0000-0000-0000-0000000005c1', pg_temp.uid('carol'), pg_temp.uid('alice'), 'status',
           pg_temp.friends_aud('alice'), 1, '{"v":1}') $$, '42501', null, 'a stranger cannot write on a wall');

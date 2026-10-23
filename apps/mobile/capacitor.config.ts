@@ -27,6 +27,12 @@ type Env = keyof typeof ORIGINS;
 const env: Env = process.env.KITHWALL_ENV === 'staging' ? 'staging' : process.env.KITHWALL_ENV === 'local' ? 'local' : 'production';
 if (env === 'local' && process.env.CI) throw new Error('KITHWALL_ENV=local is for debug builds on a developer machine only.');
 const origin = ORIGINS[env];
+// Censorship resistance (docs/v2/08-censorship.md §2): extra https origins of the same Kithwall the app
+// health-checks and switches to when the usual one is unreachable (KwNet.java). Comma-separated, e.g.
+//   KITHWALL_FALLBACK_ORIGINS=https://mirror-one.example,https://mirror-two.example npx cap sync
+// Mirrors from a verified signed mirror list are added at runtime too. Empty by default.
+const fallbacks = (process.env.KITHWALL_FALLBACK_ORIGINS ?? '').split(',').map((s) => s.trim().replace(/\/+$/, ''))
+  .filter((s) => /^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(s) && s !== origin);
 const bypass = env === 'staging' ? process.env.KITHWALL_STAGING_BYPASS?.trim() || undefined : undefined;
 // CI artifacts are downloadable by anyone once the repository is public: never bake the bypass into them.
 if (bypass && process.env.CI) throw new Error('KITHWALL_STAGING_BYPASS must not be used in CI builds (the secret would ship inside a public artifact).');
@@ -67,6 +73,7 @@ const config: CapacitorConfig = {
   },
   plugins: {
     KithwallShell: { origin, env },
+    KithwallNet: { fallbacks },
     // Edge-to-edge (target SDK 36): the window insets become the page's env(safe-area-inset-*) (WebView 140+)
     // or --safe-area-inset-* values. The page always uses viewport-fit=cover, so say so up front: no layout
     // jump when the first page commits.

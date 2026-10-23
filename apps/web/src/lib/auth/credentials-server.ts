@@ -33,7 +33,7 @@ const BODY: Record<'passkey' | 'passphrase' | 'identity', string> = {
  * Tell every device of the account (in-app notification + push via the notifications trigger) and the
  * notice address that a new way in was added. Content-free; never throws.
  */
-export async function noticeSecurityChange(req: Request, userId: string, what: 'passkey' | 'passphrase' | 'identity', refId: string, authEmail: string | null | undefined): Promise<void> {
+export async function noticeSecurityChange(req: Request, userId: string, what: 'passkey' | 'passphrase' | 'identity', refId: string): Promise<void> {
   // In-app (and push) for new sign-in methods; an identity change is made on the user's own unlocked
   // device and every other device has to unlock again anyway.
   if (what !== 'identity') {
@@ -43,7 +43,7 @@ export async function noticeSecurityChange(req: Request, userId: string, what: '
     } catch (e) { console.error('security notice', e); }
   }
   try {
-    const to = await noticeAddress(userId, authEmail);
+    const to = await noticeAddress(userId);
     const kind = what === 'identity' ? 'identity_key_changed' : 'credential_added';
     if (to && mailConfigured() && await claimNotice(kind, refId, userId)) {
       await sendNotice(to, SUBJECT[what],

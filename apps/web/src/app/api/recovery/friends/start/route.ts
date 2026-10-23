@@ -32,8 +32,7 @@ export async function POST(req: Request) {
     }
     const row = (data as { request_id: string; not_before: string; expires_at: string; threshold: number; trustees: number }[])[0];
     if (!row) throw new Error('no request row');
-    const { data: u } = await db.auth.admin.getUserById(target.userId);
-    const to = await noticeAddress(target.userId, u.user?.email);
+    const to = await noticeAddress(target.userId);
     if (to && mailConfigured() && await claimNotice('recovery_started', row.request_id, target.userId)) {
       void sendNotice(to, 'Someone started recovering your Kithwall account',
         `A request to recover your Kithwall account with help from your trusted friends was started.\n\n` +

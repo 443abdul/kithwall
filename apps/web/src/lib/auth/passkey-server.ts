@@ -11,7 +11,7 @@ import {
 import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import type { AccountErrorCode } from './account';
 import { admin, json } from './server';
-import { isSyntheticEmail, syntheticEmailFor } from './passkey-shared';
+import { syntheticEmailFor } from './passkey-shared';
 import { ipBucket } from './ip-bucket';
 import { androidOrigins, parseCertFingerprints } from '../native/association';
 
@@ -281,12 +281,11 @@ export async function verifyAssertion(rp: RelyingParty, expectedChallenge: strin
 }
 
 /**
- * Where to send content-free account notices: the verified notice address if the person set one,
- * otherwise their auth email unless it is a synthetic passkey-account address. Null = nowhere.
+ * Where to send content-free account notices: the verified notice address if the person set one.
+ * Null = nowhere (sign-in addresses are synthetic and never receive mail).
  */
-export async function noticeAddress(userId: string, authEmail: string | null | undefined): Promise<string | null> {
+export async function noticeAddress(userId: string): Promise<string | null> {
   const { data } = await admin().from('account_security').select('notice_email, notice_email_verified_at')
     .eq('user_id', userId).maybeSingle();
-  if (data?.notice_email && data.notice_email_verified_at) return data.notice_email as string;
-  return authEmail && !isSyntheticEmail(authEmail) ? authEmail : null;
+  return data?.notice_email && data.notice_email_verified_at ? data.notice_email as string : null;
 }

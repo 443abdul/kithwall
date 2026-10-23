@@ -36,7 +36,7 @@ export async function POST(req: Request) {
       if (error.code === 'P0429') return fail('rate_limited', 409, 'You have the maximum number of passkeys.');
       throw new Error(error.message);
     }
-    await noticeSecurityChange(req, caller.user.id, 'passkey', data as string, caller.user.email);
+    await noticeSecurityChange(req, caller.user.id, 'passkey', data as string);
     return json({ id: data as string } satisfies AddVerifyRes);
   } catch (e) {
     console.error('add passkey verify', e);

@@ -260,7 +260,7 @@ export async function deleteGroup(g: GroupRow) {
 // ---------------------------------------------------------------------------------------
 // Group wall and docs
 
-export async function containerPosts(col: 'group_id' | 'event_id' | 'page_id', id: string, before?: string, pageSize = 20): Promise<PostRow[]> {
+export async function containerPosts(col: 'group_id' | 'event_id', id: string, before?: string, pageSize = 20): Promise<PostRow[]> {
   let q = sb().from('posts').select('*').eq(col, id).order('created_at', { ascending: false }).limit(pageSize);
   if (before) q = q.lt('created_at', before);
   const rows = must(await q) as PostRow[];

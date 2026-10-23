@@ -24,7 +24,7 @@ self.addEventListener('activate', (event) => { event.waitUntil(self.clients.clai
 /** Kithwall 2 routes for links in pushes queued by older servers (v1 paths). */
 function v2Path(p) {
   if (p === '/notifications' || p.indexOf('/notifications?') === 0) return '/activity';
-  if (p === '/requests' || p === '/pokes') return '/activity?tab=requests';
+  if (p === '/requests') return '/activity?tab=requests';
   if (p === '/messages/inbox') return '/messages';
   if (p.indexOf('/settings/security') === 0) return '/you/settings/security' + p.slice('/settings/security'.length);
   if (p.indexOf('/settings/account') === 0) return '/you/settings/notifications' + p.slice('/settings/account'.length);

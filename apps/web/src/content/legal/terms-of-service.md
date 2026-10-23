@@ -50,10 +50,10 @@ step to sign-up.]
 
 ## 3. Your account
 
-- Give us an email address you control and keep it up to date. We use it to confirm your account,
-  reset your password, and send security alerts.
+- You sign in with a passkey, or with your username and a passphrase. Kithwall accounts have no
+  email address or password. You may add a notice email address so we can send you security alerts.
 - Choose a username that doesn't impersonate anyone or break the Community Standards.
-- Keep your password secret. We recommend turning on two-factor authentication.
+- Keep your passphrase secret and your devices locked. You can also turn on two-factor authentication.
 - You are responsible for activity on your account unless it results from our failure to protect
   it. Tell us promptly at [SECURITY CONTACT EMAIL] if you think your account has been compromised.
 - You can see your active sessions and log out other devices in Settings → Security.
@@ -67,24 +67,23 @@ protects you, but it also means:
 
 | You will receive | What it does | If you lose it |
 |---|---|---|
-| **Your password** | Signs you in and unlocks your keys on each device | You can reset it **only** with your recovery key or trusted friends |
-| **Your 24-word recovery key** (shown once at sign-up) | Restores access if you forget your password | Set up trusted friends, or make sure you keep your password |
+| **Your passkey** (or your passphrase, on devices without passkey support) | Signs you in and unlocks your keys on each device | You can get back in **only** with your recovery key or trusted friends, then add a new passkey or passphrase |
+| **Your 24-word recovery key** (the app asks you to save it) | Restores access if you lose your passkeys or forget your passphrase | Set up trusted friends, or keep another passkey or your passphrase |
 | **Trusted friends** (optional; 3–5 friends, any 2 by default) | Together they can help you restore access, after a 24-hour waiting period | Keep your recovery key safe |
 
-**If you lose your password AND your recovery key AND cannot get enough trusted friends to help,
-your encrypted content (posts, photos, messages, profile details, and everything else that is
-encrypted) is permanently unrecoverable.** An email password reset alone cannot restore it. We
-cannot help, because we never had the keys.
+**If you lose every passkey and your passphrase AND your recovery key AND cannot get enough trusted
+friends to help, your encrypted content (posts, photos, messages, profile details, and everything else
+that is encrypted) is permanently unrecoverable.** We cannot help, because we never had the keys.
 
 You agree that:
 
-1. You are solely responsible for keeping your password and recovery key safe and private, and for
+1. You are solely responsible for keeping your passkeys, passphrase and recovery key safe and private, and for
    choosing trusted friends you trust.
 2. **We are not liable for any loss of content or access caused by lost, forgotten, stolen or
-   disclosed passwords, recovery keys or recovery shares**, or by your trusted friends' actions,
+   disclosed passkeys, passphrases, recovery keys or recovery shares**, or by your trusted friends' actions,
    except where the loss is caused by our breach of these Terms or our negligence and the law does
    not allow us to exclude liability.
-3. We will never ask you for your password or recovery key. Anyone who does is not us.
+3. We will never ask you for your passphrase or recovery key. Anyone who does is not us.
 4. Other people (including friends who received your content, trusted friends, and anyone you give
    your recovery key to) may keep copies or act in ways we cannot control.
 
@@ -224,17 +223,17 @@ verify, for example through a report by someone who can see the item, or a link 
 
 ---
 
-## 9. Kithville and other games
+## 9. Stories, disappearing and scheduled content
 
-- Kithville is a free farm game inside Kithwall. Your game state is encrypted in your private vault.
-- **There is no real money in Kithville.** You cannot buy, sell or cash out coins, crops, items or
-  anything else in the game.
-- Virtual items, coins and progress **have no monetary value, are not your property, and are not
-  redeemable** for money or anything of value. You have a limited, personal, non-transferable
-  licence to use them within the game.
-- You may not sell or trade game items or accounts outside the game.
-- We may change, rebalance, reset or end games at any time. Because game state is encrypted with
-  your keys, it is lost if you lose your keys.
+- **Stories** are visible for 24 hours to the audience you choose, then deleted from our servers.
+- **Disappearing messages and posts** are deleted from our servers when their timer runs out. New chats
+  disappear after 4 weeks by default; you can change the timer.
+- **Scheduled posts** stay hidden from everyone but you until their publish time.
+- Deletion removes content from our servers. It cannot remove copies that recipients have already
+  seen, saved, screenshotted or exported on their own devices, so only share what you are comfortable
+  with others keeping.
+- **Edits and unsending** replace or remove content on our servers and on recipients' devices when
+  they next sync. Earlier versions are not kept by us.
 
 ---
 
@@ -243,10 +242,8 @@ verify, for example through a report by someone who can see the item, or a link 
 - The Service, its software, design and the Kithwall name and logo belong to us or our licensors,
   except for Your Content and any code released under an open-source licence (that licence then
   applies to that code). [OWNER: confirm licence.]
-- The Service recreates the look and feel of a 2010-era social network. "Kithwall", "Kithville" and
-  our logos are our trademarks [OWNER: confirm registration status]. We are not affiliated with,
-  endorsed by, or sponsored by any other social network. [LAWYER: review trade dress/trademark risk
-  of the 2010-era design and feature names.]
+- "Kithwall" and our logos are our trademarks [OWNER: confirm registration status]. We are not
+  affiliated with, endorsed by, or sponsored by any other social network.
 - We give you a personal, non-exclusive, non-transferable, revocable licence to use the Service in
   line with these Terms.
 

@@ -6,7 +6,7 @@ import type { MessageKey } from '@/i18n';
 import type { IconName } from '@/components/ui/Icon';
 
 export type ColumnClass = 'id' | 'time' | 'plaintext' | 'ciphertext' | 'hashed';
-export type DataCategory = 'account' | 'content' | 'social' | 'messages' | 'activity' | 'housekeeping' | 'legacy' | 'system';
+export type DataCategory = 'account' | 'content' | 'social' | 'messages' | 'activity' | 'housekeeping' | 'system';
 
 export const COLUMN_CLASSES: ColumnClass[] = ['ciphertext', 'plaintext', 'time', 'id', 'hashed'];
 
@@ -17,7 +17,6 @@ export const CATEGORIES: { id: Exclude<DataCategory, 'system'>; icon: IconName; 
   { id: 'account', icon: 'key', title: 'transparency.cat.account', body: 'transparency.cat.accountBody' },
   { id: 'activity', icon: 'activity', title: 'transparency.cat.activity', body: 'transparency.cat.activityBody' },
   { id: 'housekeeping', icon: 'clock', title: 'transparency.cat.housekeeping', body: 'transparency.cat.housekeepingBody' },
-  { id: 'legacy', icon: 'book', title: 'transparency.cat.legacy', body: 'transparency.cat.legacyBody' },
 ];
 
 export interface TableInfo {
@@ -61,7 +60,7 @@ export const TABLES: Record<string, TableInfo> = {
 };
 
 /** Which category each curated table belongs to (mirrors the database map, for the static page). */
-export const STATIC_MAP: { category: Exclude<DataCategory, 'system' | 'legacy' | 'housekeeping'>; tables: string[] }[] = [
+export const STATIC_MAP: { category: Exclude<DataCategory, 'system' | 'housekeeping'>; tables: string[] }[] = [
   { category: 'content', tables: ['public.posts', 'public.comments', 'public.likes', 'public.stories', 'public.story_views', 'public.albums', 'public.photos', 'public.media_objects'] },
   { category: 'messages', tables: ['public.conversations', 'public.messages', 'public.message_reactions'] },
   { category: 'social', tables: ['public.friendships', 'public.blocks', 'public.audiences', 'public.audience_members', 'public.audience_keys', 'public.groups', 'public.events'] },

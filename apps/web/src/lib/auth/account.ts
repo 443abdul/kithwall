@@ -1,5 +1,5 @@
 'use client';
-// Kithwall 2 account API: passkey-first sign-up and sign-in, passphrase fallback, v1 migration.
+// Kithwall 2 account API: passkey-first sign-up and sign-in, passphrase fallback.
 // This file is the contract between the onboarding UI (components/onboarding, app/(auth)) and the
 // key/auth implementation (lib/auth/passkey*, app/api/auth/passkey/*). The UI only imports from here.
 // See docs/v2/00-brief.md §5 and docs/v2/01-accounts.md.
@@ -40,9 +40,7 @@ export type AccountErrorCode =
   /** The account has no trusted friends. */
   | 'no_trustees'
   /** The recovery key (typed, or rebuilt from friends' shares) doesn't open this account. */
-  | 'bad_recovery_key'
-  /** v1 email sign-in: the address was never confirmed, so the account was never set up (lib/auth/login.ts). */
-  | 'email_unconfirmed';
+  | 'bad_recovery_key';
 
 export class AccountError extends Error {
   constructor(public code: AccountErrorCode, message?: string) { super(message ?? code); }
@@ -58,8 +56,6 @@ export interface AccountApi {
   signInWithPasskey(): Promise<void>;
   /** Fallback sign-in for passphrase accounts: handle + passphrase. */
   signInWithPassphrase(handle: string, passphrase: string): Promise<void>;
-  /** v1 accounts: email + password, then the UI offers addPasskey(). */
-  signInLegacy(email: string, password: string): Promise<'ready' | 'mfa'>;
   /** Adds a passkey to the signed-in, unlocked account (also wraps the keys for it). */
   addPasskey(label?: string): Promise<void>;
   listPasskeys(): Promise<{ id: string; label: string; createdAt: string; lastUsedAt: string | null }[]>;

@@ -6,7 +6,7 @@
 //            the email-less auth user, key bundle, profile and passkey in one go → one-time token →
 //            verifyOtp → 'ready'. Passphrase fallback: same, AMK wrapped by Argon2id(passphrase).
 //  sign-in   discoverable passkey → /login/verify → token + this passkey's AMK wrap → unwrap locally.
-//  v1        email + password exactly as before (lib/auth/login), then addPasskey().
+//            Passphrase accounts: @handle → synthetic address → Argon2id on device → /passphrase/signin.
 import {
   KithwallCryptoError, createKeyBundle, deriveFromPassword, newPrfSalt, unlockWithPrf, unwrapAmkWithPrf, wrapAmkWithPrf,
   type KeyBundle,
@@ -17,7 +17,7 @@ import {
   newRecoveryPhrase, noteSignedIn, unlockOptions, unlockWithPasskey, type PasswordGrant,
 } from '../keys/session';
 import { AccountError, type AccountApi, type Capabilities } from './account';
-import { afterLogin, logIn, mfaRequired } from './login';
+import { logIn, mfaRequired } from './login';
 import { addPasskeyProof } from '../keys/proof';
 import { passwordStrength } from './password';
 import { api, createPasskey, getPasskey, prfSupport, webauthnAvailable } from './passkey-client';
@@ -184,7 +184,6 @@ export const accountApi: AccountApi = {
       }
       const u = unlockWithPrf(s.userId, bundle as KeyBundle, done.credentialId, done.wrap.amkWrap, a.prf, done.wrap.prfSalt);
       await adoptUnlocked(s.userId, s.email, u);
-      await afterLogin();
     } catch (e) {
       cryptoToAccount(e, new AccountError('prf_unsupported', 'This passkey could not unlock your keys.'));
     } finally {
@@ -207,29 +206,6 @@ export const accountApi: AccountApi = {
     }
     if (outcome === 'mfa') throw new AccountError('mfa_required');
     if (outcome !== 'ready') throw new AccountError('unknown', 'This account is not set up yet.');
-  },
-
-  async signInLegacy(email, password) {
-    let outcome;
-    try {
-      outcome = await logIn(email, password, true);
-    } catch (e) {
-      if (e instanceof AccountError) throw e;   // e.g. email_unconfirmed from lib/auth/login.ts
-      if (e instanceof KithwallCryptoError || /incorrect|invalid/i.test((e as Error).message)) throw new AccountError('wrong_passphrase', (e as Error).message);
-      if (/rate|too many/i.test((e as Error).message)) throw new AccountError('rate_limited');
-      // A v1 sign-up whose email was never confirmed (it never got keys or content): not a network problem.
-      if (/not confirmed/i.test((e as Error).message)) throw new AccountError('email_unconfirmed', 'This email address was never confirmed.');
-      throw new AccountError('network', (e as Error).message);
-    }
-    if (outcome === 'mfa') return 'mfa';
-    if (outcome === 'ready') return 'ready';
-    // Signed in, but the v1 account never created its keys (/welcome was never finished): /setup does that now
-    // (docs/v2/02-cleanup.md §1). A full navigation, so /setup starts from the stored session.
-    if (getSession().status === 'setup') {
-      window.location.assign('/setup');
-      return new Promise<never>(() => undefined);
-    }
-    throw new AccountError('unknown', 'This account is not set up yet.');
   },
 
   async addPasskey(label) {
@@ -274,7 +250,6 @@ export const accountApi: AccountApi = {
   unlockWithPasskey: async () => {
     try {
       await unlockWithPasskey();
-      await afterLogin();
     } catch (e) {
       cryptoToAccount(e, new AccountError('prf_unsupported', 'This passkey could not unlock your keys.'));
     }

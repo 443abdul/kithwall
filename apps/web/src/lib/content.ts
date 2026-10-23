@@ -17,8 +17,8 @@ export type Audience =
   | { kind: 'audience'; id: string }    // a friend list, group, or event audience
   | { kind: 'public' };                 // only when the operator enabled Public
 
-export function postHeader(p: Pick<PostRow, 'id' | 'author_id' | 'wall_owner_id' | 'group_id' | 'event_id' | 'page_id' | 'kind' | 'is_public' | 'audience_id' | 'epoch'>): EnvelopeHeader {
-  const wall = p.wall_owner_id ?? p.group_id ?? p.event_id ?? p.page_id ?? undefined;
+export function postHeader(p: Pick<PostRow, 'id' | 'author_id' | 'wall_owner_id' | 'group_id' | 'event_id' | 'kind' | 'is_public' | 'audience_id' | 'epoch'>): EnvelopeHeader {
+  const wall = p.wall_owner_id ?? p.group_id ?? p.event_id ?? undefined;
   return {
     v: 1, type: `post:${p.kind}`, id: p.id, author: p.author_id, ...(wall ? { wall } : {}),
     audience: p.is_public ? 'public' : { id: p.audience_id!, epoch: p.epoch! },
@@ -29,7 +29,7 @@ export interface CreatePostArgs {
   kind: PostKind;
   payload: PostPayload;
   wallOwnerId?: string;          // defaults to me (own wall)
-  groupId?: string; eventId?: string; pageId?: string;
+  groupId?: string; eventId?: string;
   audience?: Audience;           // defaults to friends
   sharedPostId?: string;
   id?: string;                   // pre-generated (e.g. when media was uploaded first)
@@ -58,8 +58,8 @@ async function resolveAudience(args: CreatePostArgs): Promise<{ audienceId: stri
 export async function createPost(args: CreatePostArgs): Promise<PostRow> {
   const id = args.id ?? crypto.randomUUID();
   const { audienceId, epoch, key } = await resolveAudience(args);
-  const ctxIds = { wall_owner_id: null as string | null, group_id: args.groupId ?? null, event_id: args.eventId ?? null, page_id: args.pageId ?? null };
-  if (!args.groupId && !args.eventId && !args.pageId) ctxIds.wall_owner_id = args.wallOwnerId ?? me();
+  const ctxIds = { wall_owner_id: null as string | null, group_id: args.groupId ?? null, event_id: args.eventId ?? null };
+  if (!args.groupId && !args.eventId) ctxIds.wall_owner_id = args.wallOwnerId ?? me();
   const row = {
     id, author_id: me(), ...ctxIds, kind: args.kind, is_public: audienceId === null,
     audience_id: audienceId, epoch, shared_post_id: args.sharedPostId ?? null,

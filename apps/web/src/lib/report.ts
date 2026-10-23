@@ -5,7 +5,7 @@ import { b64u } from '@kithwall/crypto';
 import { sb, must } from './supabase';
 import { me } from './keys/session';
 
-export type ReportKind = 'post' | 'comment' | 'photo' | 'message' | 'profile' | 'group' | 'event' | 'page';
+export type ReportKind = 'post' | 'comment' | 'photo' | 'message' | 'profile' | 'group' | 'event';
 export type ReportReason = 'spam' | 'harassment' | 'hate' | 'violence' | 'nudity' | 'child_safety' | 'self_harm' | 'impersonation' | 'illegal' | 'other';
 
 export interface Disclosure {

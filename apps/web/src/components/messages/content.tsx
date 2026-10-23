@@ -4,6 +4,7 @@ import type { TFunction } from '@/i18n';
 import type { ChatPayload } from '@/lib/messages';
 import type { Decrypted } from '@/lib/content';
 import { durationKey } from '@/lib/chat/ephemeral';
+import { ExternalLink } from '@/components/links/ExternalLink';
 import { linkify, snippet } from './chatModel';
 import { clockParts, readVoiceMeta } from '@/lib/chat/voice';
 
@@ -11,7 +12,7 @@ export function MessageText({ text }: { text: string }) {
   return (
     <>
       {linkify(text).map((p, i) => ('href' in p
-        ? <a key={i} href={p.href} target="_blank" rel="noopener noreferrer nofollow" dir="ltr">{p.text}</a>
+        ? <ExternalLink key={i} href={p.href} text={p.text} dir="ltr">{p.text}</ExternalLink>
         : <span key={i}>{p.text}</span>))}
     </>
   );

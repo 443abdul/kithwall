@@ -1,7 +1,23 @@
 # Kithwall 2: launch (cutover from v1)
 
-Status: prepared, not executed (phase 6) · 2026-10-21 · see also `02-cleanup.md` §4 (v1 tables), `01-accounts.md`,
-`05-native.md` §2 (rpID), `../deploy.md`
+Status: **superseded 2026-10-23: there is no cutover.** The owner chose a fresh start: production accounts and data
+are wiped (done separately by the coordinator), and every account is created new with a passkey or the passphrase
+fallback. Nothing from v1 is carried over, so everything below that exists only to move v1 accounts and 2010-era
+data across was removed from the code:
+
+- v1 email + password sign-in, the "Add a passkey?" offer after it, v1 key creation on `/setup`, the email
+  password-reset link (`/recover/reset`) and "I've lost everything" (01-accounts.md §3 "No email accounts");
+- the Kithwall Classic export (`lib/export.ts` classic part, the Settings → Your data card, the `classic.*` strings,
+  `NEXT_PUBLIC_CLASSIC_RETIRE_DATE`);
+- the rehearsal and its fixtures (`supabase/launch/`: `rehearse.sh`, `seed_v1_sample.sql`, `verify_cutover.sql`,
+  `v1_accounts.local.test.ts`) and `supabase/tests/classic_export.test.sql`;
+- the classic tables, done by `supabase/migrations/20261030000100_drop_classic.sql` instead of the +30-days script
+  (§9; details in 02-cleanup.md §4).
+
+Still valid: the production configuration in §4 (except the rows marked obsolete), the Vercel limits (§6), the
+history rewrite and repository checks (§5 steps 4 and 10), the web rollback (§7) and the smoke tests without v1
+accounts (§8). The rest is kept as a record of the plan. Original status: prepared, not executed (phase 6) ·
+2026-10-21 · see also `02-cleanup.md` §4, `01-accounts.md`, `05-native.md` §2 (rpID), `../deploy.md`
 
 This is the runbook for replacing the 2010-style app (branch `main`, https://www.kithwall.com, Vercel project
 `kithwall-web`, Supabase `uvuojqziktbwxkjzeiar`) with Kithwall 2 (branch `v2`, staging.kithwall.com, Supabase
@@ -27,7 +43,7 @@ Rollback = Vercel instant rollback; the database stays on v2.
 
 ## 2. Migration safety (done in phase 6)
 
-### 2.1 Rehearsal on v1-shaped data
+### 2.1 Rehearsal on v1-shaped data (obsolete: the rehearsal files were removed on 2026-10-23)
 
 `supabase/launch/rehearse.sh` builds a throwaway database `kw_launch_test` inside the local Supabase Postgres
 container. The main local database is not touched. It then:
@@ -98,7 +114,7 @@ feature for §5. Because it is new, it doesn't edit anything already applied to 
 - Production must be at exactly `20261020000100` with no unknown versions in
   `supabase_migrations.schema_migrations`. Otherwise `db push` refuses (or needs `--include-all`; don't use it).
 
-### 2.3 Optional: rehearse on a copy of production data
+### 2.3 Optional: rehearse on a copy of production data (obsolete)
 
 This is the strongest check. It needs a **data-only** dump of production, taken read-only with the owner's
 approval. The dump contains personal data: keep it on the coordinator's machine and delete it afterwards.
@@ -155,7 +171,7 @@ checked locally. The restore runs with `session_replication_role = replica`.
 | `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN` | set | calls (relay) | none |
 | **`SMTP_URL`, `MAIL_FROM`** | **not in the list of set variables: check** | content-free notice emails: deletion scheduled, recovery started, account recovered, notice-email verification. Without them these are **silently skipped**. | set (docs/deploy.md §2) |
 | `PASSKEY_RP_ID`, `PASSKEY_ORIGINS`, `NEXT_PUBLIC_PASSKEY_RP_ID` | not set | optional | leave unset. Optionally set `PASSKEY_RP_ID=www.kithwall.com` to pin the decision (same result). |
-| `NEXT_PUBLIC_CLASSIC_RETIRE_DATE` | n/a | optional, new: `YYYY-MM-DD` of the +30-day drop. It adds "will be deleted on …" to the Classic export card. | set at launch (launch day + 30) |
+| ~~`NEXT_PUBLIC_CLASSIC_RETIRE_DATE`~~ | n/a | obsolete: the Classic export card was removed (2026-10-23). Don't set it. | none |
 | `NEXT_PUBLIC_SOURCE_REPO`, `NEXT_PUBLIC_DONATE_*` | n/a | optional (About / Donate pages, owned by the polish stream) | set when the repo is public and donations open |
 | `NEXT_PUBLIC_COMMIT_SHA` | n/a | automatic from `VERCEL_GIT_COMMIT_SHA` | none |
 | `ANDROID_CERT_SHA256`, `APPLE_TEAM_ID`, `FCM_SERVICE_ACCOUNT_JSON`, `APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_KEY_P8`/`APNS_BUNDLE_ID` | not set | native apps only (05-native.md owner checklist). Until set: `assetlinks.json` is `[]`, AASA is 404, there is no native push. **The web launch doesn't need them.** | later |
@@ -186,12 +202,12 @@ Consequences:
 | Setting | Required value | Why |
 |---|---|---|
 | Site URL | `https://www.kithwall.com` | email links |
-| Redirect URLs | `https://www.kithwall.com/**` (covers `/recover/reset`, where the v1 "forgot password" email lands) | `resetPasswordForEmail(..., { redirectTo: origin + '/recover/reset' })` |
-| Email provider | enabled; "Confirm email" on | v1 accounts sign in with email + password. v2 accounts use synthetic `@id.kithwall.invalid` addresses that are created confirmed, so no email is ever sent to them. |
-| Before User Created hook | unchanged: `https://www.kithwall.com/api/hooks/before-user-created` with `AUTH_HOOK_SECRET` | v2 still uses it for any `/signup`. Passkey and passphrase sign-ups use admin `createUser` and check ALTCHA and `signups_enabled` themselves (01-accounts.md §2). |
-| MFA (TOTP) | enabled (enroll + verify) | v1 accounts with TOTP. The v2 sign-in asks for the code (§8). |
+| Redirect URLs | `https://www.kithwall.com/**` | no Supabase email links are used any more (`/recover/reset` was removed) |
+| Email provider | enabled | accounts use synthetic `@id.kithwall.invalid` addresses that are created confirmed, so no email is ever sent to them. There is no email sign-in. |
+| Before User Created hook | `https://www.kithwall.com/api/hooks/before-user-created` with `AUTH_HOOK_SECRET` | refuses every public `/signup` (email + password). Passkey and passphrase sign-ups use admin `createUser` and check ALTCHA and `signups_enabled` themselves (01-accounts.md §2). |
+| MFA (TOTP) | enabled (enroll + verify) | any account can turn on an authenticator app in Settings → Security; every sign-in path asks for the code. |
 | Email OTP / magic-link expiry | default 3600 s is fine | passkey sign-in redeems an admin magic-link `hashed_token` immediately; no email is sent |
-| Email templates | **Review the wording.** "Confirm signup" and "Reset password" may say "Kithwall" in v1 terms or link to v1 pages. Keep them content-free. The reset link must go to `{{ .RedirectTo }}`, which is `/recover/reset`, or `{{ .SiteURL }}`. | v1 users who forgot their password |
+| Email templates | unused (no confirm or reset emails); keep them content-free anyway | |
 | Rate limits, leaked-password protection, JWT/refresh settings | as in deploy.md | |
 | `pg_net`, `pg_cron` | enabled already (v1 migrations) | |
 
@@ -364,20 +380,21 @@ project, or the daily backup. Restoring discards everything written after the ba
 | # | Test | Stop if it fails? |
 |---|---|---|
 | 1 | `/`, `/signin`, `/join`, `/help`, `/legal/privacy`, `/transparency` load; response headers have CSP with nonce, HSTS, `Referrer-Policy: no-referrer` | yes |
-| 2 | **v1 account** (owner's own or a test account made in v1 before the cutover): Sign in → "Sign in with email" → email + password → "Add a passkey?" (try both "Add passkey" and "Not now") → Home shows the v1 posts decrypted and the **"Save your recovery key"** nudge | yes |
-| 3 | v1 account **with TOTP**: email + password → "Two-step verification" → code → "Add a passkey?" → Home | yes |
-| 4 | v1 account that never finished `/welcome`: email + password → `/setup` ("Finish setting up your account") | no (rare) |
+| 2 | ~~v1 account sign-in~~ (obsolete: there is no email sign-in) | |
+| 3 | Passkey account **with TOTP** (turn it on in Settings → Security): sign out, "Sign in with passkey" → "Two-step verification" → code → Home | yes |
+| 4 | ~~v1 account without keys → `/setup`~~ (obsolete) | |
 | 5 | New **passkey** sign-up on `/join` (production hook on), then sign out, then "Sign in with passkey" | yes |
 | 6 | New **passphrase** sign-up, then sign in with @handle + passphrase | yes |
-| 7 | Messages: a v1 DM opens with history. Send, edit, react, unsend. A new chat shows the 4-week timer. | yes |
-| 8 | Post with a photo; comment; like; story; album. The Classic data card appears in Settings → Your data for v1 accounts and downloads a ZIP. | no |
+| 7 | Messages: send, edit, react, unsend. A new chat shows the 4-week timer. | yes |
+| 8 | Post with a photo; comment; like; story; album. Settings → Your data → export downloads a ZIP. | no |
 | 9 | Push: Settings → Notifications → test notification. A friend messages while the app is closed. Check `net._http_response`. | no |
 | 10 | `/recover` with a @handle and the recovery key, on a throwaway account | no |
 | 11 | Call between two test accounts (TURN relay) | no |
 | 12 | `/you/privacy-report` loads; account deletion of a throwaway account | no |
 | 13 | `select * from cron.job_run_details order by start_time desc limit 10;` shows succeeded runs of the minute jobs | yes |
 
-Phase 6 walked through rows 2 to 4 locally on real v1-encrypted accounts (`supabase/launch/v1_accounts.local.test.ts`):
+(Historical, before the fresh start.) Phase 6 walked through the v1 rows locally on real v1-encrypted accounts
+(`supabase/launch/v1_accounts.local.test.ts`, since removed):
 - legacy sign-in → passkey offer → Home with v1 posts decrypted and the recovery nudge;
 - TOTP → passkey offer;
 - no keys → `/setup`;
@@ -390,7 +407,11 @@ Fixed along the way:
 - An unconfirmed v1 email no longer shows "Can't reach Kithwall". It now gets the generic sign-in failure.
 - v1 accounts now get the recovery-key nudge on their first sign-in on a device.
 
-## 9. Launch + 30 days: drop the Classic tables
+## 9. Launch + 30 days: drop the Classic tables (done 2026-10-23, no waiting period)
+
+Done by `supabase/migrations/20261030000100_drop_classic.sql`, together with the code and test changes listed
+below, because there is no v1 data to export. The original plan follows.
+
 
 `supabase/launch/drop_classic_tables.sql` is kept outside `supabase/migrations`, so `db push` can never apply it
 early. It deletes Page posts, Kithville posts and the v1-only notification types. It drops `pokes`, `pages`,
@@ -424,7 +445,7 @@ Procedure:
    tests.
 4. Unset `NEXT_PUBLIC_CLASSIC_RETIRE_DATE`.
 
-## 10. Files (phase 6)
+## 10. Files (phase 6; all removed on 2026-10-23 except the migration, whose functions the drop migration removes)
 
 | File | What |
 |---|---|

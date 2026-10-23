@@ -1,0 +1,25 @@
+# Kithwall mirror Worker (docs/v2/08-censorship.md §1). Fill in, then: npx wrangler deploy
+# No secrets live here: everything below is public information.
+name = "kithwall-mirror"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+# Logs off: this Worker carries people's (encrypted) traffic; don't keep request logs.
+[observability]
+enabled = false
+
+[vars]
+SUPABASE_URL = "https://uvuojqziktbwxkjzeiar.supabase.co"
+APP_ORIGIN = "https://www.kithwall.com"
+# Every mirror hostname this Worker answers for (each also needs a route below and a proxied DNS record).
+MIRROR_HOSTS = "mirror-one.example,mirror-two.example"
+
+# One block per mirror domain (the zone must be on this Cloudflare account, DNS record proxied/orange):
+[[routes]]
+pattern = "mirror-one.example/*"
+zone_name = "mirror-one.example"
+
+[[routes]]
+pattern = "mirror-two.example/*"
+zone_name = "mirror-two.example"

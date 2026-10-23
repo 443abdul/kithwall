@@ -20,7 +20,7 @@ export function AppGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (decoy) return; // the duress decoy stays up even after its background wipe signs this device out
     if (status === 'signed_out') router.replace(`/signin?next=${encodeURIComponent(path)}`);
-    else if (status === 'setup') router.replace('/setup'); // keys not created yet, or the 6-digit code is still needed
+    else if (status === 'setup') router.replace('/setup'); // the 6-digit code is still needed
   }, [status, path, router, decoy]);
   let screen: ReactNode;
   // Safety centre: a duress PIN shows the decoy instead of the real screens (which never mount).

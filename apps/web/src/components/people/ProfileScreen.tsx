@@ -15,7 +15,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { Page } from '@/components/shell/AppShell';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { Feed } from '@/components/posts';
-import { EXTERNAL_REL } from '@/components/posts/bits';
+import { ExternalLink } from '@/components/links/ExternalLink';
 import { Lightbox } from '@/components/posts/Media';
 import { safeHref } from '@/components/posts/logic';
 import { readPost } from '@/lib/content';
@@ -143,7 +143,7 @@ function About({ person }: { person: Person }) {
   const bday = birthdayText(info);
   if (bday) rows.push({ icon: 'gift', label: t('profile.birthday'), value: bday });
   const site = info?.contact?.website ? safeHref(info.contact.website) : null;
-  if (site) rows.push({ icon: 'link', label: t('profile.website'), value: <a href={site} target="_blank" rel={EXTERNAL_REL} className="k-ltr">{site.replace(/^https?:\/\//, '').replace(/\/$/, '')}</a> });
+  if (site) rows.push({ icon: 'link', label: t('profile.website'), value: <ExternalLink href={site} className="k-ltr">{site.replace(/^https?:\/\//, '').replace(/\/$/, '')}</ExternalLink> });
   if (!rows.length && !info?.bio) return <Card><EmptyState icon="info" title={t('profile.noAbout')} /></Card>;
   return (
     <Card padding="flush">

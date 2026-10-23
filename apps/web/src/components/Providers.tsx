@@ -7,6 +7,7 @@ import { keyring } from '@/lib/keys/keyring';
 import { PushManager } from '@/components/push/PushManager';
 import { InstallRuntime } from '@/components/install/InstallRuntime';
 import { NativeRuntime } from '@/components/native/NativeRuntime';
+import { NetRuntime } from '@/components/net/NetRuntime';
 import { invalidateSoon } from '@/lib/invalidate';
 
 export function Providers({ children }: { children: ReactNode; nonce?: string }) {
@@ -20,6 +21,7 @@ export function Providers({ children }: { children: ReactNode; nonce?: string })
       <PushManager />
       <InstallRuntime />
       <NativeRuntime />
+      <NetRuntime />
       {children}
     </QueryClientProvider>
   );

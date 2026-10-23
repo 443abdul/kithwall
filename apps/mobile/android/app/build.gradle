@@ -107,6 +107,9 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.core:core:$androidxCoreVersion"
+    // ProxyController for "Use Tor (Orbot)" (KwNet). Capacitor already ships this library; declared here
+    // because the app code uses it directly.
+    implementation "androidx.webkit:webkit:$androidxWebkitVersion"
     implementation project(':capacitor-android')
 
     // Native passkeys (Credential Manager) and biometric unlock.

@@ -94,7 +94,7 @@ function ScheduledItem({ row }: { row: PostRow }) {
           {row.disappear_secs ? <span><Icon name="clock" /> {t('ephemeral.post.chip', { duration: t(durationKey(row.disappear_secs)) })}</span> : null}
         </span>
       </header>
-      {payload ? <PostBody payload={payload} onOpenPhoto={() => undefined} /> : (
+      {payload ? <PostBody payload={payload} /> : (
         <p className="k-muted k-small"><Icon name="key" /> {t('feed.unverified')}</p>
       )}
       <div className="k-eph-sitem-actions">

@@ -17,6 +17,7 @@ import { b64u, randomBytes } from '@kithwall/crypto';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSyncExternalStore } from 'react';
 import { sb, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '../supabase';
+import { netUrl } from '../net/runtime';
 import { getSession, identity, onLock } from '../keys/session';
 import { keyring } from '../keys/keyring';
 import { people } from '../people';
@@ -187,7 +188,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 async function restBroadcast(topic: string, payload: unknown, keepalive = false): Promise<boolean> {
   const token = (await sb().auth.getSession()).data.session?.access_token;
   if (!token) return false;
-  const res = await fetch(`${SUPABASE_URL}/realtime/v1/api/broadcast`, {
+  const res = await fetch(netUrl(`${SUPABASE_URL}/realtime/v1/api/broadcast`), {
     method: 'POST', keepalive, credentials: 'omit', referrerPolicy: 'no-referrer',
     headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages: [{ topic, event: 'sig', payload, private: true }] }),

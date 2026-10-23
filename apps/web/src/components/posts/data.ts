@@ -18,9 +18,6 @@ export const PAGE_SIZE = 12;
 export const feedKey = (scope: FeedScope) =>
   ['v2feed', scope.kind, scope.kind === 'home' ? '' : scope.kind === 'profile' ? scope.userId : scope.kind === 'circle' ? scope.circleId : scope.eventId] as const;
 
-/** Kinds the v2 feed shows. (Games, polls and check-ins were 2010 features; their text still shows.) */
-const HIDDEN_KINDS = new Set<PostRow['kind']>(['game']);
-
 export interface FeedPage { rows: PostRow[]; cursor?: string }
 
 export async function fetchScopePage(scope: FeedScope, before?: string): Promise<FeedPage> {
@@ -35,7 +32,7 @@ export async function fetchScopePage(scope: FeedScope, before?: string): Promise
   // Circle docs are stored as note revisions (shared_post_id = the doc); only the newest is a post.
   // My own scheduled posts wait in "Scheduled" (You), not in feeds; expired ones are already gone.
   const now = Date.now();
-  const shown = rows.filter((r) => !HIDDEN_KINDS.has(r.kind) && !(r.kind === 'note' && r.shared_post_id && r.group_id)
+  const shown = rows.filter((r) => !(r.kind === 'note' && r.shared_post_id && r.group_id)
     && !isScheduled(r, now) && !isExpired(r, now));
   return { rows: shown, cursor: nextCursor(rows, PAGE_SIZE) };
 }

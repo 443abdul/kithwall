@@ -258,14 +258,13 @@ export interface PushPrefs {
   messages: boolean;
   activity: boolean;
   friend_requests: boolean;
-  pokes: boolean;
   invites: boolean;
   security: boolean;
 }
-export const DEFAULT_PUSH_PREFS: PushPrefs = { messages: true, activity: true, friend_requests: true, pokes: true, invites: true, security: true };
+export const DEFAULT_PUSH_PREFS: PushPrefs = { messages: true, activity: true, friend_requests: true, invites: true, security: true };
 
 export async function loadPushPrefs(userId: string): Promise<PushPrefs> {
-  const row = must(await sb().from('push_preferences').select('messages, activity, friend_requests, pokes, invites, security')
+  const row = must(await sb().from('push_preferences').select('messages, activity, friend_requests, invites, security')
     .eq('user_id', userId).maybeSingle()) as Partial<PushPrefs> | null;
   return { ...DEFAULT_PUSH_PREFS, ...(row ?? {}) };
 }

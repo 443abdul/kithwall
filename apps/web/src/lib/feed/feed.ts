@@ -78,7 +78,7 @@ export async function fetchPost(id: string): Promise<PostRow | null> {
   return row;
 }
 
-/** Posts of one kind (notes, questions, check-ins) by the given authors, newest first. */
+/** Posts of one kind (e.g. notes) by the given authors, newest first. */
 export async function fetchByKind(kind: PostRow['kind'], authors: string[] | null, before?: string, pageSize = 20): Promise<PostRow[]> {
   let q = sb().from('posts').select('*').eq('kind', kind).order('created_at', { ascending: false }).limit(pageSize);
   if (authors) {
@@ -127,8 +127,8 @@ export async function notifySafe(recipient: string | null | undefined, type: str
 // Plain text of a post payload (for previews and reports).
 
 export function payloadText(p: PostPayload): string {
-  return [p.text, p.sharedText, p.video?.title, p.link?.title, p.link?.description, p.link?.url, p.question?.text, ...(p.question?.options ?? []),
-    p.note?.title, p.note?.body, p.checkin?.place, p.checkin?.address, p.lifeEvent?.title, ...(p.photos?.map((x) => x.caption) ?? [])]
+  return [p.text, p.sharedText, p.video?.title, p.link?.title, p.link?.description, p.link?.url,
+    p.note?.title, p.note?.body, ...(p.photos?.map((x) => x.caption) ?? [])]
     .filter(Boolean).join('\n');
 }
 

@@ -9,7 +9,6 @@ import { Page } from '@/components/shell/AppShell';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { Button, ButtonLink } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Callout } from '@/components/ui/Callout';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
@@ -150,7 +149,6 @@ export function CircleScreen({ id, initialTab }: { id: string; initialTab?: stri
           { value: 'members', label: t('circles.tab.members'), count: active.length || undefined, panel: <CircleMembers s={s} onInvite={() => setInviteOpen(true)} /> },
         ]} />
       )}
-      {!invited && s.circle.privacy === 'closed' ? <Callout icon="info">{t('circles.home.legacyClosed')}</Callout> : null}
       <InviteDialog s={s} open={inviteOpen} onClose={() => setInviteOpen(false)} members={members.data ?? []} />
     </Page>
   );

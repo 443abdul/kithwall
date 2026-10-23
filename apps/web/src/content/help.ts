@@ -8,7 +8,7 @@ export interface HelpSection { id: string; title: MessageKey; items: { q: Messag
 
 const SECTIONS = {
   start: 3,
-  signin: 3,
+  signin: 2,
   recovery: 4,
   people: 3,
   sharing: 3,

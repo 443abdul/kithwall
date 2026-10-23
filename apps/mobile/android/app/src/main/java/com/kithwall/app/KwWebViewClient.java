@@ -19,8 +19,11 @@ import com.getcapacitor.BridgeWebViewClient;
 class KwWebViewClient extends BridgeWebViewClient {
     private static final String TAG = "KwWebView";
 
+    private final Bridge bridge;
+
     KwWebViewClient(Bridge bridge) {
         super(bridge);
+        this.bridge = bridge;
     }
 
     /**
@@ -40,7 +43,11 @@ class KwWebViewClient extends BridgeWebViewClient {
         if (!request.isForMainFrame()) return;
         int code = error.getErrorCode();
         if (BuildConfig.DEBUG) Log.w(TAG, "main-frame error " + code + " " + error.getDescription() + " " + request.getUrl());
-        if (isOffline(code, String.valueOf(error.getDescription()))) super.onReceivedError(view, request, error);
+        if (isOffline(code, String.valueOf(error.getDescription()))) {
+            super.onReceivedError(view, request, error);
+            // Maybe the usual address is blocked here: try the mirrors (KwNet, docs/v2/08-censorship.md).
+            if (bridge.getActivity() != null) KwNet.failover(bridge.getActivity());
+        }
     }
 
     @Override
@@ -48,6 +55,9 @@ class KwWebViewClient extends BridgeWebViewClient {
         if (!request.isForMainFrame()) return;
         int status = response.getStatusCode();
         if (BuildConfig.DEBUG) Log.w(TAG, "main-frame HTTP " + status + " " + request.getUrl());
-        if (status == 502 || status == 503 || status == 504) super.onReceivedHttpError(view, request, response);
+        if (status == 502 || status == 503 || status == 504) {
+            super.onReceivedHttpError(view, request, response);
+            if (bridge.getActivity() != null) KwNet.failover(bridge.getActivity());
+        }
     }
 }

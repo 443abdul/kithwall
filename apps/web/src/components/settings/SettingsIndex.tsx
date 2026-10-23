@@ -19,6 +19,7 @@ const PAGES: { slug: string; icon: IconName; title: MessageKey; sub: MessageKey 
   { slug: 'notifications', icon: 'activity', title: 'settings.notifications.title', sub: 'settings.notifications.sub' },
   { slug: 'data', icon: 'share', title: 'settings.data.title', sub: 'settings.data.sub' },
   { slug: 'apps', icon: 'download', title: 'install.settings.title', sub: 'install.settings.sub' },
+  { slug: 'connection', icon: 'globe', title: 'net.settings.title', sub: 'net.settings.sub' },
   { slug: 'about', icon: 'info', title: 'settings.about.title', sub: 'settings.about.sub' },
 ];
 

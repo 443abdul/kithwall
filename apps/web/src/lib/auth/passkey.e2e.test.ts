@@ -325,51 +325,6 @@ run('Kithwall 2 accounts (e2e)', () => {
     expect(Buffer.from(unlockWithPassword(start.data.userId, b, d2.passwordKEK).amk)).toEqual(Buffer.from(unlocked.amk));
   }, 120_000);
 
-  it('v1 migration: password login, then add a passkey, then sign in with it', async () => {
-    // A v1-style account: real email, password-derived authKey, password-wrapped bundle.
-    const db = adminClient();
-    const email = `v1-${randomBytes(4).toString('hex')}@example.com`;
-    const password = 'an old but decent v1 password';
-    const d = await deriveFromPassword(email, password);
-    const cu = await db.auth.admin.createUser({ email, password: d.authKey, email_confirm: true });
-    const id = cu.data.user!.id; created.push(id);
-    const { bundle } = createKeyBundle(id, d.passwordKEK);
-    await db.from('key_bundles').insert({ user_id: id, bundle });
-    await db.from('profiles').insert({ id, username: `v1${randomBytes(4).toString('hex')}`, sign_pub: bundle.signPub, kx_pub: bundle.kxPub });
-
-    const client = anonClient();
-    const si = await client.auth.signInWithPassword({ email, password: (await deriveFromPassword(email, password)).authKey });
-    expect(si.error).toBeNull();
-    const token = si.data.session!.access_token;
-    const b = (await client.from('key_bundles').select('bundle').single()).data!.bundle as KeyBundle;
-    const u = unlockWithPassword(id, b, d.passwordKEK);
-
-    const dev = new SoftAuthenticator(origin, rpId);
-    const start = await call<{ challengeId: string; options: Parameters<SoftAuthenticator['register']>[0] }>('/api/auth/passkey/add/options', {}, token);
-    expect(start.status).toBe(200);
-    const prfSalt = newPrfSalt();
-    const add = await call('/api/auth/passkey/add/verify', {
-      challengeId: start.data.challengeId, response: dev.register(start.data.options), prfSalt,
-      amkWrap: wrapAmkWithPrf(id, dev.id, u.amk, dev.prf(), prfSalt),
-      keyProof: signChallenge(u.identity.signPriv, `kithwall/v1/add-passkey/${start.data.options.challenge}`),
-    }, token);
-    expect(add.status).toBe(200);
-
-    const s = await call<{ challengeId: string; options: { challenge: string } }>('/api/auth/passkey/login/options', {});
-    const done = await call<{ userId: string; tokenHash: string; wrap: { prfSalt: string; amkWrap: string }; credentialId: string }>(
-      '/api/auth/passkey/login/verify', { challengeId: s.data.challengeId, response: dev.assert(s.data.options) });
-    expect(done.data.userId).toBe(id);
-    const { client: c2 } = await signedInClient(done.data.tokenHash);
-    const b2 = (await c2.from('key_bundles').select('bundle').single()).data!.bundle as KeyBundle;
-    expect(Buffer.from(unlockWithPrf(id, b2, dev.id, done.data.wrap.amkWrap, dev.prf(), done.data.wrap.prfSalt).amk)).toEqual(Buffer.from(u.amk));
-    // The email and the password keep working (existing accounts keep their keys and email).
-    expect((await c2.auth.getUser()).data.user!.email).toBe(email);
-    expect(b2.amkByPassword).toBe(bundle.amkByPassword);
-    // With a password, the only passkey may be removed.
-    const pk = (await c2.from('passkeys').select('id').single()).data!.id as string;
-    expect((await c2.rpc('remove_passkey', { p_id: pk })).error).toBeNull();
-  }, 120_000);
-
   it('ALTCHA proofs are single use', async () => {
     const pow = await altcha();
     const a = await call('/api/auth/passkey/register/options', { handle: `e2a${randomBytes(4).toString('hex')}`, altcha: pow, mode: 'passphrase' });

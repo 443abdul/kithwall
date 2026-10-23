@@ -1,0 +1,34 @@
+/* Censorship resistance (components/net, docs/v2/08-censorship.md): the connection banner and the
+   Connection settings / "If Kithwall is blocked" pieces. Tokens only, logical properties only (RTL-safe). */
+
+.kw.k-net-banner-root {
+  position: fixed; inset-block-start: calc(env(safe-area-inset-top, 0px) + var(--space-2)); inset-inline: 0;
+  display: flex; justify-content: center; padding-inline: var(--space-4); z-index: 70; pointer-events: none;
+  background: none; min-block-size: 0;
+}
+.kw .k-net-banner {
+  pointer-events: auto; display: flex; align-items: center; gap: var(--space-2); max-inline-size: 40rem;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--radius-lg);
+  background: var(--surface); color: var(--text); border: var(--border-width) solid var(--border);
+  box-shadow: var(--card-shadow); font-size: var(--text-sm);
+}
+.kw .k-net-banner > .k-icon { flex: none; color: var(--accent-text); }
+.kw .k-net-banner-blocked > .k-icon { color: var(--danger); }
+.kw .k-net-banner-text { flex: 1; min-inline-size: 0; }
+.kw .k-net-banner-link { font-weight: var(--weight-bold); color: var(--accent-text); white-space: nowrap; }
+.kw .k-net-banner-close {
+  display: grid; place-items: center; inline-size: 36px; block-size: 36px; flex: none;
+  border: 0; border-radius: var(--radius-md); background: none; color: var(--text-muted); cursor: pointer;
+}
+.kw .k-net-banner-close:hover { background: var(--surface-2); }
+.kw .k-net-banner-close:focus-visible { outline: var(--focus-width) solid var(--focus, var(--accent)); outline-offset: var(--focus-offset); }
+
+.kw .k-net-mirrors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.kw .k-net-mirrors li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.kw .k-net-mirror-host { font-weight: var(--weight-medium); overflow-wrap: anywhere; flex: 1; min-inline-size: 10rem; }
+.kw .k-net-share { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); }
+.kw .k-net-links { margin: 0; padding-inline-start: 1.2em; display: flex; flex-direction: column; gap: var(--space-1); }
+.kw .k-net-onion {
+  display: block; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+  background: var(--surface-2); font-size: var(--text-sm); overflow-wrap: anywhere; user-select: all;
+}

@@ -1,11 +1,12 @@
 // POST /api/hooks/before-user-created — Supabase Auth "before user created" HTTP hook (spec §7).
-// Supabase signs the request (Standard Webhooks). We allow the sign-up only if:
-//   1. the signature is valid and fresh (AUTH_HOOK_SECRET),
-//   2. sign-ups are enabled (app_settings.signups_enabled),
-//   3. the user metadata carries a valid, unexpired, unused ALTCHA proof-of-work.
+// Supabase signs the request (Standard Webhooks). Every Kithwall account is created by the passkey and
+// passphrase routes (/api/auth/passkey/register/*) with the admin API, which doesn't run this hook; they
+// check the sign-up switch and the ALTCHA proof themselves (docs/v2/01-accounts.md §2). So this hook only
+// ever sees GoTrue's public /signup (email + password), which Kithwall doesn't offer: it refuses those. Should
+// a newer GoTrue also run it for admin creation, those users carry app_metadata.kw_account, which only the
+// admin API can set, and are let through.
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { parsePayload, verifyPayload } from '@/lib/auth/altcha-server';
-import { admin, json } from '@/lib/auth/server';
+import { json } from '@/lib/auth/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,36 +41,15 @@ function verifySignature(req: Request, body: string): boolean {
 const reject = (message: string, httpCode = 403) =>
   json({ decision: 'reject', message, error: { http_code: httpCode, message } });
 
-interface HookBody {
-  metadata?: { name?: string };
-  user?: { email?: string; user_metadata?: Record<string, unknown>; raw_user_meta_data?: Record<string, unknown> };
-}
-
 export async function POST(req: Request) {
   const body = await req.text();
   if (body.length > 64 * 1024) return json({ error: 'too large' }, 413);
   let valid = false;
   try { valid = verifySignature(req, body); } catch (e) { console.error('auth hook config', e); }
   if (!valid) return json({ error: 'invalid signature' }, 401);
-
-  let payload: HookBody;
-  try { payload = JSON.parse(body) as HookBody; } catch { return json({ error: 'bad request' }, 400); }
-
-  const db = admin();
-  const { data: setting } = await db.from('app_settings').select('value').eq('key', 'signups_enabled').maybeSingle();
-  if (setting?.value === false) return reject('Kithwall isn\'t accepting new sign-ups right now. Please try again later.');
-
-  const meta = payload.user?.user_metadata ?? payload.user?.raw_user_meta_data ?? {};
-  const pow = parsePayload(meta.altcha);
-  if (!pow || !(await verifyPayload(pow))) {
-    return reject('We couldn\'t confirm you\'re a person. Reload the page and try again.', 400);
-  }
-  // Single use: a solved challenge can create one account only.
-  const spent = await db.from('altcha_spent').insert({ signature: pow.challenge.signature });
-  if (spent.error) {
-    if (spent.error.code === '23505') return reject('This sign-up form has already been used. Reload the page and try again.', 400);
-    console.error('altcha_spent', spent.error.message);
-    return reject('Sign-up is temporarily unavailable.', 503);
-  }
-  return json({});
+  let payload: { user?: { app_metadata?: Record<string, unknown> } };
+  try { payload = JSON.parse(body) as typeof payload; } catch { return json({ error: 'bad request' }, 400); }
+  const kind = payload.user?.app_metadata?.kw_account;
+  if (kind === 'passkey' || kind === 'passphrase') return json({});
+  return reject('Kithwall accounts are made with a passkey or a passphrase. Open the app and choose "Join".');
 }

@@ -28,8 +28,7 @@ export async function POST(req: Request) {
         .eq('id', requestId).eq('owner_id', userId).eq('status', 'pending');
     }
     const out: RecoverFinishRes = { tokenHash: await mintSessionToken(userId) };
-    const { data: u } = await db.auth.admin.getUserById(userId);
-    const to = await noticeAddress(userId, u.user?.email);
+    const to = await noticeAddress(userId);
     if (to && mailConfigured() && await claimNotice('account_recovered', String(body?.challengeId), userId)) {
       void sendNotice(to, 'Your Kithwall account was recovered',
         `Someone just got back into your Kithwall account with ${requestId ? 'help from your trusted friends' : 'your recovery key'}.\n\n` +

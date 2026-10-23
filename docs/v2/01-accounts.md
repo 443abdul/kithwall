@@ -1,12 +1,13 @@
 # Kithwall 2: accounts and keys
 
-Status: implemented (phase 1; recovery from a @handle added at the end of phase 2) · 2026-10-21 · see also `00-brief.md` §3 and §5, and `../03-spec.md` §3
+Status: implemented (phase 1; recovery from a @handle added at the end of phase 2; v1 email + password sign-in
+removed 2026-10-23, see §3 "No email accounts") · see also `00-brief.md` §3 and §5, and `../03-spec.md` §3
 
 Kithwall 2 accounts are **passkey-first**. There is no email and no password at sign-up. The account's
 encryption keys are created on the device and wrapped with a secret that only the passkey can produce
-(the WebAuthn **PRF** extension). Devices without passkey PRF support fall back to a **passphrase**,
-which works like the v1 password and still needs no email. v1 accounts keep their email, password and
-keys, and can add a passkey.
+(the WebAuthn **PRF** extension). Devices without passkey PRF support fall back to a **passphrase**
+(@handle + passphrase), which still needs no email. There are no email + password accounts: Kithwall
+started fresh, and the v1 (2010-style) email sign-in, its migration path and its email recovery link are gone.
 
 ## 1. Key hierarchy (what changed from v1)
 
@@ -18,7 +19,7 @@ is wrapped change.
                                                │ HKDF(salt = credSalt, "kithwall/v1/prf-wrap")
                                                ▼
                                         wrapKey ──wraps──┐   one wrap per passkey (passkey_wraps)
- passphrase/password ──Argon2id──► passwordKEK ──wraps───┤   bundle.amkByPassword (optional now)
+ passphrase ─────────Argon2id──► passwordKEK ──wraps───┤   bundle.amkByPassword (passphrase accounts only)
  recovery phrase (24 words) ──HKDF──► recoveryKEK ─wraps─┤   bundle.amkByRecovery (always)
                                                          ▼
                                                         AMK ──► identity keys, vault, cache, …
@@ -58,11 +59,11 @@ u<user id without dashes>@id.kithwall.invalid
   auth OTP expiry.
 - **Passphrase accounts** use the synthetic address as the Argon2id salt and as the Supabase sign-in
   identifier. The Supabase password is the device-derived `authKey`, exactly as in v1.
-- **v1 accounts** keep their real email and password. Adding a passkey does not change either.
 
-Admin user creation does **not** run the `before-user-created` hook, so the passkey routes do the hook's
-work themselves: they check `signups_enabled` and verify and spend the ALTCHA proof of work in the same
-`altcha_spent` table.
+Admin user creation does **not** run the `before-user-created` hook, so the passkey routes check
+`signups_enabled` and verify and spend the ALTCHA proof of work (`altcha_spent`) themselves. The hook now only
+refuses GoTrue's public `/signup` (email + password); it lets through users whose `app_metadata.kw_account` was
+set by the admin API, in case a newer GoTrue runs it for admin creation too.
 
 ## 3. Flows
 
@@ -133,16 +134,19 @@ passphrase accounts apart). Passkey-only accounts also get a random, never-used 
 direct password grant costs one bcrypt for every synthetic account. Measured locally (median, wrong
 passphrase): GoTrue grant 112 ms for a passphrase account vs 15 ms for an unknown handle; the new route
 209 / 208 / 202 ms for a passphrase account / passkey-only account / unknown handle. The answer never depends on the account type (security
-review W3): every existing handle gets the synthetic address of its own id (for passkey and v1 accounts the
+review W3): every existing handle gets the synthetic address of its own id (for passkey accounts the
 sign-in then simply fails with `wrong_passphrase`), and an unknown handle gets a deterministic **decoy** that is
 a version-4 UUID derived from an HMAC of the handle (`lib/auth/passphrase-decoy.ts`), exactly the shape of a real
 one. Both paths make the same single query; without `ALTCHA_HMAC_KEY`/`SUPABASE_SECRET_KEY` the route fails closed.
 
-### v1 migration (`signInLegacy` → `addPasskey`)
-`signInLegacy(email, password)` runs the v1 `logIn()`. It returns `'mfa'` for TOTP accounts, and the UI
-then uses `finishMfaLogin`. `addPasskey()` calls `add/options` with the Bearer token; MFA accounts need
-`aal2`. It creates a passkey with PRF, wraps the **existing** AMK, and sends `add/verify`. The email,
-password and key bundle are untouched. Later sign-ins can use the passkey or the old password.
+### No email accounts
+Removed on 2026-10-23, before the fresh start (no account or data is carried over from v1): `signInLegacy`, the
+"Have an older Kithwall account? Sign in with email" path and the "Add a passkey?" offer after it, the
+`email_unconfirmed` error, the email password-reset link (`/recover/reset`), v1 key creation on `/setup`
+(`completeSetup`), password change, and the recovery-key nudge for v1 accounts. `/setup` remains only for a
+session whose bundle is still hidden because the authenticator-app code hasn't been entered. Authenticator-app
+MFA (TOTP) stays: any passkey or passphrase account can turn it on in Settings → Security, and passkey,
+passphrase and recovery sign-ins all ask for the code (`finishMfaLogin`).
 
 ### Managing passkeys and recovery
 - `listPasskeys()`: owner-only RLS read (`id, label, created_at, last_used_at`).
@@ -154,8 +158,7 @@ password and key bundle are untouched. Later sign-ins can use the passkey or the
 - `accountStatus()`: recovery saved, verified notice email, passkey count, and whether a passphrase exists.
 
 ### Recovering an account (`/recover`)
-Recovery starts from the **@handle**, because passkey and passphrase accounts have no email to prove.
-It works the same for v1 email accounts. Server: `app/api/recovery/*` and `lib/auth/recovery-server.ts`;
+Recovery starts from the **@handle**, because passkey and passphrase accounts have no email to prove. Server: `app/api/recovery/*` and `lib/auth/recovery-server.ts`;
 browser: `lib/auth/recover-client.ts`; screens: `components/public/RecoverFlow.tsx`; migration
 `20261023000100_handle_recovery.sql`.
 
@@ -187,24 +190,22 @@ browser: `lib/auth/recover-client.ts`; screens: `components/public/RecoverFlow.t
    sends a content-free "your account was recovered" notice if there is a notice address, and mints a
    one-time session token exactly like a passkey sign-in. Accounts with an authenticator app start at
    `aal1` and must enter the 6-digit code before the keys are adopted.
-4. The person then sets a new way in: a new passkey (`addPasskey`), or a new passphrase (a password, for
-   v1 accounts) with `setNewPassword`. Email-less accounts that choose a passphrase are marked as
-   passphrase accounts (`POST /api/auth/passkey/passphrase/enable`, which checks the bundle really has a
+4. The person then sets a new way in: a new passkey (`addPasskey`), or a new passphrase with
+   `setNewPassword`. Accounts that choose a passphrase are marked as passphrase accounts (`POST /api/auth/passkey/passphrase/enable`, which checks the bundle really has a
    passphrase wrap) so that @handle + passphrase sign-in finds them. After a trusted-friend recovery the
    device makes a fresh recovery key and re-splits it to the same friends (spec §3.5 step 5).
 
-v1 accounts can still ask for a password-reset email (`/recover` → "Get a link by email"). The link lands
-on `/recover/reset`, which looks up the account's handle and continues with the same flow. Only there,
-because the link proves email control, is "I've lost everything" (delayed deletion) offered.
+There is no email reset link and no "I've lost everything" delayed deletion any more (both needed an email
+to prove; removed with `/recover/reset`, `/api/account/deletion-request`, the `account_deletion_requests`
+table and the account-deletions cron). Deleting an account always needs its identity key (`/api/account/delete`).
 
 ### Notice email (`setNoticeEmail`)
 This is optional and is **not** a sign-in identifier. `POST notice-email {email}` stores a SHA-256 hash of
 a random link token with the address (`notice_email_verifications`, 24 h, at most 5 per day). It then
 mails a content-free link. The link's GET only shows a "Confirm" button, so mail scanners that pre-fetch
 links don't confirm anything. The POST copies the address to `account_security.notice_email` with
-`notice_email_verified_at`. `null` clears the address and any pending links. Notices for deletion and
-recovery (`noticeAddress()`) go to the verified notice address, or else to the auth email if it is a real
-one. They are never sent to a synthetic address.
+`notice_email_verified_at`. `null` clears the address and any pending links. Notices about recovery and new
+sign-in methods (`noticeAddress()`) go only to the verified notice address; synthetic addresses never get mail.
 
 ## 4. Database (`supabase/migrations/20261021000100_passkeys.sql`)
 
@@ -314,7 +315,7 @@ In development without `NEXT_PUBLIC_SITE_URL`, the rpID is the request host. It 
   last-unlock-method rule, MFA, and cascade on delete.
 - `apps/web/src/lib/auth/passkey.e2e.test.ts`: the full API flow against a running dev server, using a
   software authenticator. It covers create → sign in → unlock, a second passkey, removal rules, notice
-  email, passphrase accounts, v1 migration and ALTCHA single use. Run it with
+  email, passphrase accounts and ALTCHA single use. Run it with
   `E2E_BASE_URL=http://localhost:3011 npx vitest run src/lib/auth/passkey.e2e.test.ts`; it is skipped
   otherwise.
 - Recovery from a @handle: `apps/web/src/lib/auth/recovery-shared.test.ts` (the handed-out bundle has no

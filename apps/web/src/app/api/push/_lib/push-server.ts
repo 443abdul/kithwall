@@ -38,23 +38,22 @@ export function dispatchSecretOk(given: string | null): boolean {
 const WHAT: Record<string, string> = {
   friend_request: 'sent you a friend request', friend_accept: 'accepted your friend request',
   wall_post: 'wrote on your Wall', comment: 'commented on your post', like: 'likes your post',
-  tag: 'tagged you in a photo', poke: 'poked you', group_invite: 'added you to a group',
+  tag: 'tagged you in a photo', group_invite: 'added you to a group',
   group_request: 'asked to join your group', event_invite: 'invited you to an event', mention: 'mentioned you in a comment',
-  share: 'shared your post', question_vote: 'answered your question', checkin_tag: 'checked in with you',
+  share: 'shared your post',
   relationship: 'listed you in a relationship', recovery_request: 'may be recovering their account. Only help if they contacted you directly',
-  recovery_trustee: 'chose you as a trusted friend for account recovery', game: 'sent you a Kithville request',
+  recovery_trustee: 'chose you as a trusted friend for account recovery',
   key_waiting: 'is waiting for your device to share your posts with them',
   post_published: '',   // own words below: "Your scheduled post is now shared"
 };
 
 /** Preference switch that controls each kind of push (push_preferences columns). */
-export type PushCategory = 'messages' | 'activity' | 'friend_requests' | 'pokes' | 'invites' | 'security';
+export type PushCategory = 'messages' | 'activity' | 'friend_requests' | 'invites' | 'security';
 const CATEGORY: Record<string, PushCategory> = {
   friend_request: 'friend_requests', friend_accept: 'friend_requests',
   wall_post: 'activity', comment: 'activity', like: 'activity', tag: 'activity', mention: 'activity', share: 'activity',
-  question_vote: 'activity', checkin_tag: 'activity', relationship: 'activity',
-  poke: 'pokes',
-  group_invite: 'invites', group_request: 'invites', event_invite: 'invites', game: 'invites',
+  relationship: 'activity',
+  group_invite: 'invites', group_request: 'invites', event_invite: 'invites',
   recovery_request: 'security', recovery_trustee: 'security', key_waiting: 'security',
   post_published: 'activity',
 };

@@ -32,7 +32,7 @@ type Status = 'open' | 'actioned' | 'dismissed';
 type Action = 'remove' | 'warn' | 'suspend' | 'ban' | 'restore' | 'dismiss';
 
 const REASONS = ['spam', 'harassment', 'hate', 'violence', 'nudity', 'child_safety', 'self_harm', 'impersonation', 'illegal', 'other'];
-const KINDS = ['post', 'comment', 'photo', 'message', 'profile', 'group', 'event', 'page'];
+const KINDS = ['post', 'comment', 'photo', 'message', 'profile', 'group', 'event'];
 
 function useLabels() {
   const t = useT();

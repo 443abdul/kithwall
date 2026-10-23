@@ -1,0 +1,37 @@
+# Kithwall onion service: Caddy behind tor (docs/v2/08-censorship.md §4). Listens on 127.0.0.1:8080
+# only; tor (torrc next to this file) publishes it as http://<56 characters>.onion. Plain http is right
+# here: the onion connection is already encrypted and authenticated end to end by Tor.
+# Replace ONION_HOSTNAME with the contents of /var/lib/tor/kithwall/hostname.
+{
+	auto_https off
+	admin off
+	log default {
+		output discard
+	}
+}
+
+http://ONION_HOSTNAME:8080, http://127.0.0.1:8080 {
+	bind 127.0.0.1
+	encode zstd gzip
+
+	# Supabase (REST, Auth, Storage, Realtime incl. WebSocket): the browser never leaves Tor.
+	handle_path /sb/* {
+		reverse_proxy https://uvuojqziktbwxkjzeiar.supabase.co {
+			header_up Host {upstream_hostport}
+			header_up -X-Forwarded-For
+			header_up -Cookie
+			header_down -Set-Cookie
+		}
+	}
+
+	handle {
+		reverse_proxy https://www.kithwall.com {
+			header_up Host {upstream_hostport}
+			header_up -X-Forwarded-For
+			# Tells the app this is the onion: no upgrade-insecure-requests, no Onion-Location loop.
+			header_up X-Kithwall-Onion 1
+			# HSTS means nothing on an http onion; drop it.
+			header_down -Strict-Transport-Security
+		}
+	}
+}

@@ -1,11 +1,12 @@
 'use client';
-// One post in a feed: author, relative time, audience, text (safe links), photos + lightbox, encrypted
-// video, link preview / click-to-play embed, a heart (counts only for the author — calm, no public
+// One post in a feed: author, relative time, audience, text (safe links), photos and encrypted video (a tap
+// opens the pop-out gallery, components/gallery), link preview / click-to-play embed, a heart (counts only for the author — calm, no public
 // like counts), one-level comments, and edit / delete / report. Phase 3: a disappearing post shows how long
 // it has left and leaves the screen the moment it expires; the author's scheduled post says when it goes out.
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { useT, type MessageKey } from '@/i18n';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -15,22 +16,27 @@ import { Icon } from '@/components/ui/Icon';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Textarea, TextField } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
-import { editPost, postContentKey, readPost, setLike } from '@/lib/content';
-import { clean, fetchPostLikes, likesKey, notifySafe } from '@/lib/feed/feed';
+import { editPost, postContentKey, readPost } from '@/lib/content';
+import { clean } from '@/lib/feed/feed';
 import { useKeyringVersion } from '@/lib/hooks';
 import { useSession } from '@/lib/keys/session';
 import { usePeopleVersion, usePerson } from '@/lib/people';
 import { useFileUrl } from '@/lib/media';
-import type { LikeRow, PostPayload, PostRow } from '@/lib/types';
+import type { PostPayload, PostRow } from '@/lib/types';
 import { AudienceTag, NoteText, RelativeTime, RichText } from './bits';
-import { Comments, ENGAGEMENT_STALE, useComments } from './Comments';
+import { Comments, useComments } from './Comments';
 import { audienceOf, deletePostFully } from './data';
-import { Lightbox, LinkCard, PhotoGrid, VideoPlayer } from './Media';
+import { LinkCard, PhotoGrid, VideoPlayer } from './Media';
 import { Menu } from './Menu';
 import { ReportDialog } from './ReportDialog';
 import { useClock } from '@/lib/chat/clock';
 import { isExpired, isScheduled, timeLeft } from '@/lib/chat/ephemeral';
 import { useWhen } from './PostOptions';
+import { usePostLike } from './useLike';
+import { postItems, postVideoIndex } from '@/components/gallery/items';
+
+// The gallery is its own chunk, loaded the first time someone opens a photo or video.
+const Gallery = dynamic(() => import('@/components/gallery/Gallery'), { ssr: false });
 
 export function PostCardSkeleton() {
   return (
@@ -57,7 +63,7 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
   const d = readPost(row);
   const payload = d.ok ? d.value : null;
   const mine = row.author_id === userId;
-  const [lightbox, setLightbox] = useState<number | null>(null);
+  const [gallery, setGallery] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -66,29 +72,16 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
   const now = useClock([row]);
   const when = useWhen();
 
-  // ENGAGEMENT_STALE: feeds seed these per-post caches in two batched queries per page (prefetchEngagement)
-  // and Realtime keeps them current, so remounting a feed doesn't refetch every card's likes one by one.
-  const likes = useQuery({ queryKey: likesKey('post', row.id), queryFn: () => fetchPostLikes('post', row.id), staleTime: ENGAGEMENT_STALE });
+  // Feeds seed the per-post likes / comments caches in two batched queries per page (prefetchEngagement)
+  // and Realtime keeps them current, so remounting a feed doesn't refetch every card one by one.
+  const like = usePostLike(row);
   const comments = useComments(row.id);
-  const liked = !!likes.data?.some((l) => l.user_id === userId);
-  const likeCount = likes.data?.length ?? 0;
+  const liked = like.liked;
+  const likeCount = like.count;
   const commentCount = comments.data?.length ?? 0;
-
-  async function toggleLike() {
-    if (!userId) return;
-    const key = likesKey('post', row.id);
-    const prev = qc.getQueryData<LikeRow[]>(key) ?? [];
-    const next = liked ? prev.filter((l) => l.user_id !== userId)
-      : [...prev, { target_kind: 'post' as const, target_id: row.id, user_id: userId, created_at: new Date().toISOString() }];
-    qc.setQueryData(key, next);
-    try {
-      await setLike('post', row.id, !liked);
-      if (!liked) await notifySafe(row.author_id, 'like', 'post', row.id);
-    } catch {
-      qc.setQueryData(key, prev);
-      toast({ message: t('feed.failed'), tone: 'danger' });
-    }
-  }
+  const toggleLike = like.toggle;
+  const items = useMemo(() => (payload ? postItems(payload) : []), [payload]);
+  const galleryPost = useMemo(() => (payload ? { row, payload } : null), [row, payload]);
 
   const name = author?.name ?? '…';
   const profileHref = author ? `/u/${author.username}` : undefined;
@@ -134,7 +127,7 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
           ? <p className="k-post-waiting k-muted k-small"><Icon name="key" /> {t('feed.waitingKey', { name })}</p>
           : <p className="k-post-waiting k-muted k-small"><Icon name="alert" /> {t('feed.unverified')}</p>
       ) : (
-        <PostBody payload={d.value} onOpenPhoto={setLightbox} />
+        <PostBody payload={d.value} onOpenMedia={setGallery} />
       )}
 
       {d.ok ? (
@@ -157,8 +150,8 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
         </>
       ) : null}
 
-      {lightbox !== null && payload?.photos?.length ? (
-        <Lightbox photos={payload.photos} index={lightbox} onClose={() => setLightbox(null)} />
+      {gallery !== null && items.length && galleryPost ? (
+        <Gallery items={items} start={gallery} post={galleryPost} onClose={() => setGallery(null)} />
       ) : null}
       {editing && payload ? <EditDialog row={row} payload={payload} onClose={() => setEditing(false)} /> : null}
       <Dialog open={deleting} onClose={() => setDeleting(false)} title={t('feed.deleteTitle')}
@@ -181,9 +174,9 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
   );
 }
 
-export function PostBody({ payload, onOpenPhoto }: { payload: PostPayload; onOpenPhoto: (i: number) => void }) {
-  const text = [payload.text, payload.sharedText, payload.question?.text, payload.checkin?.place, payload.lifeEvent?.title]
-    .filter(Boolean).join('\n\n');
+/** `onOpenMedia(i)`: open the gallery at item i (photos first, then the video); without it the video plays inline. */
+export function PostBody({ payload, onOpenMedia }: { payload: PostPayload; onOpenMedia?: (i: number) => void }) {
+  const text = [payload.text, payload.sharedText].filter(Boolean).join('\n\n');
   return (
     <div className="k-post-body">
       {payload.note ? (
@@ -193,8 +186,8 @@ export function PostBody({ payload, onOpenPhoto }: { payload: PostPayload; onOpe
         </div>
       ) : null}
       {text ? <RichText text={text} className="k-post-text" /> : null}
-      {payload.photos?.length ? <PhotoGrid photos={payload.photos} onOpen={onOpenPhoto} /> : null}
-      {payload.video ? <VideoPlayer video={payload.video} /> : null}
+      {payload.photos?.length ? <PhotoGrid photos={payload.photos} onOpen={(i) => onOpenMedia?.(i)} /> : null}
+      {payload.video ? <VideoPlayer video={payload.video} onOpen={onOpenMedia ? () => onOpenMedia(postVideoIndex(payload)) : undefined} /> : null}
       {payload.link ? <LinkCard link={payload.link} /> : null}
     </div>
   );

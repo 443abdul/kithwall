@@ -2,11 +2,11 @@
 // Full-screen photo/video viewer: swipe between items, pinch / double-tap / ctrl+wheel to zoom,
 // swipe down to close, arrow keys and Esc. Side panel (bottom sheet on phones) with caption, tags,
 // comments, download and delete. Everything shown here was decrypted on this device.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocale, useT } from '@/i18n';
 import { me } from '@/lib/keys/session';
-import { downloadFile, useFileUrl } from '@/lib/media';
+import { useFileUrl } from '@/lib/media';
 import { useFriendIds } from '@/lib/hooks';
 import { usePerson } from '@/lib/people';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -17,121 +17,15 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { cx } from '@/components/ui/cx';
 import { PersonAvatar, PersonName, SealedNote } from '@/components/circles/shared';
-import type { FileRef } from '@/lib/types';
 import {
   commentOnPhoto, deleteComment, downloadOriginal, readMedia, readPhotoComment, removeMedia, removeTag, tagFriend, updatePhoto,
   usePhotoComments, type AlbumRow, type MediaPayload, type PhotoRow,
 } from './data';
-import { clampPan, clampZoom, pinchZoom, swipeAction } from './gestures';
+import { Stage } from '@/components/gallery/Stage';
+import { useVideoUrl } from '@/components/gallery/useVideoUrl';
 
 // ---------------------------------------------------------------------------------------
-// Gesture stage (photos)
-
-function Stage({ children, resetKey, rtl, onSwipe, onTap, tagMode }: {
-  children: ReactNode; resetKey: string; rtl: boolean; tagMode: boolean;
-  onSwipe: (a: 'next' | 'prev' | 'close') => void; onTap: (clientX: number, clientY: number) => void;
-}) {
-  const stage = useRef<HTMLDivElement>(null);
-  const content = useRef<HTMLDivElement>(null);
-  const s = useRef({ zoom: 1, x: 0, y: 0, pts: new Map<number, { x: number; y: number }>(), sx: 0, sy: 0, st: 0, px: 0, py: 0, pd: 0, pz: 1, lastTap: 0, moved: false });
-
-  const apply = (dx = 0, dy = 0, animate = false) => {
-    const el = content.current;
-    if (!el) return;
-    const st = s.current;
-    el.style.transition = animate ? 'transform 180ms ease, opacity 180ms ease' : 'none';
-    el.style.transform = `translate(${st.x + dx}px, ${st.y + dy}px) scale(${st.zoom})`;
-    el.style.opacity = dy > 0 && st.zoom === 1 ? String(Math.max(0.3, 1 - dy / 400)) : '1';
-  };
-  useEffect(() => {
-    const st = s.current;
-    st.zoom = 1; st.x = 0; st.y = 0; st.pts.clear();
-    apply(0, 0, false);
-  }, [resetKey]);
-
-  const dist = () => {
-    const [a, b] = [...s.current.pts.values()];
-    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
-  };
-
-  return (
-    <div ref={stage} className={cx('kv-stage', tagMode && 'kv-stage-tag')}
-      onPointerDown={(e) => {
-        const st = s.current;
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-        st.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        if (st.pts.size === 1) { st.sx = e.clientX; st.sy = e.clientY; st.st = performance.now(); st.px = st.x; st.py = st.y; st.moved = false; }
-        if (st.pts.size === 2) { st.pd = dist(); st.pz = st.zoom; st.moved = true; }
-      }}
-      onPointerMove={(e) => {
-        const st = s.current;
-        if (!st.pts.has(e.pointerId)) return;
-        st.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        const dx = e.clientX - st.sx, dy = e.clientY - st.sy;
-        if (Math.hypot(dx, dy) > 6) st.moved = true;
-        if (st.pts.size >= 2) { st.zoom = pinchZoom(st.pz, st.pd, dist()); apply(); return; }
-        if (tagMode) return;
-        if (st.zoom > 1) {
-          const r = stage.current!.getBoundingClientRect();
-          const p = clampPan(st.px + dx, st.py + dy, st.zoom, r.width, r.height);
-          st.x = p.x; st.y = p.y; apply();
-        } else if (Math.abs(dx) > Math.abs(dy)) apply(dx, 0);
-        else if (dy > 0) apply(0, dy);
-      }}
-      onPointerUp={(e) => {
-        const st = s.current;
-        if (!st.pts.has(e.pointerId)) return;
-        st.pts.delete(e.pointerId);
-        if (st.pts.size) return;
-        const dx = e.clientX - st.sx, dy = e.clientY - st.sy, ms = performance.now() - st.st;
-        if (st.zoom <= 1.01) { st.zoom = 1; st.x = 0; st.y = 0; }
-        if (!st.moved && ms < 300) {
-          if (tagMode) { onTap(e.clientX, e.clientY); return; }
-          const now = performance.now();
-          if (now - st.lastTap < 300) {
-            st.zoom = st.zoom > 1 ? 1 : 2; st.x = 0; st.y = 0; st.lastTap = 0; apply(0, 0, true); return;
-          }
-          st.lastTap = now;
-          return;
-        }
-        if (st.zoom === 1 && !tagMode) {
-          const a = swipeAction(dx, dy, ms, stage.current?.clientWidth ?? 400, rtl);
-          if (a) { onSwipe(a); return; }
-        }
-        apply(0, 0, true);
-      }}
-      onPointerCancel={(e) => { s.current.pts.delete(e.pointerId); apply(0, 0, true); }}
-      onWheel={(e) => {
-        if (!e.ctrlKey && !e.metaKey) return;
-        const st = s.current;
-        st.zoom = clampZoom(st.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
-        if (st.zoom === 1) { st.x = 0; st.y = 0; }
-        apply();
-      }}>
-      <div ref={content} className="kv-content">{children}</div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------------------
-// Video
-
-function useVideoUrl(ref: FileRef | undefined) {
-  const [state, setState] = useState<{ url: string | null; progress: number; error: boolean }>({ url: null, progress: 0, error: false });
-  const path = ref?.path;
-  useEffect(() => {
-    if (!ref) return;
-    const ac = new AbortController();
-    let url: string | null = null;
-    setState({ url: null, progress: 0, error: false });
-    downloadFile(ref, { signal: ac.signal, onProgress: (l, t) => setState((s) => ({ ...s, progress: t ? l / t : 0 })) })
-      .then((bytes) => { url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: ref.mime })); setState({ url, progress: 1, error: false }); })
-      .catch(() => { if (!ac.signal.aborted) setState({ url: null, progress: 0, error: true }); });
-    return () => { ac.abort(); if (url) URL.revokeObjectURL(url); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path]);
-  return state;
-}
+// Video (the gesture stage and the video loader are shared with the post / chat gallery, components/gallery)
 
 function VideoView({ p }: { p: MediaPayload }) {
   const t = useT();

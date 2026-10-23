@@ -1,11 +1,10 @@
 'use client';
 // Shown when a session exists but the keys aren't in memory (after a reload without "Keep me signed in",
-// or after auto-lock). Unlock with a passkey, the account passphrase, or — for v1 accounts — the password.
+// or after auto-lock). Unlock with a passkey or the account passphrase.
 // Self-contained Kithwall 2 screen (wraps itself in V2Root).
 import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { signOut, unlock, useSession } from '@/lib/keys/session';
-import { afterLogin } from '@/lib/auth/login';
 import { accountApi } from '@/lib/auth/account';
 import { usePerson } from '@/lib/people';
 import { useFileUrl } from '@/lib/media';
@@ -26,7 +25,7 @@ export function UnlockScreen() {
 
 function UnlockInner() {
   const t = useT();
-  const { userId, email, profile } = useSession();
+  const { userId, profile } = useSession();
   const person = usePerson(userId);
   const avatar = useFileUrl(person?.info?.avatar?.thumb);
   const [secret, setSecret] = useState('');
@@ -44,7 +43,7 @@ function UnlockInner() {
 
   async function withPasskey() {
     setBusy('passkey'); setErr(null);
-    try { await accountApi.unlockWithPasskey(); await afterLogin(); }
+    try { await accountApi.unlockWithPasskey(); }
     catch (e) { setErr(accountErrorMessage(t, e)); }
     finally { setBusy(null); }
   }
@@ -53,15 +52,13 @@ function UnlockInner() {
     e.preventDefault();
     setBusy('secret'); setErr(null);
     try {
-      // Passphrase accounts and v1 password accounts both unlock the key bundle the same way.
       await unlock(secret, keep);
-      await afterLogin();
     } catch {
       setErr(t('unlock.wrongPassword'));
     } finally { setBusy(null); }
   }
 
-  const name = person?.name ?? profile?.username ?? email ?? '';
+  const name = person?.name ?? profile?.username ?? '';
   return (
     <div className="k-auth">
       <header className="k-pub-head"><Logo size={32} /></header>
@@ -97,7 +94,7 @@ function UnlockInner() {
             <p className="k-center k-small k-muted">
               {t('unlock.notYou')}{' '}
               <button type="button" className="k-linkbtn" onClick={() => void signOut().then(() => { location.href = '/'; })}>{t('unlock.signOut')}</button>
-              {email ? <> · <Link href="/recover">{t('signin.forgot')}</Link></> : null}
+              {' · '}<Link href="/recover">{t('recover.title')}</Link>
             </p>
           </section>
         </div>

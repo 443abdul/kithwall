@@ -19,11 +19,11 @@ export interface FriendshipRow {
   note: unknown; created_at: string; accepted_at: string | null;
 }
 
-export type PostKind = 'status' | 'photo' | 'link' | 'video' | 'question' | 'checkin' | 'note' | 'share' | 'life_event' | 'game';
+export type PostKind = 'status' | 'photo' | 'link' | 'video' | 'note' | 'share';
 
 export interface PostRow {
   id: Uuid; author_id: Uuid; wall_owner_id: Uuid | null; group_id: Uuid | null; event_id: Uuid | null;
-  page_id: Uuid | null; kind: PostKind; is_public: boolean; audience_id: Uuid | null; epoch: number | null;
+  kind: PostKind; is_public: boolean; audience_id: Uuid | null; epoch: number | null;
   shared_post_id: Uuid | null; envelope: Envelope; created_at: string; edited_at: string | null;
   /** Scheduled posts (phase 3): visible only to the author until this time. null once published. */
   publish_at?: string | null;
@@ -56,11 +56,7 @@ export interface PostPayload {
   photos?: { id: Uuid; albumId: Uuid; files: PhotoFiles; caption?: string }[];
   /** Uploaded video: encrypted on device (≤ 100 MB), `duration` in seconds, `w`/`h` in pixels. */
   video?: { file: FileRef; poster?: FileRef; title?: string; duration?: number; w?: number; h?: number };
-  question?: { text: string; options: string[]; allowAdd: boolean };
-  checkin?: { place: string; address?: string; lat?: number; lng?: number; with: Uuid[] };
   note?: { title: string; body: string; tagged: Uuid[] };
-  lifeEvent?: { kind: string; title: string; with?: Uuid };
-  game?: { app: 'kithville'; text: string; reward?: string };
   sharedText?: string;
   tagged?: Uuid[];
 }

@@ -63,6 +63,10 @@ describe('data map labels match the database map', () => {
   const sql = readdirSync(dir).filter((f) => f.endsWith('.sql')).map((f) => readFileSync(join(dir, f), 'utf8')).join('\n');
   const mapped = new Map<string, string>();
   for (const m of sql.matchAll(/\('((?:public|kw)\.[a-z_]+)', '(account|content|social|messages|activity|housekeeping|legacy|system)'/g)) mapped.set(m[1]!, m[2]!);
+  // Later migrations remove tables from the map (e.g. 20261030000100_drop_classic.sql).
+  for (const m of sql.matchAll(/delete from kw\.data_map_tables\s+where table_name in \(([^)]*)\)/g)) {
+    for (const t of m[1]!.matchAll(/'([a-z_.]+)'/g)) mapped.delete(t[1]!);
+  }
 
   it('finds the map in the migrations', () => {
     expect(mapped.size).toBeGreaterThan(40);

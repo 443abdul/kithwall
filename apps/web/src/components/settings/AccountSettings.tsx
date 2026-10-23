@@ -18,7 +18,7 @@ type Status = Awaited<ReturnType<typeof accountApi.accountStatus>>;
 export function AccountSettings() {
   const t = useT();
   const me = useMe();
-  const { status, email } = useSession();
+  const { status } = useSession();
   const [st, setSt] = useState<Status | null>(null);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -30,8 +30,6 @@ export function AccountSettings() {
     accountApi.accountStatus().then((s) => { if (live) setSt(s); }).catch(() => undefined);
     return () => { live = false; };
   }, [status]);
-
-  const legacy = !!email && !email.endsWith('@id.kithwall.invalid');
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -74,7 +72,6 @@ export function AccountSettings() {
           <dl className="k-set-kv">
             <dt>{t('settings.account.passkeys')}</dt><dd>{t('settings.account.passkeyCount', { count: st.passkeys })}</dd>
             <dt>{t('settings.account.passphrase')}</dt><dd>{st.hasPassphrase ? t('settings.account.yes') : t('settings.account.no')}</dd>
-            {legacy ? <><dt>{t('settings.account.loginEmail')}</dt><dd className="k-ltr">{email}</dd></> : null}
           </dl>
         ) : <Skeleton height={48} />}
       </Section>

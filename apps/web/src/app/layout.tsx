@@ -15,6 +15,8 @@ import '../styles/v2/ephemeral.css';
 import '../styles/v2/voice.css';
 import '../styles/v2/calls.css';
 import '../styles/v2/install.css';
+import '../styles/v2/gallery.css';
+import '../styles/v2/net.css';
 import { Providers } from '@/components/Providers';
 import { CallRoot } from '@/components/calls/CallRoot';
 

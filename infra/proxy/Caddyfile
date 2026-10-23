@@ -1,0 +1,36 @@
+# Kithwall mirror on a small VPS with Caddy 2 (docs/v2/08-censorship.md §1): the alternative to the
+# Cloudflare Worker when you'd rather not have Cloudflare in the path, and a way to carry Realtime
+# WebSockets for a single-origin setup. Caddy obtains and renews the TLS certificate itself.
+#   apt install caddy  ->  copy to /etc/caddy/Caddyfile  ->  systemctl reload caddy
+# Replace mirror.example.org; its DNS A/AAAA records must point at this server.
+{
+	# No access logs: this server carries people's (end-to-end encrypted) traffic.
+	log default {
+		output discard
+	}
+}
+
+mirror.example.org {
+	encode zstd gzip
+
+	# Supabase: REST, Auth, Storage, Realtime (HTTP + WebSocket) under /sb
+	handle_path /sb/* {
+		reverse_proxy https://uvuojqziktbwxkjzeiar.supabase.co {
+			header_up Host {upstream_hostport}
+			header_up -X-Forwarded-For
+			header_up -X-Real-IP
+			header_up -Cookie
+			header_down -Set-Cookie
+		}
+	}
+
+	# Everything else: the Next.js app on Vercel
+	handle {
+		reverse_proxy https://www.kithwall.com {
+			header_up Host {upstream_hostport}
+			header_up X-Forwarded-Host {host}
+			header_up -X-Forwarded-For
+			header_up -X-Real-IP
+		}
+	}
+}

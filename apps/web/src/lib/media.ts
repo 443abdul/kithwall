@@ -4,6 +4,7 @@
 import { b64u, decryptFile, encryptFile } from '@kithwall/crypto';
 import { useEffect, useState } from 'react';
 import { sb, must, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './supabase';
+import { netUrl } from './net/runtime';
 import { me } from './keys/session';
 import type { FileRef, PhotoFiles } from './types';
 
@@ -139,7 +140,7 @@ async function accessToken(): Promise<string> {
   return t;
 }
 
-const objectUrl = (path: string) => `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path.split('/').map(encodeURIComponent).join('/')}`;
+const objectUrl = (path: string) => netUrl(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path.split('/').map(encodeURIComponent).join('/')}`);
 
 function putObject(path: string, body: Blob, token: string, onProgress: (loaded: number) => void, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -214,7 +215,7 @@ export async function downloadFile(ref: FileRef, opts: { onProgress?: ProgressFn
   const chunks: Uint8Array[] = [];
   let got = 0;
   for (const path of paths) {
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/authenticated/${BUCKET}/${path.split('/').map(encodeURIComponent).join('/')}`, {
+    const res = await fetch(netUrl(`${SUPABASE_URL}/storage/v1/object/authenticated/${BUCKET}/${path.split('/').map(encodeURIComponent).join('/')}`), {
       headers: { authorization: `Bearer ${token}`, apikey: SUPABASE_PUBLISHABLE_KEY },
       cache: 'no-store', referrerPolicy: 'no-referrer', signal: opts.signal,
     });

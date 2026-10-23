@@ -13,7 +13,7 @@ apps/web/src/
     auth/ feed/ profile/ photos/ messages/ groups/ events/ pages/ games/ mod/   feature components
   lib/
     supabase.ts           sb() client, must() error helper
-    keys/session.ts       sign up / in / unlock / setup / password + recovery phrase; useSession()
+    keys/session.ts       session, unlock (passkey / passphrase / device), recovery phrase; useSession()
     keys/keyring.ts       audience keys: load, deliver to friends/members, rotate, create audiences
     keys/device.ts        "keep me logged in" (non-extractable WebCrypto key in IndexedDB)
     people.ts             profiles + decrypted profile info; usePerson(id)
@@ -65,5 +65,6 @@ invalidation via the keyring subscription.
   `supabase migration up --local`, add pgTAP tests in `supabase/tests/`, run `supabase test db`.
 - Web: from `apps/web`, run your own dev server with your own build folder, e.g.
   `NEXT_DIST_DIR=.next-b npx next dev -p 3002` (PowerShell: `$env:NEXT_DIST_DIR='.next-b'; npx next dev -p 3002`).
-- Test accounts: sign up through the UI at your port (email confirmation is off locally). Use
-  addresses like `alice+b@test.local`; any password ≥ 8 chars with a decent strength score.
+- Test accounts: create them through `/join` at your port, with a passkey (open the app at `http://localhost:<port>`,
+  not 127.0.0.1: WebAuthn refuses IP addresses) or the passphrase fallback (@handle + a passphrase of at least 10
+  characters with a decent strength score). There is no email sign-up.

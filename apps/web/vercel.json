@@ -1,7 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/cron/account-deletions", "schedule": "0 3 * * *" },
     { "path": "/api/cron/stories", "schedule": "15 4 * * *" },
     { "path": "/api/cron/ephemeral", "schedule": "30 4 * * *" }
   ]

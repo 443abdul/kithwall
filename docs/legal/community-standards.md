@@ -107,11 +107,11 @@ services. We can't see encrypted posts, so please don't rely on us noticing.
 
 ### 1.9 Spam, scams and manipulation
 
-- No bulk or repetitive unwanted messages, friend requests, pokes, invites or posts.
+- No bulk or repetitive unwanted messages, friend requests, invites or posts.
 - No phishing, scams, fake giveaways, pyramid schemes or attempts to get people's passwords,
   recovery keys or recovery shares.
 - No malware or links to malware.
-- Don't sell or buy accounts, usernames, invites or Kithville items.
+- Don't sell or buy accounts, usernames or invites.
 
 ### 1.10 Illegal goods and activity
 

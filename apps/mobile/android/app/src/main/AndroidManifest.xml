@@ -26,6 +26,11 @@
     <!-- Android 14+: be told that a screenshot was taken, to show a local notice. -->
     <uses-permission android:name="android.permission.DETECT_SCREEN_CAPTURE" />
 
+    <!-- "Use Tor (Orbot)" (docs/v2/08-censorship.md §4): only to see whether Orbot is installed. -->
+    <queries>
+        <package android:name="org.torproject.android" />
+    </queries>
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />

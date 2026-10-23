@@ -32,6 +32,16 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },
+  // Censorship resistance, single origin for HTTP (docs/v2/08-censorship.md §1): with KITHWALL_SB_REWRITE=1
+  // this deployment forwards /sb/* (REST, Auth, Storage, Realtime's HTTP broadcast) to Supabase, so with
+  // NEXT_PUBLIC_API_BASE=/sb the browser only needs this app's own hostname for them. Vercel rewrites can't
+  // carry WebSockets: Realtime needs infra/cloudflare-worker or infra/proxy (NEXT_PUBLIC_REALTIME_BASE).
+  // Off by default (no rewrite at all).
+  async rewrites() {
+    const sb = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/+$/, '');
+    if (process.env.KITHWALL_SB_REWRITE !== '1' || !/^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost)[:/])/.test(sb)) return [];
+    return [{ source: '/sb/:path*', destination: `${sb}/:path*` }];
+  },
   // v1 ("2010") paths → their Kithwall 2 equivalents, so old links, bookmarks and queued pushes keep
   // working. Redirects run before the filesystem, so only paths that are no longer real routes are
   // listed here. Temporary (307), since a few may get their own pages later. v1 profile URLs

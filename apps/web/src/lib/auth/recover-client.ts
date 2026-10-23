@@ -9,7 +9,7 @@
 //                  sealed to the ephemeral key → rebuild the recovery key → same finish as above →
 //                  fresh recovery key, re-split to the same friends.
 // Afterwards the person sets a new way in: a passkey (accountApi.addPasskey) or a passphrase.
-// Works for passkey, passphrase and v1 email accounts alike; no email is needed.
+// Works for passkey and passphrase accounts alike; no email is needed.
 import {
   KithwallCryptoError, b64u, combineRecoveryShares, generateEphemeral, openSealed, signChallenge, unlockWithRecoveryKey,
   unlockWithRecoveryPhrase, verificationPhrase, type KeyBundle, type Unlocked,
@@ -20,11 +20,11 @@ import {
 } from '../keys/session';
 import { dropEph, loadEph, releaseContext, resplitToSameTrustees, storeEph, subsets } from '../recovery';
 import { AccountError } from './account';
-import { afterLogin, mfaRequired } from './login';
+import { mfaRequired } from './login';
 import { api } from './passkey-client';
 import { proveKey } from '../keys/proof';
 import { fetchChallenge, solve } from './altcha';
-import { isSyntheticEmail, normalizeHandle } from './passkey-shared';
+import { normalizeHandle } from './passkey-shared';
 import {
   cleanPhrase, type FriendsStartRes, type FriendsStatusRes, type RecoverAccountRes, type RecoverFinishRes,
 } from './recovery-shared';
@@ -74,7 +74,6 @@ export async function finishRecovery(t: RecoveryTarget, u: Unlocked, requestId?:
     return 'mfa';
   }
   await adoptUnlocked(t.userId, email, u, true);
-  await afterLogin();
   return 'ready';
 }
 
@@ -174,8 +173,8 @@ export async function afterFriendsRecovery(requestId: string): Promise<{ phrase:
 // A new way in
 
 /**
- * Set a new passphrase (email-less accounts) or password (v1 accounts) for the signed-in, unlocked
- * account. Email-less accounts are then marked so that @handle + passphrase sign-in finds them.
+ * Set a new passphrase for the signed-in, unlocked account, then mark it as a passphrase account so that
+ * @handle + passphrase sign-in finds it.
  */
 export async function setNewPassphrase(passphrase: string): Promise<void> {
   const userId = me();
@@ -184,9 +183,7 @@ export async function setNewPassphrase(passphrase: string): Promise<void> {
   const bundle = await fetchBundle(userId);
   if (!bundle) throw new AccountError('unknown', 'No keys found for this account.');
   await setNewPassword(userId, email, bundle, { amk: amk(), identity: identity() }, passphrase);
-  if (isSyntheticEmail(email)) {
-    const { data } = await sb().auth.getSession();
-    // Proof that this device holds the unlocked identity key, not just a token (security review W2).
-    await api('/api/auth/passkey/passphrase/enable', await proveKey('add_credential'), data.session?.access_token);
-  }
+  const { data } = await sb().auth.getSession();
+  // Proof that this device holds the unlocked identity key, not just a token (security review W2).
+  await api('/api/auth/passkey/passphrase/enable', await proveKey('add_credential'), data.session?.access_token);
 }

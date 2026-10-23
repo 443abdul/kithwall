@@ -1,4 +1,4 @@
--- Community RLS tests (groups, events, pages, Kithville). Run with: supabase test db
+-- Community RLS tests (groups, events). Run with: supabase test db
 begin;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
@@ -35,9 +35,7 @@ insert into oid values
   ('gaud', '20000000-0000-0000-0000-000000000001'), ('group', '20000000-0000-0000-0000-000000000002'),
   ('saud', '20000000-0000-0000-0000-000000000003'), ('secret', '20000000-0000-0000-0000-000000000004'),
   ('eaud', '20000000-0000-0000-0000-000000000005'), ('event', '20000000-0000-0000-0000-000000000006'),
-  ('gpost', '20000000-0000-0000-0000-000000000007'), ('epost', '20000000-0000-0000-0000-000000000008'),
-  ('page', '20000000-0000-0000-0000-000000000009'), ('ppost', '20000000-0000-0000-0000-00000000000a'),
-  ('act', '20000000-0000-0000-0000-00000000000b');
+  ('gpost', '20000000-0000-0000-0000-000000000007'), ('epost', '20000000-0000-0000-0000-000000000008');
 grant select on oid to authenticated;
 create function pg_temp.o(n text) returns uuid language sql security definer as $$ select id from oid where name = n $$;
 grant execute on all functions in schema pg_temp to authenticated;
@@ -151,56 +149,6 @@ select is((select count(*)::int from public.posts where id = pg_temp.o('epost'))
 select is((select count(*)::int from public.audience_members where audience_id = pg_temp.o('eaud')), 0, 'non-invitee cannot see the guest list');
 select throws_ok($$ insert into public.audience_members (audience_id, member_id, role, status) values (pg_temp.o('eaud'), pg_temp.uid('carol'), 'member', 'requested') $$,
   '42501', null, 'events take no join requests');
-
--- ---------------------------------------------------------------------------
--- Pages
--- ---------------------------------------------------------------------------
-select pg_temp.login('alice');
-select throws_ok($$ insert into public.pages (id, owner_id, name, category) values (pg_temp.o('page'), pg_temp.uid('alice'), 'Band', 'Music') $$,
-  '42501', null, 'pages cannot be created while Public is off');
-select pg_temp.su();
-update public.app_settings set value = 'true'::jsonb where key = 'public_audience_enabled';
-select pg_temp.login('alice');
-select lives_ok($$ insert into public.pages (id, owner_id, name, category) values (pg_temp.o('page'), pg_temp.uid('alice'), 'Band', 'Music') $$, 'Alice creates a page');
-select lives_ok($$ insert into public.posts (id, author_id, page_id, kind, is_public, envelope)
-  values (pg_temp.o('ppost'), pg_temp.uid('alice'), pg_temp.o('page'), 'status', true, '{"v":1}') $$, 'owner posts on the page wall');
-select lives_ok($$ insert into public.page_likes (page_id, user_id) values (pg_temp.o('page'), pg_temp.uid('alice')) $$, 'owner likes her page');
-select pg_temp.login('bob');
-select throws_ok($$ insert into public.posts (id, author_id, page_id, kind, is_public, envelope)
-  values (gen_random_uuid(), pg_temp.uid('bob'), pg_temp.o('page'), 'status', true, '{"v":1}') $$, '42501', null, 'only the owner posts on a page');
-select is((select count(*)::int from public.posts where id = pg_temp.o('ppost')), 1, 'page posts are public');
-select lives_ok($$ insert into public.page_likes (page_id, user_id) values (pg_temp.o('page'), pg_temp.uid('bob')) $$, 'Bob likes the page');
-select is((select count(*)::int from public.page_likes where page_id = pg_temp.o('page')), 1, 'Bob sees only his own like');
-select is(public.page_like_count(pg_temp.o('page')), 2::bigint, 'like count includes everyone');
-update public.pages set name = 'Hacked' where id = pg_temp.o('page');
-select is((select name from public.pages where id = pg_temp.o('page')), 'Band', 'non-owners cannot edit a page');
-select pg_temp.su();
-update public.app_settings set value = 'false'::jsonb where key = 'public_audience_enabled';
-select pg_temp.login('bob');
-select is((select count(*)::int from public.pages where id = pg_temp.o('page')), 0, 'pages disappear when Public is turned off');
-
--- ---------------------------------------------------------------------------
--- Kithville
--- ---------------------------------------------------------------------------
-select pg_temp.login('alice');
-select lives_ok($$ insert into public.game_state (user_id, blob) values (pg_temp.uid('alice'), 'AQ') $$, 'Alice saves her farm');
-select throws_ok($$ insert into public.game_state (user_id, blob) values (pg_temp.uid('bob'), 'AQ') $$, '42501', null, 'cannot create someone else''s farm');
-select throws_ok($$ update public.game_state set blob = 'AQx', version = 1 where user_id = pg_temp.uid('alice') $$, '40001', null, 'stale saves are rejected');
-select lives_ok($$ update public.game_state set blob = 'AQx', version = 2 where user_id = pg_temp.uid('alice') $$, 'saving the next version works');
-select lives_ok($$ insert into public.game_actions (id, from_id, to_id, kind, sealed) values (pg_temp.o('act'), pg_temp.uid('alice'), pg_temp.uid('bob'), 'gift', '{"v":1}') $$,
-  'send a gift to a friend');
-select throws_ok($$ insert into public.game_actions (id, from_id, to_id, kind, sealed) values (gen_random_uuid(), pg_temp.uid('alice'), pg_temp.uid('bob'), 'gift', '{"v":1}') $$,
-  'P0429', null, 'one gift per neighbor per day');
-select throws_ok($$ insert into public.game_actions (id, from_id, to_id, kind, sealed) values (gen_random_uuid(), pg_temp.uid('alice'), pg_temp.uid('carol'), 'help', '{"v":1}') $$,
-  '42501', null, 'cannot send to a non-friend');
-select pg_temp.login('bob');
-select is((select count(*)::int from public.game_state), 0, 'nobody else can read your farm');
-select is((select count(*)::int from public.game_actions where to_id = pg_temp.uid('bob')), 1, 'recipient sees the gift');
-select throws_ok($$ update public.game_actions set sealed = '{"v":2}' where id = pg_temp.o('act') $$, 'P0001', null, 'gift payload is immutable');
-select lives_ok($$ update public.game_actions set claimed_at = now() where id = pg_temp.o('act') $$, 'recipient claims the gift');
-select throws_ok($$ update public.game_actions set claimed_at = now() where id = pg_temp.o('act') $$, 'P0001', null, 'a gift is claimed once');
-select pg_temp.login('carol');
-select is((select count(*)::int from public.game_actions), 0, 'others cannot see neighbor actions');
 
 select * from finish();
 rollback;
