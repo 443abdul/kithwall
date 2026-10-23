@@ -57,7 +57,8 @@ export const config = {
     {
       // .well-known: the app-association JSON files (docs/v2/05-native.md §2) need no page CSP or nonce.
       // sb/: the optional Supabase pass-through (next.config.ts rewrites, docs/v2/08-censorship.md §1).
-      source: '/((?!api|sb/|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon.svg|sw.js|\\.well-known/).*)',
+      // kw-health.json: the static health file the connection check fetches (lib/net/runtime.ts): no proxy work.
+      source: '/((?!api|sb/|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon.svg|sw.js|kw-health\\.json|\\.well-known/).*)',
       missing: [
         { type: 'header', key: 'next-router-prefetch' },
         { type: 'header', key: 'purpose', value: 'prefetch' },

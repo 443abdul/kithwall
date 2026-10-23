@@ -19,7 +19,8 @@ export type EndReason =
   | 'rejected'          // I declined
   | 'elsewhere'         // I answered on another device
   | 'failed'            // couldn't connect
-  | 'no-media';         // microphone / camera unavailable or refused
+  | 'no-media'          // microphone / camera unavailable or refused
+  | 'relay';            // "Always relay" is on but the relay couldn't be reached (fail fast, never go direct)
 
 export interface MachineState {
   phase: Phase;
@@ -46,7 +47,7 @@ export type MachineEvent =
   | { t: 'answered-elsewhere' }
   | { t: 'timeout' }
   | { t: 'hangup' }
-  | { t: 'failed'; reason?: 'failed' | 'no-media' }
+  | { t: 'failed'; reason?: 'failed' | 'no-media' | 'relay' }
   | { t: 'reset' };
 
 export const IDLE: MachineState = Object.freeze({ phase: 'idle', invited: [], declined: [], connected: 0, everConnected: false, reason: null }) as MachineState;

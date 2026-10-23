@@ -5,8 +5,8 @@
 // Rules, in short:
 //  - Audio comes first. Video steps down 720p/30 → 360p/24 → 180p/15 → paused (voice only) long before
 //    audio is touched, and audio is squeezed (32 → 8 kbps) only when even that doesn't fit.
-//  - Going down is quick (two bad samples, ~4 s; one if it's dire). Going up is slow and earned: several
-//    good samples in a row with headroom. An upgrade that fails soon after doubles the wait for the next
+//  - Going down is quick (two bad samples, ~4 s; one if it's dire). Going up is earned: good samples in a
+//    row with headroom (the first step of a call after 2, ≈ 4 s; later ones after 4). An upgrade that fails soon after doubles the wait for the next
 //    one (exponential back-off, up to a minute), so a flaky link doesn't flap between tiers.
 //  - Paused video comes back by itself: when the link has been calm for a while the controller probes
 //    the lowest tier again (the bandwidth estimate can't grow while almost nothing is being sent).
@@ -34,6 +34,16 @@ export const SAVER_AUDIO = 12_000;
 
 export const DOWN_HOLD = 2;
 export const UP_HOLD = 4;
+/** The first step up of a call (nothing has gone wrong yet): earned in half the time (≈ 4 s). */
+export const START_UP_HOLD = 2;
+/**
+ * The bandwidth estimate can't grow far beyond what we let the encoder send: Chrome probes for headroom up
+ * to roughly twice the allocated bitrate (measured: 360p capped at 450 kbps + Opus → the estimate settles
+ * at ~830 kbps on a LAN). So "the next tier's ENTER threshold" alone could never be met from below (calls
+ * stayed at 360p on perfect links, and 180p never came back to 360p). An estimate this many times what the
+ * current tier is allowed also counts as room to step up.
+ */
+export const HEADROOM = 1.6;
 export const MAX_UP_HOLD = 30;
 
 export type Quality = 'good' | 'fair' | 'poor';
@@ -119,7 +129,7 @@ export class QualityController {
   private n = 0;
   private down = 0;
   private up = 0;
-  upHold = UP_HOLD;
+  upHold = START_UP_HOLD;
   private lastUpAt = -1_000;
   private lastDownAt = -1_000;
   private audioDown = 0;
@@ -182,7 +192,8 @@ export class QualityController {
       this.up = 0;
       if (this.down >= DOWN_HOLD || dire) {
         // An upgrade that didn't hold: make the next one wait twice as long.
-        if (this.n - this.lastUpAt <= 3 * DOWN_HOLD) this.upHold = Math.min(MAX_UP_HOLD, this.upHold * 2);
+        if (this.upHold < UP_HOLD) this.upHold = UP_HOLD;
+        else if (this.n - this.lastUpAt <= 3 * DOWN_HOLD) this.upHold = Math.min(MAX_UP_HOLD, this.upHold * 2);
         this.pushedFrom ??= this.tier;
         this.tier = target;
         this.down = 0;
@@ -196,7 +207,9 @@ export class QualityController {
         const calm = loss < 0.03 && (rtt === null || rtt < 0.6) && !cpu;
         // From paused, the estimate can't grow (almost nothing is sent), so a calm link earns a probe of
         // the lowest tier with a lower bar; elsewhere the budget must clearly fit the next tier.
-        const room = budget === null || budget >= ENTER[next]! || (this.tier === PAUSED && budget >= STAY[2]);
+        const allocated = this.tier < PAUSED ? TIERS[this.tier]!.maxBitrate + this.audioBitrate : 0;
+        const room = budget === null || budget >= ENTER[next]! || (this.tier === PAUSED && budget >= STAY[2])
+          || (this.tier < PAUSED && budget >= HEADROOM * allocated && budget >= STAY[next]!);
         if (calm && room) {
           this.up++;
           if (this.up >= this.upHold) { this.tier = next; this.up = 0; this.lastUpAt = this.n; }

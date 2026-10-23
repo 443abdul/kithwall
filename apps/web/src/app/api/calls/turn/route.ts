@@ -49,6 +49,16 @@ function json(body: unknown, status = 200) {
 
 let warned = false;
 
+/**
+ * TURN is configured but Cloudflare didn't give us credentials: a 503 (not a STUN-only 200), so the client
+ * can tell "no relay on this server" from "the relay failed just now" and fail a relay-only call fast with
+ * a clear message instead of quietly connecting directly (docs/v2/04-calls.md §2). The STUN list is still
+ * included for older clients.
+ */
+function unavailable() {
+  return json({ error: 'The call relay is unavailable right now.', iceServers: STUN_ONLY, relay: false, ttl: TTL }, 503);
+}
+
 export async function POST(request: Request) {
   if (!SUPABASE_URL || !SUPABASE_KEY) return json({ error: 'Calls are not available.' }, 503);
   const token = /^Bearer\s+([A-Za-z0-9._-]{20,4096})$/.exec(request.headers.get('authorization') ?? '')?.[1];
@@ -79,13 +89,13 @@ export async function POST(request: Request) {
     });
     if (!res.ok) {
       console.warn(`[calls] TURN credentials request failed (status ${res.status})`);
-      return json({ iceServers: STUN_ONLY, relay: false, ttl: TTL });
+      return unavailable();
     }
     const iceServers = cleanIceServers(await res.json());
     const relay = hasTurn(iceServers);
     return json({ iceServers: iceServers.length ? iceServers : STUN_ONLY, relay, ttl: TTL });
   } catch {
     console.warn('[calls] TURN credentials request failed (network)');
-    return json({ iceServers: STUN_ONLY, relay: false, ttl: TTL });
+    return unavailable();
   }
 }

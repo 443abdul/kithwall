@@ -35,16 +35,29 @@ export type SignalBody =
   | { k: 'ring'; video: boolean; key: string }
   /** Caller gave up before anyone answered. */
   | { k: 'cancel' }
-  /** A device entered the call (accepted, or the caller starting it). `fe`: can do frame encryption. */
-  | { k: 'join'; fe: boolean; video: boolean }
+  /**
+   * A device entered the call (accepted, or the caller starting it). `fe`: can do frame encryption.
+   * `tr` (optional, absent on older clients): can trickle ICE candidates (`cand`), so offers and answers
+   * are sent at once instead of after gathering.
+   */
+  | { k: 'join'; fe: boolean; video: boolean; tr?: boolean }
   /** Reply to a join, addressed to the newcomer. */
-  | { k: 'here'; fe: boolean; video: boolean }
+  | { k: 'here'; fe: boolean; video: boolean; tr?: boolean }
+  /** The callee's device is ringing (so the caller can show "Ringing…"). Older clients drop it. */
+  | { k: 'ringing' }
   /** "Is this call still ringing?" (a device opened from a push). */
   | { k: 'probe' }
   | { k: 'decline' }
   | { k: 'busy' }
-  | { k: 'offer'; sdp: string; fe: boolean }
-  | { k: 'answer'; sdp: string; fe: boolean }
+  /** `tr`: this description is sent before ICE gathering; its candidates follow in `cand` messages. */
+  | { k: 'offer'; sdp: string; fe: boolean; tr?: boolean }
+  | { k: 'answer'; sdp: string; fe: boolean; tr?: boolean }
+  /**
+   * Trickled ICE candidates for one ICE generation (`u` = my ice-ufrag): ALL of them gathered so far, as
+   * [sdpMid, sdpMLineIndex, candidate line], so any one message supersedes the earlier ones and a lost or
+   * repeated one does no harm (idempotent). `done`: gathering finished.
+   */
+  | { k: 'cand'; u: string; c: [string, number, string][]; done?: boolean }
   /**
    * Microphone / camera state, so the others can show "muted" and an avatar instead of black video.
    * Optional (low-bandwidth, docs §11; absent = unchanged, so older clients interoperate):
@@ -104,6 +117,17 @@ export function isWire(x: unknown): x is Wire {
     && (w.c === undefined || (typeof w.c === 'string' && UUID_RE.test(w.c)));
 }
 
+const MAX_CANDIDATES = 64;
+/** ice-ufrag is 4–256 ice-chars (RFC 8839: ALPHA / DIGIT / "+" / "/"). */
+const UFRAG_RE = /^[A-Za-z0-9+/]{4,256}$/;
+function validCandidates(x: Record<string, unknown>): boolean {
+  if (typeof x.u !== 'string' || !UFRAG_RE.test(x.u) || (x.done !== undefined && typeof x.done !== 'boolean')) return false;
+  if (!Array.isArray(x.c) || x.c.length > MAX_CANDIDATES) return false;
+  return x.c.every((e: unknown) => Array.isArray(e) && e.length === 3 && typeof e[0] === 'string' && e[0].length <= 32
+    && Number.isInteger(e[1]) && (e[1] as number) >= 0 && (e[1] as number) < 16
+    && typeof e[2] === 'string' && e[2].length <= 1024 && /^candidate:/.test(e[2]) && !/[\r\n]/.test(e[2]));
+}
+
 function validBody(b: unknown): b is SignalBody {
   const x = b as Record<string, unknown> | null;
   if (!x || typeof x !== 'object') return false;
@@ -111,8 +135,10 @@ function validBody(b: unknown): b is SignalBody {
   const sdp = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= MAX_SDP;
   switch (x.k) {
     case 'ring': return bool(x.video) && typeof x.key === 'string' && /^[A-Za-z0-9_-]{43}$/.test(x.key);
-    case 'join': case 'here': return bool(x.fe) && bool(x.video);
-    case 'offer': case 'answer': return sdp(x.sdp) && bool(x.fe);
+    case 'join': case 'here': return bool(x.fe) && bool(x.video) && (x.tr === undefined || bool(x.tr));
+    case 'offer': case 'answer': return sdp(x.sdp) && bool(x.fe) && (x.tr === undefined || bool(x.tr));
+    case 'cand': return validCandidates(x);
+    case 'ringing': return true;
     case 'state': {
       const small = (v: unknown, max: number) => v === undefined || (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max);
       return bool(x.mic) && bool(x.cam) && small(x.net, 2) && small(x.rx, 3) && (x.vp === undefined || bool(x.vp));

@@ -13,6 +13,7 @@ import { Icon } from '@/components/ui/Icon';
 import { cx } from '@/components/ui/cx';
 import { ConversationAvatar, PersonAvatar, useConversationTitle, useNameOf } from '@/components/messages/look';
 import { CallIcon, type CallIconName } from './CallIcon';
+import { CallCheck } from './CallCheck';
 
 // ------------------------------------------------------------------------------------------ helpers
 
@@ -99,15 +100,24 @@ function endKey(s: CallSnapshot): MessageKey {
     case 'elsewhere': return 'calls.ended.elsewhere';
     case 'failed': return 'calls.ended.failed';
     case 'no-media': return 'calls.ended.noMedia';
+    case 'relay': return 'calls.ended.relay';
     default: return 'calls.ended.ended';
   }
+}
+
+/** The line that explains an ending that needs explaining, with what to do about it. */
+function endDetail(s: CallSnapshot): MessageKey | null {
+  if (s.m.reason === 'no-media') return s.mediaError ? (`calls.media.${s.mediaError}` as MessageKey) : 'calls.media.other';
+  if (s.m.reason === 'relay') return 'calls.ended.relayBody';
+  if (s.m.reason === 'failed') return 'calls.ended.failedBody';
+  return null;
 }
 
 function useStatus(s: CallSnapshot, peer: PeerView | null): string {
   const t = useT();
   const duration = useDuration(s.m.phase === 'active' ? s.connectedAt : null);
   if (s.m.phase === 'ended') return t(endKey(s));
-  if (s.m.phase === 'outgoing') return t('calls.status.calling');
+  if (s.m.phase === 'outgoing') return t(s.progress === 'ringing' ? 'calls.status.ringing' : s.progress === 'connecting' ? 'calls.status.connecting' : 'calls.status.calling');
   if (s.m.phase === 'connecting') return t('calls.status.connecting');
   if (peer && peer.state === 'reconnecting') return t('calls.status.reconnecting');
   return duration;
@@ -243,6 +253,9 @@ function InCall({ s }: { s: CallSnapshot }) {
     calls.setSink(outputs[(i + 1) % outputs.length]!.deviceId);
   };
   const who = group ? title : s.peers[0] ? nameOf(s.peers[0].userId) : title;
+  const [check, setCheck] = useState(false);
+  const detail = ended ? endDetail(s) : null;
+  const canRetry = ended && s.isCaller && (s.m.reason === 'failed' || s.m.reason === 'relay' || s.m.reason === 'no-media');
   const weak = s.m.phase === 'active' && s.weak
     ? s.weak.who === 'me' ? t('calls.weak.mine') : s.weak.who === 'peer' ? t('calls.weak.theirs', { name: nameOf(s.weak.userId) }) : null
     : null;
@@ -258,6 +271,7 @@ function InCall({ s }: { s: CallSnapshot }) {
           <h2 id="k-call-title" className="k-call-title" dir="auto">{who}</h2>
           <p className="k-call-status" aria-live="polite">{status}</p>
           {weak ? <p className="k-call-weak" role="status">{weak}</p> : null}
+          {!ended && s.camError ? <p className="k-call-weak" role="status">{t('calls.camError')}</p> : null}
         </div>
         <button type="button" className="k-call-topbtn k-call-lock" onClick={() => setSecurity(true)} aria-label={t('calls.security.open')} title={t('calls.security.open')}>
           <CallIcon name="shield" />
@@ -284,6 +298,16 @@ function InCall({ s }: { s: CallSnapshot }) {
         )}
       </div>
 
+      {ended && (detail || canRetry || s.m.reason === 'no-media') ? (
+        <div className="k-call-banner" role="alert">
+          {detail ? <p className="k-call-detail">{t(detail)}</p> : null}
+          <div className="k-call-ended-actions">
+            {canRetry ? <button type="button" className="k-call-banner-btn is-primary" onClick={() => calls.retry()}>{t('calls.retry')}</button> : null}
+            {s.m.reason === 'no-media' ? <button type="button" className="k-call-banner-btn" onClick={() => setCheck(true)}>{t('calls.check.open')}</button> : null}
+          </div>
+        </div>
+      ) : null}
+
       {s.suggestVoice && !ended ? (
         <div className="k-call-banner" role="alert">
           <p>{t('calls.weak.suggest')}</p>
@@ -304,6 +328,7 @@ function InCall({ s }: { s: CallSnapshot }) {
       </div>
 
       <SecurityPanel s={s} open={security} onClose={() => setSecurity(false)} />
+      <CallCheck open={check} onClose={() => setCheck(false)} />
     </div>
   );
 }

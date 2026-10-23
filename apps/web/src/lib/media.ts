@@ -99,6 +99,20 @@ export function fileUrl(ref: FileRef): Promise<string> {
   return p;
 }
 
+/**
+ * Forget decrypted copies of files nobody should show any more (e.g. someone's previous profile picture,
+ * lib/people). The object URLs are revoked a little later, so a picture still on screen isn't torn down
+ * before the components showing it have switched to the new one; a later fileUrl() decrypts afresh.
+ */
+export function releaseFileUrls(paths: readonly string[], delayMs = 30_000): void {
+  for (const path of paths) {
+    const p = urls.get(path);
+    if (!p) continue;
+    urls.delete(path);
+    setTimeout(() => { void p.then((u) => URL.revokeObjectURL(u)).catch(() => undefined); }, delayMs);
+  }
+}
+
 /** React hook: decrypted object URL for a file reference (null while loading or on failure). */
 export function useFileUrl(ref: FileRef | null | undefined): string | null {
   const [url, setUrl] = useState<string | null>(null);

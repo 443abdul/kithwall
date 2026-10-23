@@ -9,6 +9,11 @@ import { InstallRuntime } from '@/components/install/InstallRuntime';
 import { NativeRuntime } from '@/components/native/NativeRuntime';
 import { NetRuntime } from '@/components/net/NetRuntime';
 import { invalidateSoon } from '@/lib/invalidate';
+import { people } from '@/lib/people';
+import { releaseFileUrls } from '@/lib/media';
+
+// Someone's previous profile picture: free its decrypted copy once nothing shows it (lib/people).
+people.setFileRelease((paths) => releaseFileUrls(paths));
 
 export function Providers({ children }: { children: ReactNode; nonce?: string }) {
   const [qc] = useState(() => new QueryClient({
@@ -94,15 +99,39 @@ function RealtimeBridge() {
     // Deletes are not published through postgres_changes (Realtime can't apply RLS to them, security
     // review D1): the database sends a content-free "something of yours changed" on db:<my id>, a private
     // topic only I can receive (supabase/migrations/20261028010100_authz_realtime.sql).
+    let joined = false;
     const db = sb().channel(`db:${userId}`, { config: { private: true } })
       .on('broadcast', { event: 'change' }, ({ payload }) => {
         const t = (payload as { t?: unknown } | undefined)?.t;
         if (t === 'friendships') { inv.key(['friends']); inv.key(['requests']); }
         else if (t === 'likes') inv.likes();
+        // A connection (or I, on another device) changed a profile: re-read the ones that changed
+        // (the notice names no one; lib/people compares cheap stamps). 20261031000100_profile_info_live.sql
+        else if (t === 'profile_info') people.requestSync();
       })
-      .subscribe();
+      .subscribe((state) => {
+        // After a reconnect, notices sent while the socket was down are lost: catch up once.
+        if (state === 'SUBSCRIBED') { if (joined) people.requestSync(); joined = true; }
+      });
+    // Back in the foreground (tab shown, app resumed, network back): catch up on missed profile changes.
+    let last = 0;
+    const resume = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - last < 2_000) return;
+      last = now;
+      people.requestSync();
+    };
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('online', resume);
+    window.addEventListener('pageshow', resume);
     const unsub = keyring.subscribe(() => { inv.all(); });
-    return () => { unsub(); inv.cancel(); void sb().removeChannel(ch); void sb().removeChannel(db); };
+    return () => {
+      unsub(); inv.cancel(); void sb().removeChannel(ch); void sb().removeChannel(db);
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('online', resume);
+      window.removeEventListener('pageshow', resume);
+    };
   }, [status, userId, inv]);
   return null;
 }

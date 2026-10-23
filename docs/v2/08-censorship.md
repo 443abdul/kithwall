@@ -113,8 +113,10 @@ impact is small; watch Auth rate-limit errors after switching.
   Supabase direct). A network error on a Supabase request, the `online` event, and a 5-minute timer while
   rerouted trigger a parallel health check (`<apiBase>/auth/v1/health`, JSON required — a censor's block
   page answers 200 HTML); the first working route wins, GETs are retried once, other methods are not
-  (they may have reached the server). The page origin is checked through `/api/net/health`. Banner:
-  "Connected through a mirror" or "Kithwall seems blocked here — try these options" → `/help/blocked`.
+  (they may have reached the server). The page origin is checked through the static file
+  `/kw-health.json` (not a serverless function, see §2.3). Banner: "Connected through a mirror",
+  "You're offline", "Can't reach Kithwall right now" or "Kithwall seems blocked here — try these
+  options" → `/help/blocked`, only after sustained failures (§2.3).
   The web app never silently navigates to another origin: sign-in, keys and storage are per-origin, so the
   person chooses ("Open" in the mirror list).
 * **Failover** (implemented, Android): `KwNet.java` keeps built-in fallback origins
@@ -130,6 +132,41 @@ impact is small; watch Auth rate-limit errors after switching.
   `https://kithwall.com/.well-known/webauthn`, which is exactly what's blocked. People sign in on mirrors
   with **passphrase or recovery key** (the UI says so). Each origin also has its own local session and
   unlocked keys.
+
+### 2.3 Health checks and the banner (no false "blocked" alerts)
+
+Until 2026-10-23 one failed check was enough to show "Kithwall seems blocked here": the page-origin probe
+was `/api/net/health`, a serverless function (a Vercel cold start takes 1–3 s, more on a slow phone
+link), any failed Supabase request or Realtime WebSocket error triggered a check, and the check ran even
+while the page was hidden or the phone was waking up (requests fail for a moment after a resume or a
+Wi-Fi ↔ mobile-data switch). Production has `NEXT_PUBLIC_MIRROR_LIST_PUBKEY` set (so the runtime is
+on) but no mirror list, so the banner could only point at the help page. Once shown it stayed for up to
+5 minutes. That is how people saw "blocked" while every other app worked.
+
+Now (`lib/net/health.ts`, pure, `health.test.ts`):
+
+* **Probes.** Our own origin: `GET /kw-health.json?t=<now>` — a static file from the CDN edge (excluded
+  from `proxy.ts`, so no function runs at all), `cache: no-store` plus the cache-busting query. Backend:
+  `<apiBase>/auth/v1/health` per route, as before. 8 s timeout each. No third party is ever asked.
+* **What a probe says.** JSON 2xx: ok. A network error, our own timeout, a non-JSON 2xx/3xx/4xx (a
+  censor's or captive portal's HTML page) or 451: fail. A JSON 4xx or any 5xx: *neutral* — the server
+  answered, so the path works; an app error is never "blocked". An abort we didn't cause (page unload):
+  no verdict. A check taken while the page is hidden: no verdict.
+* **What a check says.** `navigator.onLine === false` → offline. Our origin and the backend both fail →
+  *unreachable* (most likely this connection is down; said calmly). Exactly one of them fails →
+  *blocked*. Otherwise direct / rerouted.
+* **When it is shown.** Only after 3 bad checks in a row spread over ≥ 25 s (offline as reported by the
+  browser: 2 over ≥ 6 s; "blocked" with no mirror to offer: 4 over ≥ 60 s). One good check clears it at
+  once; a good check in between restarts the count. Wording switches straight away between bad states.
+* **When it checks.** On a network-level failure of a Supabase request or the Realtime socket (debounced
+  1.5 s; ignored while hidden and for 5 s after the page becomes visible or the `online` event); then
+  5 / 8 / 12 / 20 / 30 s apart while something looks wrong but isn't shown yet; once shown, backing off
+  30 s → 5 min; at `online` (to clear quickly) and on becoming visible only if something is pending or
+  shown; every 5 minutes while rerouted. Nothing at all while everything works.
+* **Wording.** offline: "You're offline. Kithwall will reconnect by itself." (no link). unreachable:
+  "Can't reach Kithwall right now. Still trying…" + "Other apps work?" → `/help/blocked`. blocked: as
+  before, + "Options" → `/help/blocked`. All dismissible for the browser session.
+* `/api/net/health` stays for the Android app (`KwNet.java`) and mirrors checking each other.
 
 ## 3. SNI and DNS evasion
 
@@ -236,8 +273,8 @@ server); agree on another way to reach people beforehand. Proposed, not built:
 | Supabase client wiring (identical when unconfigured) | `lib/supabase.ts` (+ `netUrl()` in `media.ts`, `calls/engine.ts`, `chat/signals.ts`) |
 | Signed mirror list (Ed25519 via `@kithwall/crypto`), cache, rollback protection | `lib/net/mirrors.ts`, `packages/crypto/src/signed.ts` |
 | Key/sign/verify tool | `apps/web/scripts/mirrors.mjs` |
-| Health + list endpoints | `/api/net/health`, `/api/net/mirrors` |
-| Failover + banner | `lib/net/runtime.ts`, `components/net/NetRuntime.tsx`, `NetBanner.tsx` |
+| Health + list endpoints | `public/kw-health.json` (web), `/api/net/health` (Android, mirrors), `/api/net/mirrors` |
+| Failover + banner | `lib/net/runtime.ts`, `lib/net/health.ts` (when to show what, §2.3), `components/net/NetRuntime.tsx`, `NetBanner.tsx` |
 | Help page + Settings → Connection | `/help/blocked`, `/you/settings/connection` (`components/net/*`), `net.*` i18n keys in 12 locales |
 | CSP: configured origins only; Onion-Location; onion without upgrade-insecure-requests | `src/proxy.ts`, `lib/net/csp.ts` |
 | Optional Vercel `/sb` rewrite | `next.config.ts` (`KITHWALL_SB_REWRITE=1`) |

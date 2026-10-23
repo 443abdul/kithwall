@@ -21,6 +21,7 @@ import { useToast } from '@/components/ui/Toast';
 import { PersonAvatar } from '@/components/messages/look';
 import { SettingsPage, Section } from './shared';
 import { loadCallPrefs, saveCallPrefs, useCallPrefs } from '@/lib/calls/prefs';
+import { CallCheck } from '@/components/calls/CallCheck';
 
 function useSaver() {
   const t = useT();
@@ -67,9 +68,14 @@ function CallsPrivacy() {
   const p = useCallPrefs();
   const { status } = useSession();
   const save = useSaver();
+  const [check, setCheck] = useState(false);
   useEffect(() => { if (status === 'ready') void loadCallPrefs().catch(() => undefined); }, [status]);
   return (
     <Section id="calls" title={t('calls.settings.title')}>
+      <div>
+        <Button size="sm" icon="camera" onClick={() => setCheck(true)}>{t('calls.check.open')}</Button>
+        <CallCheck open={check} onClose={() => setCheck(false)} />
+      </div>
       <Switch checked={p.relay} label={t('calls.settings.relay')} description={t('calls.settings.relayBody')}
         onChange={(v) => void save(() => saveCallPrefs({ relay: v }))} />
       <Switch checked={p.saver} label={t('calls.settings.saver')} description={t('calls.settings.saverBody')}

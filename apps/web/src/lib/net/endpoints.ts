@@ -164,7 +164,7 @@ export async function pickRoute(routes: Route[], probe: (r: Route) => Promise<bo
   return null;
 }
 
-export type NetStatus = 'unknown' | 'direct' | 'rerouted' | 'blocked' | 'offline';
+export type NetStatus = 'unknown' | 'direct' | 'rerouted' | 'blocked' | 'offline' | 'unreachable';
 
 /** What the banner says: rerouted = working through something other than the first route. */
 export function statusOf(routes: Route[], current: Route | null, appOk: boolean, online: boolean): NetStatus {

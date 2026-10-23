@@ -42,9 +42,9 @@ function clearBytes(frame) {
   return 1; // audio frames have no type
 }
 
-async function encryptFrame(frame, controller, ep) {
+async function encryptFrame(frame, ep) {
   const data = new Uint8Array(frame.data);
-  if (!data.length) { controller.enqueue(frame); return; }
+  if (!data.length) return frame;
   try {
     const key = await keyFor(ep);
     const h = Math.min(clearBytes(frame), data.length);
@@ -57,15 +57,16 @@ async function encryptFrame(frame, controller, ep) {
     out[out.length - 1] = MARK;
     frame.data = out.buffer;
     stats.enc++;
-    controller.enqueue(frame);
+    return frame;
   } catch (_) {
     stats.fail++; // never send a frame in the clear
+    return null;
   }
 }
 
-async function decryptFrame(frame, controller, ep) {
+async function decryptFrame(frame, ep) {
   const data = new Uint8Array(frame.data);
-  if (!data.length) { controller.enqueue(frame); return; }
+  if (!data.length) return frame;
   try {
     const h = Math.min(clearBytes(frame), data.length);
     if (data.length < h + 16 + 13 || data[data.length - 1] !== MARK) throw new Error('not sealed');
@@ -77,16 +78,37 @@ async function decryptFrame(frame, controller, ep) {
     out.set(pt, h);
     frame.data = out.buffer;
     stats.dec++;
-    controller.enqueue(frame);
+    return frame;
   } catch (_) {
     stats.fail++; // dropped: never play something that didn't authenticate
+    return null;
   }
 }
 
+// Frames are encrypted/decrypted concurrently (WebCrypto runs off this thread) but always passed on in
+// the order they came in. Waiting for each frame before starting the next (the obvious TransformStream)
+// queued frames behind each other on slow phones: measured under 4× CPU throttling, the receiver's audio
+// jitter buffer grew from ~60 ms to ~440 ms with frame encryption on. Up to MAX_INFLIGHT frames may be in
+// flight; beyond that the stream waits (back-pressure), so memory stays bounded.
+const MAX_INFLIGHT = 16;
 function pipe(readable, writable, op, ep) {
   const fn = op === 'encrypt' ? encryptFrame : decryptFrame;
+  let tail = Promise.resolve();
+  let inflight = 0;
   readable
-    .pipeThrough(new TransformStream({ transform: (frame, controller) => fn(frame, controller, ep) }))
+    .pipeThrough(new TransformStream({
+      transform(frame, controller) {
+        const work = fn(frame, ep);
+        inflight++;
+        tail = tail.then(() => work).then((out) => {
+          inflight--;
+          try { if (out) controller.enqueue(out); } catch (_) { /* the stream is closing */ }
+        });
+        if (inflight > MAX_INFLIGHT) return tail;
+        return undefined;
+      },
+      flush() { return tail; },
+    }))
     .pipeTo(writable)
     .catch(() => undefined);
 }

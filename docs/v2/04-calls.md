@@ -1,6 +1,6 @@
 # Kithwall 2: end-to-end encrypted voice and video calls
 
-Status: implemented (phase 4) · 2026-10-21 · brief §4 "Calls", §10 "a calls signalling channel over Realtime,
+Status: implemented (phase 4) · 2026-10-21 · speed and reliability pass 2026-10-23 (§12) · brief §4 "Calls", §10 "a calls signalling channel over Realtime,
 with Cloudflare TURN credentials minted per call"
 
 Voice and video calls in one-to-one chats, group chats and circle chats of up to 8 people. Calls are
@@ -30,6 +30,7 @@ relays encrypted packets.
 | Safety code | `lib/calls/safety.ts` |
 | Ring tones (WebAudio, no files) | `lib/calls/tones.ts` |
 | Call preferences: relay, data saver, camera off (vault, namespace `calls`) | `lib/calls/prefs.ts`, Settings → Privacy → Calls |
+| Device choice, media errors; "Test camera and microphone" (§7, §12) | `lib/calls/devices.ts`, `components/calls/CallCheck.tsx` |
 | Low bandwidth (§11): quality controller, Opus/codec tuning (pure) | `lib/calls/quality.ts`, `lib/calls/sdp.ts`, tests `lib/calls/lowbw.test.ts` |
 | UI | `components/calls/CallButtons.tsx` (chat header), `CallRoot.tsx` (mounted in `app/layout.tsx`; loads `CallRuntime.tsx` once unlocked), `CallScreens.tsx`, `CallIcon.tsx`, `styles/v2/calls.css` |
 | Thread notice | `lib/messages.ts` `readNotice` (event `{kind:'call'}`), `components/messages/content.tsx` `eventLine` |
@@ -41,16 +42,37 @@ relays encrypted packets.
 = 120/hour) calls Cloudflare's documented endpoint
 `POST https://rtc.live.cloudflare.com/v1/turn/keys/$CLOUDFLARE_TURN_KEY_ID/credentials/generate-ice-servers`
 with `Authorization: Bearer $CLOUDFLARE_TURN_API_TOKEN` and `{"ttl": 3600}`, and returns
-`{iceServers, relay, ttl}`. Entries are filtered (stun:/turn:/turns: only, port 53 dropped because we
-don't trickle ICE). Credentials and request details are never logged. Without the two env vars the
-route returns `stun:stun.cloudflare.com:3478` only, `relay: false`, and logs once (dev log).
+`{iceServers, relay, ttl}`. Entries are filtered (stun:/turn:/turns: only, port 53 dropped: browsers block
+it) and ordered UDP → TCP → TLS. Credentials and request details are never logged. Without the two env
+vars the route returns `stun:stun.cloudflare.com:3478` only, `relay: false`, and logs once (dev log). When
+the keys ARE set but Cloudflare fails, it answers **503** (with the STUN list for older clients), so the
+client can tell "this server has no relay" from "the relay failed just now".
+
+The client (`lib/calls/turn.ts`) fetches the credentials **before** anyone taps Call: when a chat with
+call buttons opens and when a call rings on this device; they are cached until 5 minutes before the
+1-hour TTL and refreshed in the background (§12). Each fetch has a 6 s timeout.
 
 **"Always relay calls (hide my IP from the other person)"** is ON by default. Then
 `iceTransportPolicy: 'relay'`, so only TURN candidates are used and the other person sees Cloudflare's
 address, never yours. The trade-off is explained in the setting: a little more delay, and Cloudflare sees
-two relay endpoints exchanging encrypted packets. When it's on but no TURN server is available (local
-dev, misconfiguration), the call still connects directly and the encryption panel says so plainly
-("The relay isn't available right now…").
+two relay endpoints exchanging encrypted packets. When the server has no TURN configured at all
+(local dev, previews), the call still connects directly and the encryption panel says so plainly ("The
+relay isn't available right now…"). When TURN is configured but the credentials can't be fetched
+(timeout, 503, offline), the fetch is retried once and then the call **fails fast** with "Couldn't reach
+the call relay" plus what to do (try again, or turn the setting off). It never hangs and never quietly
+falls back to a direct connection that would show the IP address the person asked to hide. Nobody is
+rung for a call that can't be relayed.
+
+**Why "Always relay" stays ON by default (decision 2026-10-23).** The slowness people blamed on the relay
+came from things that are now fixed, not from relaying itself: the credential fetch sat on the critical
+path at tap time (a serverless cold start + Supabase auth + Cloudflare's API: 0.2–1.4 s locally, more on
+Vercel Hobby), ICE waited for *every* candidate, including TURN-over-TCP/TLS allocations, before sending
+the offer (3.1 s measured, up to 12 s), and on failure nothing said what was wrong (§12). Relaying
+through Cloudflare's anycast network adds one short hop (its points of presence are near both ends,
+including Karachi, Lahore and Islamabad) and is often *more* reliable on mobile carriers' CGNAT, where
+direct paths fail. Turning it off by default would show every caller's IP address (roughly where they
+are) to the other person, which the brief rules out for at-risk users. The trade-off stays in the
+setting's description.
 
 ## 3. Signalling
 
@@ -66,12 +88,22 @@ dev, misconfiguration), the call still connects directly and the encryption pane
   receiver tries the identity keys of the conversation's members (≤ 8). Inside: `{call, from:<user:device>,
   to?, ts, body}`. Receivers drop anything that fails to verify, whose `from` user isn't the signer, older
   than 90 s, or already seen (signal-id dedupe).
-- **Kinds**: `ring` (with the per-call frame key), `cancel`, `join`, `here`, `probe`, `decline`, `busy`,
-  `offer`, `answer`, `state` (mic/camera, plus optional `net`/`vp`/`rx`, §11), `restart` (§11), `leave`.
+- **Kinds**: `ring` (with the per-call frame key), `ringing` (the callee's device is ringing: the caller
+  shows "Ringing…"), `cancel`, `join`, `here`, `probe`, `decline`, `busy`, `offer`, `answer`, `cand`
+  (trickle ICE), `state` (mic/camera, plus optional `net`/`vp`/`rx`, §11), `restart` (§11), `leave`.
   Older clients ignore the optional fields and drop `restart` as malformed, so versions interoperate.
 - **Mesh**: each device is an endpoint `<user id>:<random per-tab id>`. On `join` everyone replies `here`.
-  The lexically smaller endpoint makes the offer, so there's never glare. ICE is gathered before the SDP is
-  sent ("vanilla ICE", 3 s, or up to 12 s while there is no candidate yet: §11), which means fewer messages and nothing to reorder. Audio and video
+  The lexically smaller endpoint makes the offer, so there's never glare. **Trickle ICE** (2026-10-23, §12):
+  the offer and the answer are sent as soon as they exist and the candidates follow in sealed `cand`
+  messages. Each `cand` carries *all* candidates gathered so far for one ICE generation (`u` = the
+  sender's ice-ufrag, ≤ 64 entries of `[sdpMid, sdpMLineIndex, candidate]`, `done` once gathering
+  finished), so any one supersedes the earlier ones: a lost message costs nothing and a repeat is a no-op,
+  the same idempotency as every other handshake message. The first candidate goes at once, later ones in
+  150 ms batches (2–4 messages per connection). Candidates that arrive before the matching description
+  are kept and applied after it; ones for an old ICE generation are ignored. Trickle is used only when
+  both ends announced it (`tr` in `join`/`here`/`offer`/`answer`); with an older client the offer waits
+  for gathering as before ("vanilla ICE", 3 s, or up to 12 s while there is no candidate yet). The reply
+  to `join` (`here`) and the offer go out together instead of one after the other. Audio and video
   transceivers are created up front, so turning the camera on later is a `replaceTrack`, not a
   renegotiation. On 'disconnected' (after 2 s) or 'failed' the offerer restarts ICE with back-off, and a peer gone
   for 30 s is dropped (§11).
@@ -98,7 +130,11 @@ call id.)
    `HKDF(callKey, "kithwall/v1/call-frame/<sender endpoint>")`. `callKey` is 32 random bytes from the
    caller, sent in the sealed `ring`. The codec header bytes (VP8 key 10, delta 3, audio 1) stay clear and
    are authenticated as AAD. VP8 is preferred. A frame that fails to authenticate is dropped, never played.
-   Both ends announce support in `join`/`here`, and the layer is only used when both have it. Otherwise the
+   Both ends announce support in `join`/`here`, and the layer is only used when both have it. The worker
+   encrypts/decrypts frames **concurrently but passes them on in order** (≤ 16 in flight, then
+   back-pressure). Processing one frame at a time queued them behind each other on a slow CPU: under 4×
+   CPU throttling the receiver's audio jitter buffer reached 223–436 ms with the layer on, against
+   63–143 ms without it; with the concurrent worker it is 43–74 ms, the same as without (§12). Otherwise the
    call silently uses DTLS-SRTP alone, which is still end to end. The panel then says "Protected by
    WebRTC's end-to-end encryption…" rather than anything alarming. Debug: `localStorage['kw.calls.noFrameE2EE']='1'`
    disables the layer; `localStorage['kw.calls.debug']='1'` exposes `window.__kwCall` (engine + peer
@@ -112,7 +148,9 @@ call id.)
 ## 5. Call states
 
 `machine.ts`: idle → outgoing / incoming → connecting → active → ended (reasons: hangup, remote,
-declined, busy, no-answer, missed, rejected, elsewhere, failed, no-media) → idle after 2.5 s. Ringing
+declined, busy, no-answer, missed, rejected, elsewhere, failed, no-media, relay) → idle after 2.5 s (20 s
+for endings that need reading: failed, no-media, relay; or until dismissed). While outgoing, the caller's
+status follows `progress`: Calling… → Ringing… (a `ringing` arrived) → Connecting… (someone joined). Ringing
 lasts 45 s, connecting 30 s (45 s on 2G/3G). A group call carries on while anyone is connected. A busy callee replies
 `busy`.
 
@@ -141,13 +179,23 @@ lasts 45 s, connecting 30 s (45 s on 2G/3G). A group call carries on while anyon
 - Incoming: full screen on phones (a centred panel on desktop), with the caller's avatar pulsing (off with
   reduced motion), Decline and Accept (Accept is focused; "Accept with video" for video calls). Ring:
   WebAudio chime, plus vibration after the page has been interacted with.
-- In call: title, status (Calling… / Connecting… / duration / Reconnecting…, `aria-live`), connection
+- In call: title, status (Calling… / Ringing… / Connecting… / duration / Reconnecting…, `aria-live`), connection
   quality bars (from the quality controller, with the reason: §11), "Your/Dan's connection is weak",
   encryption panel, minimise. 1:1: the remote video or avatar,
   plus a self-view picture-in-picture that you tap to move to the other corner. Groups: a grid including
   yourself. Controls: mute, camera on/off, switch camera (with two cameras), audio output (where
   `setSinkId` exists and there are several outputs), data saver (§11), hang up. A "switch to voice only?"
   banner appears on a weak connection (§11).
+- Errors say what happened and what to do (§12): microphone refused (how to allow it in site settings),
+  missing, or used by another app; relay unreachable; couldn't connect. "Try again" (caller) and "Test
+  camera and microphone" (no-media) buttons. A video call whose camera fails carries on as a voice call
+  ("Your camera isn't available, so this is a voice call").
+- **Test camera and microphone** (`CallCheck.tsx`, Settings → Privacy → Calls, and from a no-media
+  ending): self-view, live microphone level (`role="meter"`), microphone/camera/speaker pickers, a test
+  sound. Nothing is recorded or sent; the stream stops when the dialog closes. The choice is kept on this
+  device (`lib/calls/devices.ts`, localStorage) and used as an `ideal` constraint (a missing device falls
+  back to the default). A microphone or camera that disappears mid-call (unplugged headset, another app)
+  is re-acquired by itself.
 - Minimised: a bar at the top that follows you around the app (the root layout keeps it mounted), with
   mute, hang up and tap to return.
 - Logical properties throughout (RTL tested in Arabic). Tokens only, so it follows all three styles in
@@ -262,13 +310,19 @@ safety code are as in §3–§4, and the CSP is unchanged.
 - Down: two bad samples (≈ 4 s) or one if dire (budget under half the tier's need, or ≥ 35 % loss). Loss
   ≥ 10 % or RTT ≥ 1 s steps down one tier; ≥ 25 % loss pauses video; a CPU-limited encoder (cheap phones)
   steps down to 180p but never pauses for CPU alone.
-- Up: 4 calm samples in a row (loss < 3 %, RTT < 600 ms) with the *enter* threshold met. An upgrade that
+- Up: 4 calm samples in a row (loss < 3 %, RTT < 600 ms; the **first** step of a call needs only 2, about
+  4 s) with room for the next tier: the *enter* threshold met, **or** an estimate ≥ 1.6 × what the current
+  tier may send (video maxBitrate + Opus). The second rule (2026-10-23) is needed because the bandwidth
+  estimate can't grow far past what the encoder is allowed to send: with 360p capped at 450 kbps it
+  settled at ~830 kbps on a LAN and never reached 1.3 Mbps, so calls stayed at 360p on perfect links (and
+  a call pushed down to 180p never came back to 360p). An upgrade that
   fails within ~6 s doubles the wait for the next one (8 → 16 → 30 samples, i.e. up to a minute); a long
   calm spell halves it again. Paused video probes 180p again after a calm spell even though the estimate
   can't grow while almost nothing is sent.
 - Resolution via `scaleResolutionDownBy` from the capture height. Phones, data saver and 2G/3G capture
-  360p/24 rather than 720p/30 (less CPU before the encoder even starts). Calls start at 360p (Chrome's
-  estimate starts around 300 kbps) or at 180p on 2G / data saver / Save-Data.
+  360p/24 rather than 720p/30 (less CPU before the encoder even starts). Calls start at 360p, or at 180p on 2G / data saver /
+  Save-Data, and each side asks the other's encoder to start at 800 kbps (`x-google-start-bitrate` in the
+  SDP we send; not on 2G/3G, with data saver or when asking for small video) instead of Chrome's ~300 kbps.
 - **Mesh** (> 2 people): each connection gets `min(its estimate, total of all estimates / peers)`, and the
   best tier is capped at 360p with 3–4 people, 180p with 5–8 (each peer is another encoder on the same
   phone and another share of the same uplink).
@@ -298,9 +352,9 @@ safety code are as in §3–§4, and the CSP is unchanged.
   stays on screen as "Reconnecting…". The answerer asks for one with a sealed `restart`. On `online` and
   Network Information `change` (Wi-Fi ↔ mobile data) every peer restarts ICE at once instead of waiting
   for the old path to time out. Restart offers are sealed and signed like every other signal.
-- **Vanilla ICE on slow links**: wait 3 s for gathering, or up to 12 s while no candidate exists yet (a
-  TURN allocation over a slow or TCP/TLS-only link takes several round trips; relay-only calls would
-  otherwise send an SDP with no candidates).
+- **Candidates on slow links**: with trickle ICE (§3) a slow TURN allocation (TCP/TLS-only networks) no
+  longer delays the offer: its candidate simply follows when it exists. With an older client: wait 3 s
+  for gathering, or up to 12 s while no candidate exists yet.
 - **TURN for restrictive networks**: Cloudflare returns `turn:…:3478?transport=udp|tcp`,
   `turns:…:5349?transport=tcp`, `turn:…:80?transport=tcp` and `turns:…:443?transport=tcp` (plus :53, which
   we drop). The filter keeps TCP and TLS on 443 (unit-tested with Cloudflare's documented response), so a
@@ -364,10 +418,80 @@ encryption trailer), "wire" ≈ payload + RTP headers + 38 bytes/packet (SRTP ta
   code, minimised bar, decline, missed, opaque wire; 3-person mesh, one leaves). vitest: 423 passed
   (calls: 43, of which 29 in `lowbw.test.ts`).
 
-## 12. Gaps / next
+## 12. Speed: connected in under a second, sharp video sooner (2026-10-23)
+
+Owner report: "calling, especially video calling, is always slow". Measured with Playwright + system
+Chrome (two separate browser instances, fake camera/mic), local production build, local Supabase, two
+accounts in a 1:1 chat, frame encryption on. There are no TURN keys locally (`relay: unavailable`, host
+candidates), so relay-only calls could not be measured. Times are from the caller's tap; "after accept"
+is from the callee's tap. Warm = 2nd and 3rd call of a session (averaged); cold = first call after the
+page loaded.
+
+**Root causes found**
+
+1. *Vanilla ICE*: the offerer waited for ICE gathering to complete before sending the offer. Gathering
+   never completed promptly (a STUN server or network interface that doesn't answer), so every call paid
+   the 3 s soft cap (3.04–3.25 s between creating and receiving the offer; up to 12 s with slow TURN
+   allocations). Fixed: trickle ICE (§3).
+2. *Everything in series*: caller: microphone → `start_call` → TURN credentials → channel → join → ring;
+   callee: microphone → TURN credentials → join. Fixed: in parallel, credentials prefetched (§2), ring as
+   soon as the call notice and the key exist; the callee says `join` before its camera is ready (offers
+   wait for it); `here` and the offer go out together.
+3. *Video stuck at 360p*: the controller needed an estimate the browser can't produce while the encoder
+   is capped (§11.2). Fixed: headroom rule, a faster first step, a higher start bitrate.
+4. *The frame-encryption worker handled one frame at a time*: latency built up on slow CPUs (§4). Fixed:
+   concurrent, in order.
+5. *Silent failures*: no timeout on the TURN fetch; a relay failure silently went direct; microphone
+   errors were one vague line. Fixed: §2, §7.
+6. Checked and not a cause: Realtime latency (offer delivery 64–177 ms warm once ICE stopped waiting),
+   the lazy-loaded engine (`CallButtons` already imports it with the chat; `CallRuntime` loads at
+   unlock), capture constraints (720p desktop, 360p phones). Android's call audio mode is now switched by
+   the engine before capture starts instead of up to 1 s later by the screen watcher.
+
+**Before → after** (same machine and accounts; script `measure.cjs` in the session scratchpad)
+
+| | Before | After |
+|---|---|---|
+| Call screen after tap | 14 ms | 31 ms (≤ 250 ms under 4× CPU throttling) |
+| Callee's phone rings, warm / cold | 620 ms / 1.39 s | 486 ms / 1.07 s |
+| Connected after accept, video (warm) | 3.58 s | **0.61 s** |
+| First remote video frame after accept (warm) | 3.81 s | **0.94 s** |
+| Connected after accept, voice (warm) | 3.40 s | **0.37 s** |
+| Offer created → received | 3.10 s | 0.18 s |
+| Connected after accept, video, 4× CPU throttle (warm) | 5.58 s | 2.32 s |
+| Steady video (desktop, LAN) | 360p@20, never higher | 720p@17–20 within 4–8 s |
+| Steady video, 4× CPU throttle | 360p → 540p@14–20 | 720p@16–20 |
+| CPU per participant (whole Chrome, % of one core) | 66 % (at 360p) | 97 % (at 720p) |
+| Receiver jitter buffer audio / video, 4× throttle, frame E2EE | 62–436 / 35–110 ms | 43–74 / 22–31 ms |
+| Frame encryption | on, 0 failures | on, 0 failures |
+
+Cold first calls are slower on both builds (camera start 0.4–1.7 s in a fresh browser, first use of
+crypto and JIT): connected after accept went 4.5 → 3.0 s. Frame-encryption CPU cost at 360p on desktop:
+66 % against 61 % of a core with the layer off (about 5 points per side); the encoder is libvpx
+(software) either way on desktop.
+
+**Frame E2EE stays on by default.** With the concurrent worker its latency cost is gone and its CPU cost
+is small. VP8 stays the only codec used with frame encryption: Chrome's H.264 packetiser parses NAL units
+inside the frame, so encrypting the payload breaks it unless the format keeps every NAL header clear and
+escapes start-code emulation in the ciphertext (what SFrame implementations do), which is a versioned
+frame-format change for another day. Most Android phones encode VP8 in hardware (Qualcomm, Exynos, recent
+MediaTek), and calls without the layer (older clients) still prefer H.264 on phones. DTLS-SRTP is
+already end to end for 1:1 and mesh calls and TURN only relays ciphertext, so the layer is defence in
+depth, and now cheap enough to keep everywhere.
+
+**Debug switches** (localStorage, for measurements): `kw.calls.noTrickle='1'` behaves like an older
+client (vanilla ICE; trickle ↔ vanilla interop checked in both directions); `kw.calls.noFrameE2EE='1'` (§4).
+
+## 13. Gaps / next
 
 - Not exercised with real Cloudflare TURN locally (no keys): relay-only behaviour with real credentials
-  should be checked on production once the keys are set (the encryption panel shows "IP address hidden").
+  should be checked on production. The encryption panel says "Your IP address is hidden" when the relay
+  is in use; "The relay isn't available right now" means `CLOUDFLARE_TURN_*` aren't set, and then calls
+  between two phones behind carrier-grade NAT may not connect at all. Production logs couldn't confirm
+  whether the keys are set (Hobby keeps 1 hour of logs).
+- Speed (§12) was measured on one machine over a LAN; real phones on mobile data are slower in absolute
+  terms (one round trip per message), but the removed waits (3 s ICE, sequential setup, the TURN fetch)
+  are the same everywhere. No in-call microphone picker yet (only in "Test camera and microphone").
 - Native (phase 5): CallKit / ConnectionService ringing and native push for calls. On the web, a phone
   with the screen off rings only through the push notification.
 - Late join: someone who missed the 45 s ring can't join an ongoing group call yet (call back instead).

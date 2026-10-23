@@ -89,8 +89,17 @@ export async function saveProfileInfo(info: ProfileInfo) {
   const payload: ProfileInfo = { ...info, friends };
   if (!payload.friends) delete payload.friends; // canonicalJson rejects undefined values
   const envelope = sealEnvelope({ header: profileHeader(me(), aud, epoch), payload, audienceKey: key, signPriv: identity().signPriv });
-  must(await sb().from('profile_info').upsert({ user_id: me(), audience_id: aud, epoch, envelope, updated_at: new Date().toISOString() }));
-  await people.refreshInfo(me());
+  const row = { user_id: me(), audience_id: aud, epoch, envelope, updated_at: new Date().toISOString() };
+  // Show it everywhere on this device right away (rail, You, posts, chats…); the server sets updated_at.
+  const prev = people.infoRow(me());
+  people.applyInfoRows([row]);
+  try {
+    must(await sb().from('profile_info').upsert(row));
+  } catch (e) {
+    people.applyInfoRows(prev ? [prev] : [], prev ? [] : [me()]);
+    throw e;
+  }
+  await people.refreshInfo(me()).catch(() => undefined);
 }
 
 /** Re-encrypt my profile info under the current epoch and refresh my friend list. */

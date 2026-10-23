@@ -2,7 +2,10 @@
 // Voice and video call buttons for a chat header (1:1, group and circle chats up to 8 people). In a narrow
 // header (phones, the split view) the two buttons collapse into one "Call" menu so the chat title keeps
 // its room; which one shows is decided by a container query on .k-chat-head (styles/v2/calls.css).
+// Opening a chat with these buttons warms the TURN credentials (docs/v2/04-calls.md §12).
+import { useEffect } from 'react';
 import { useT } from '@/i18n';
+import { prefetchIceConfig } from '@/lib/calls/turn';
 import type { ConversationSummary } from '@/lib/messages';
 import { calls, MAX_CALL_PEOPLE, useCall } from '@/lib/calls/engine';
 import { isLive } from '@/lib/calls/machine';
@@ -15,6 +18,9 @@ export function CallButtons({ conversation: c }: { conversation: ConversationSum
   const s = useCall();
   const { userId } = useSession();
   const others = c.members.filter((m) => m !== userId).length;
+  // A chat you can call from is open: get the call relay's credentials ready now, so tapping Call doesn't
+  // wait for them (lib/calls/turn.ts; cached for most of an hour).
+  useEffect(() => { if (others) prefetchIceConfig(); }, [others]);
   if (!others) return null;
   const tooMany = c.members.length > MAX_CALL_PEOPLE;
   const busy = isLive(s.m.phase) || s.m.phase === 'incoming';

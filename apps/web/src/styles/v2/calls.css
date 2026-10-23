@@ -180,3 +180,14 @@
 @media (prefers-reduced-motion: reduce) { .kw .k-call-bar-dot { animation: none; } }
 .kw .k-call-bar-who { font-weight: var(--weight-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kw .k-call-bar-time { color: var(--text-muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; flex: none; }
+
+/* "Test camera and microphone" (components/calls/CallCheck.tsx) */
+.kw .k-call-check-preview { position: relative; aspect-ratio: 16 / 9; border-radius: var(--radius-md); overflow: hidden; background: var(--surface-3); display: grid; place-items: center; }
+.kw .k-call-check-preview > p { position: relative; z-index: 1; padding: var(--space-2); text-align: center; }
+.kw .k-call-check-level { display: grid; gap: var(--space-1); }
+.kw .k-call-meter { display: block; block-size: 8px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
+.kw .k-call-meter > i { display: block; block-size: 100%; background: var(--accent); transition: inline-size 100ms linear; }
+@media (prefers-reduced-motion: reduce) { .kw .k-call-meter > i { transition: none; } }
+.kw .k-call-check-err { display: flex; gap: var(--space-2); align-items: flex-start; color: var(--danger); }
+.kw .k-call-detail { margin: 0; max-inline-size: 36ch; margin-inline: auto; text-align: center; font-size: var(--text-sm); color: var(--text-muted); }
+.kw .k-call-ended-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; }

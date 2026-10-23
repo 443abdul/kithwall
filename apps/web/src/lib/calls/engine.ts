@@ -6,9 +6,14 @@
 //  - Signalling: everyone in the call joins the private `call:<conversation id>` topic. Every message is
 //    a sealed + signed envelope (signal.ts). Realtime only relays opaque blobs.
 //  - Media: a full mesh of RTCPeerConnections (≤ 8 people). The lower endpoint id makes the offer, so
-//    there is never glare. ICE is gathered before the offer/answer is sent ("vanilla" ICE: fewer
-//    signalling messages, nothing to reorder). DTLS fingerprints travel inside the signed SDP, so the
-//    DTLS-SRTP keys are authenticated end to end; TURN relays only see ciphertext.
+//    there is never glare. Offers and answers are sent at once and ICE candidates follow in sealed,
+//    cumulative `cand` messages (trickle ICE, docs §12), when both ends say they can (`tr`); with an
+//    older client, ICE is gathered before the SDP is sent ("vanilla" ICE). DTLS fingerprints travel
+//    inside the signed SDP, so the DTLS-SRTP keys are authenticated end to end; TURN relays only see
+//    ciphertext.
+//  - Speed (docs §12): microphone/camera, the call notice, the conversation key, the call channel and the
+//    TURN credentials (prefetched when the chat opened) are all set up in parallel; the callee's TURN
+//    credentials are fetched while it rings.
 //  - Frame encryption (insertable streams) is added where both ends support it (e2ee.ts).
 //  - Bad networks (docs §11): a quality controller per peer (quality.ts) reads getStats every 2 s and
 //    sets the video tier / Opus bitrate / RED; Opus is negotiated with FEC + DTX (sdp.ts); ICE restarts
@@ -30,8 +35,10 @@ import { endpointOf, openSignal, parseEndpoint, sealSignal, SeenIds, UUID_RE, ty
 import { FrameCrypto, frameMode, type FrameMode, type FrameStats } from './e2ee';
 import { callSafetyCode, sdpFingerprint, type SafetyCode } from './safety';
 import { endTone, startTone, stopTone } from './tones';
-import { getIceConfig, type IceConfig } from './turn';
-import { capVideoBandwidth, firstAudioCodec, isMobileUa, orderAudioCodecs, orderVideoCodecs, tuneOpus } from './sdp';
+import { getIceConfig, prefetchIceConfig, type IceConfig } from './turn';
+import { capVideoBandwidth, firstAudioCodec, isMobileUa, orderAudioCodecs, orderVideoCodecs, tuneOpus, videoStartBitrate } from './sdp';
+import { getCallDevices, mediaErr, micAllowed, micConstraints, type MediaErr } from './devices';
+import { nativeCallActive, nativeCallEnded } from '../native/calls';
 import {
   meshCeiling, PAUSED, QualityController, SAVER_AUDIO, shareUplink, startTier, videoEncoding,
   type Decision, type Limitation, type NetSample, type Quality, type QualityReason, type Tier,
@@ -61,6 +68,17 @@ const JOIN_RETRY_MS = 4_000;
 const RERING_MS = 10_000;
 const STATS_MS = 2_000;
 const ENDED_SHOW_MS = 2_500;
+/** An ending that needs reading (couldn't connect, no microphone, relay unreachable) stays up longer. */
+const ENDED_ERROR_MS = 20_000;
+/** Trickle ICE: send the first candidate at once, then batch the next ones this long. */
+const CAND_BATCH_MS = 150;
+/** Where the other side's video encoder starts on a normal link (x-google-start-bitrate, kbps). */
+const VIDEO_START_KBPS = 800;
+
+export type { MediaErr };
+/** The caller's progress before anyone is connected: Calling… → Ringing… → Connecting… */
+export type Progress = 'calling' | 'ringing' | 'connecting';
+type Cand = [string, number, string];
 
 export type PeerState = 'connecting' | 'connected' | 'reconnecting';
 export type { Quality, QualityReason };
@@ -115,6 +133,12 @@ export interface CallSnapshot {
   weak: Weak;
   /** Offer "Weak connection — switch to voice only?" */
   suggestVoice: boolean;
+  /** Before anyone connected: what's happening (shown as the status). */
+  progress: Progress | null;
+  /** Why the microphone couldn't be used (the call ended with 'no-media'). */
+  mediaError: MediaErr | null;
+  /** The camera couldn't be used for a video call, so it carries on as a voice call. */
+  camError: MediaErr | null;
 }
 
 interface Applied { audio: string; video: string }
@@ -164,6 +188,17 @@ interface Peer {
   /** The Opus packet time I last asked this peer for (in the SDP I sent), and when we last renegotiated it. */
   ptime: 20 | 60;
   lastRenegAt: number;
+  /** Trickle ICE with this peer (both ends announced `tr`). */
+  tr: boolean;
+  /** My candidates for my current ICE generation (ufrag `candU`), cumulative; `candDone`: gathering finished. */
+  cands: Cand[];
+  candU: string;
+  candDone: boolean;
+  candTimer: ReturnType<typeof setTimeout> | null;
+  /** Their candidates already handed to the connection ("<ufrag> <candidate>"). */
+  added: Set<string>;
+  /** An offer being handled right now (a repeat that arrives meanwhile is ignored). */
+  handling: string | null;
 }
 
 interface ConvCtx { id: string; audienceId: string; members: string[]; summary: ConversationSummary }
@@ -172,6 +207,7 @@ const EMPTY: CallSnapshot = {
   m: IDLE, callId: null, convId: null, conv: null, isCaller: false, caller: null, video: false, masked: false,
   connectedAt: null, local: null, mic: true, cam: false, facing: 'user', peers: [], minimized: false,
   frameMode: null, frameStats: null, relay: 'on', sinkId: '', saver: false, voiceOnly: false, weak: null, suggestVoice: false,
+  progress: null, mediaError: null, camError: null,
 };
 
 const DEV_ID = typeof window === 'undefined' ? 'server' : b64u.encode(randomBytes(9));
@@ -183,6 +219,9 @@ function netInfo(): NetInfo | null {
 const slowLink = () => { const e = netInfo()?.effectiveType; return e === 'slow-2g' || e === '2g' || e === '3g'; };
 const verySlowLink = () => { const e = netInfo()?.effectiveType; return e === 'slow-2g' || e === '2g'; };
 const debugOn = () => { try { return localStorage.getItem('kw.calls.debug') === '1'; } catch { return false; } };
+/** Trickle ICE is on unless a debug/test switch turns it off (to measure or interoperate like an older client). */
+const trickleOn = () => { try { return localStorage.getItem('kw.calls.noTrickle') !== '1'; } catch { return true; } };
+const ufragOf = (sdp: string | undefined) => (sdp ? /^a=ice-ufrag:(\S+)/m.exec(sdp)?.[1] ?? null : null);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 async function restBroadcast(topic: string, payload: unknown, keepalive = false): Promise<boolean> {
@@ -255,7 +294,7 @@ class CallEngine {
   private ice: IceConfig | null = null;
   private relayOnly = true;
   private peers = new Map<string, Peer>();
-  private roster = new Map<string, { fe: boolean; video: boolean }>();
+  private roster = new Map<string, { fe: boolean; video: boolean; tr: boolean }>();
   private seen = new SeenIds();
   private ended = new Set<string>();
   private timers: ReturnType<typeof setTimeout>[] = [];
@@ -274,6 +313,12 @@ class CallEngine {
   private offline = false;
   /** Debug/tests only (kw.calls.debug): stats overrides, so the controller can be driven synthetically. */
   private netOverride: Partial<NetSample> | null = null;
+  /** Candidates that arrived before (or for) a peer's remote description, per endpoint (trickle ICE). */
+  private earlyCands = new Map<string, { u: string; c: Cand[] }>();
+  /** The microphone (and camera) of this call: resolves true once captured, false if that failed. */
+  private mediaReady: Promise<boolean> | null = null;
+  /** Bumped when a call ends, so a capture that finishes afterwards is released at once. */
+  private mediaGen = 0;
   /** ICE restarts this call (debug/tests). */
   restarts = 0;
   readonly myEp = () => endpointOf(this.userId ?? '', DEV_ID);
@@ -434,31 +479,129 @@ class CallEngine {
   /** Capture size: 720p only where it can be used; phones, data saver and slow links capture 360p (less CPU). */
   private videoConstraints(facing: 'user' | 'environment' | { exact: 'user' | 'environment' }): MediaTrackConstraints {
     const small = this.snap.saver || slowLink() || (typeof navigator !== 'undefined' && isMobileUa(navigator.userAgent));
+    // The camera chosen in "Test camera and microphone", for the first capture of a call.
+    const cam = facing === 'user' ? getCallDevices().cam : undefined;
+    const which: MediaTrackConstraints = cam ? { deviceId: { ideal: cam } } : { facingMode: facing };
     return small
-      ? { facingMode: facing, width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24, max: 30 } }
-      : { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
+      ? { ...which, width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24, max: 30 } }
+      : { ...which, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
   }
 
-  private async getMedia(video: boolean): Promise<MediaStream> {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-      video: video ? this.videoConstraints('user') : false,
-    });
+  /**
+   * Capture the microphone (and camera for a video call). A video call whose camera fails carries on as a
+   * voice call (camError); a microphone that fails ends the call with a reason the screen can explain
+   * (mediaError). Never leaves a device open when the call ended meanwhile.
+   */
+  private async getMedia(video: boolean): Promise<boolean> {
+    const gen = this.mediaGen;
+    const gum = (c: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(c);
+    let stream: MediaStream;
+    try {
+      stream = await gum({ audio: micConstraints(), video: video ? this.videoConstraints('user') : false });
+    } catch (e) {
+      if (!video) { this.set({ mediaError: mediaErr(e) }); return false; }
+      try {
+        stream = await gum({ audio: micConstraints(), video: false });
+        this.set({ camError: mediaErr(e) });
+      } catch (e2) { this.set({ mediaError: mediaErr(e2) }); return false; }
+    }
+    // Hung up while the permission prompt or the camera was starting: release it at once.
+    if (gen !== this.mediaGen || !isLive(this.snap.m.phase)) {
+      stream.getTracks().forEach((t) => t.stop());
+      return false;
+    }
     this.local = stream;
-    this.set({ local: stream, mic: true, cam: video, facing: 'user' });
-    return stream;
+    stream.getTracks().forEach((t) => this.watchTrack(t));
+    this.set({ local: stream, mic: true, cam: stream.getVideoTracks().length > 0, facing: 'user' });
+    return true;
+  }
+
+  /** Media for offers/answers: wait for the capture started by place()/accept(). */
+  private async haveMedia(): Promise<boolean> {
+    if (this.local) return true;
+    return this.mediaReady ? this.mediaReady : false;
+  }
+
+  /** A device went away mid-call (unplugged headset, another app took the camera): recover by itself. */
+  private watchTrack(t: MediaStreamTrack) {
+    t.addEventListener('ended', () => {
+      if (!this.local?.getTracks().includes(t) || !isLive(this.snap.m.phase)) return;
+      void this.recoverTrack(t);
+    });
+  }
+
+  private async recoverTrack(old: MediaStreamTrack) {
+    if (!this.local) return;
+    this.local.removeTrack(old);
+    if (old.kind === 'audio') {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
+        const track = s.getAudioTracks()[0]!;
+        if (!this.local || !isLive(this.snap.m.phase)) { track.stop(); return; }
+        track.enabled = this.snap.mic;
+        this.local.addTrack(track);
+        this.watchTrack(track);
+        await Promise.all([...this.peers.values()].map(async (p) => {
+          const tr = p.pc.getTransceivers().find((x) => x.receiver.track.kind === 'audio');
+          if (tr) await tr.sender.replaceTrack(track).catch(() => undefined);
+        }));
+        this.set({ local: this.local });
+      } catch {
+        this.set({ mic: false });
+        void this.send(this.stateBody(), undefined, false, 1);
+      }
+      return;
+    }
+    // The camera: try again, else carry on without video.
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: this.videoConstraints(this.snap.facing) });
+      const track = s.getVideoTracks()[0]!;
+      if (!this.local || !isLive(this.snap.m.phase)) { track.stop(); return; }
+      this.local.addTrack(track);
+      this.watchTrack(track);
+      await this.replaceVideo(track);
+      this.set({ local: this.local });
+    } catch {
+      await this.replaceVideo(null);
+      this.set({ cam: false, local: this.local });
+      void this.send(this.stateBody(), undefined, false, 1);
+    }
   }
 
   private audioTrack() { return this.local?.getAudioTracks()[0] ?? null; }
   private videoTrack() { return this.local?.getVideoTracks()[0] ?? null; }
 
-  private async prepareTransport() {
+  /**
+   * ICE servers for this call (normally already cached: prefetched when the chat opened or while ringing).
+   * With "Always relay" on, a failed fetch is retried once; if the relay still can't be reached the call
+   * fails fast with a clear reason rather than hanging or silently exposing the IP address. A server
+   * with no TURN configured at all (relay: false, ok) still connects directly, as documented (§2).
+   */
+  private async loadIce(): Promise<IceConfig> {
+    let ice = await getIceConfig();
+    if (!ice.ok && getCallPrefs().relay) ice = await getIceConfig({ fresh: true });
+    return ice;
+  }
+
+  /** Use these ICE servers; false when relaying is required but impossible. */
+  private applyIce(ice: IceConfig): boolean {
     const prefs = getCallPrefs();
-    this.ice = await getIceConfig();
-    this.relayOnly = prefs.relay && this.ice.relay;
+    if (prefs.relay && !ice.ok) return false;
+    this.ice = ice;
+    this.relayOnly = prefs.relay && ice.relay;
+    this.set({ relay: !prefs.relay ? 'off' : ice.relay ? 'on' : 'unavailable' });
+    return true;
+  }
+
+  /** Frame encryption for this call (needs the call key). */
+  private setupFrames() {
     const mode = frameMode();
-    this.set({ relay: !prefs.relay ? 'off' : this.ice.relay ? 'on' : 'unavailable', frameMode: mode });
-    if (mode && this.callKey) this.frames = new FrameCrypto(mode, this.callKey);
+    this.set({ frameMode: mode });
+    if (mode && this.callKey && !this.frames) this.frames = new FrameCrypto(mode, this.callKey);
+  }
+
+  private joinBody(video: boolean): SignalBody {
+    return { k: 'join', fe: !!this.frames, video, ...(trickleOn() ? { tr: true } : {}) };
   }
 
   /** Data saver for a new call: the setting, or the browser's Save-Data ("Lite mode"). */
@@ -472,28 +615,34 @@ class CallEngine {
     this.resetNow();
     const invited = summary.members.filter((m) => m !== this.userId);
     if (!invited.length || summary.members.length > MAX_CALL_PEOPLE) return;
+    // The call screen ("Calling…") is up from here, before anything slow happens.
     this.dispatch({ t: 'place', invited });
-    this.set({ conv: summary, convId: summary.id, video, isCaller: true, caller: this.userId, masked: false, minimized: false, connectedAt: null, saver: this.initialSaver() });
+    this.set({ conv: summary, convId: summary.id, video, isCaller: true, caller: this.userId, masked: false, minimized: false, connectedAt: null, saver: this.initialSaver(), progress: 'calling', mediaError: null, camError: null, sinkId: this.snap.sinkId || getCallDevices().out || '' });
+    void nativeCallActive({ speaker: true, video });
+    const wantVideo = video && !getCallPrefs().camOff;
+    const media = (this.mediaReady = this.getMedia(wantVideo));
+    // A permission prompt will be on screen: let the person answer it before anyone's phone rings.
+    if (!(await micAllowed()) && !(await media)) { this.dispatch({ t: 'failed', reason: 'no-media' }); return; }
+    if (this.phaseNow() !== 'outgoing') return;
     try {
-      await this.getMedia(video && !getCallPrefs().camOff);
-    } catch {
-      this.dispatch({ t: 'failed', reason: 'no-media' });
-      return;
-    }
-    try {
-      await people.ensure(summary.members);
       this.conv = { id: summary.id, audienceId: summary.audience_id, members: summary.members, summary };
-      this.convKey = await conversationKey(summary);
-      const res = await sb().rpc('start_call', { conv: summary.id, video });
+      this.callKey = randomBytes(32);
+      // Everything else in parallel: the call notice, the conversation key, the call channel and the
+      // TURN credentials (usually cached already).
+      const ice = this.loadIce();
+      const channel = this.joinCallChannel(summary.id);
+      const [, key, res] = await Promise.all([people.ensure(summary.members), conversationKey(summary), sb().rpc('start_call', { conv: summary.id, video })]);
+      this.convKey = key;
       if (res.error || typeof res.data !== 'string') throw new Error(res.error?.message ?? 'start_call failed');
       if (this.phaseNow() !== 'outgoing') return; // hung up meanwhile
-      this.callKey = randomBytes(32);
       this.set({ callId: res.data });
-      await this.prepareTransport();
-      await this.joinCallChannel(summary.id);
-      await this.send({ k: 'join', fe: !!this.frames, video: this.snap.cam }, undefined, false, 3);
+      this.setupFrames();
+      if (!this.applyIce(await ice)) { this.dispatch({ t: 'failed', reason: 'relay' }); return; }
+      if (!(await media)) { this.dispatch({ t: 'failed', reason: 'no-media' }); return; }
+      await channel;
+      if (this.phaseNow() !== 'outgoing') return;
       startTone('outgoing');
-      await this.ringAll(invited, video);
+      await Promise.all([this.ringAll(invited, video), this.send(this.joinBody(this.snap.cam), undefined, false, 3)]);
       this.timers.push(setTimeout(() => {
         if (this.snap.m.phase === 'outgoing') { void this.send({ k: 'cancel' }, undefined, false, 2); this.dispatch({ t: 'timeout' }); }
       }, RING_MS));
@@ -502,6 +651,12 @@ class CallEngine {
       console.warn('call failed to start', e instanceof Error ? e.message : e);
       this.dispatch({ t: 'failed' });
     }
+  }
+
+  /** "Try again" after a call that couldn't start or connect. */
+  retry() {
+    const { conv, video, isCaller, m } = this.snap;
+    if (m.phase === 'ended' && conv && isCaller) void this.place(conv, video);
   }
 
   /** While nobody has answered, ring again every RERING_MS (callees drop duplicates). */
@@ -564,10 +719,17 @@ class CallEngine {
     this.set({
       callId: s.call, convId: conv.id, conv: conv.summary, video: body.video, isCaller: false, caller: res.author,
       masked: isHiddenChat(conv.id) && !isRevealed(), minimized: false, connectedAt: null, saver: this.initialSaver(),
+      progress: null, mediaError: null, camError: null, sinkId: this.snap.sinkId || getCallDevices().out || '',
     });
     if (this.probeTimer) { clearTimeout(this.probeTimer); this.probeTimer = null; }
     startTone('incoming');
-    void this.joinCallChannel(conv.id);
+    // While it rings: get TURN credentials ready (so accepting doesn't wait for them) and tell the
+    // caller this device is ringing ("Ringing…").
+    prefetchIceConfig();
+    const callId = s.call;
+    void this.joinCallChannel(conv.id).then(() => {
+      if (this.snap.callId === callId && this.snap.m.phase === 'incoming') void this.send({ k: 'ringing' });
+    });
     this.timers.push(setTimeout(() => { if (this.snap.m.phase === 'incoming') this.dispatch({ t: 'timeout' }); }, RING_MS));
   }
 
@@ -589,18 +751,20 @@ class CallEngine {
   }
 
   async accept() {
-    if (this.snap.m.phase !== 'incoming' || !this.conv) return;
+    if (this.phaseNow() !== 'incoming' || !this.conv) return;
     stopTone();
     this.dispatch({ t: 'accept' });
-    try {
-      await this.getMedia(this.snap.video && !getCallPrefs().camOff);
-    } catch {
-      try { await this.getMedia(false); } catch { this.dispatch({ t: 'failed', reason: 'no-media' }); return; }
-    }
-    if (this.phaseNow() !== 'connecting') return;
-    await this.prepareTransport();
+    this.set({ progress: 'connecting', mediaError: null, camError: null });
+    void nativeCallActive({ speaker: true, video: this.snap.video });
+    const wantVideo = this.snap.video && !getCallPrefs().camOff;
+    const media = (this.mediaReady = this.getMedia(wantVideo));
+    const ice = await this.loadIce(); // fetched while it rang
+    if (this.phaseNow() !== 'connecting' || !this.conv) return;
+    if (!this.applyIce(ice)) { void this.send({ k: 'decline' }, undefined, true); this.dispatch({ t: 'failed', reason: 'relay' }); return; }
+    this.setupFrames();
     await this.joinCallChannel(this.conv.id);
-    await this.send({ k: 'join', fe: !!this.frames, video: this.snap.cam }, undefined, false, 3);
+    // Say we're here at once: offers are answered as soon as the microphone is ready (haveMedia).
+    await this.send(this.joinBody(wantVideo), undefined, false, 3);
     void sb().rpc('call_answered', { msg: this.snap.callId }).then(() => undefined, () => undefined);
     this.timers.push(setTimeout(() => { if (this.snap.m.phase === 'connecting') this.dispatch({ t: 'timeout' }); }, slowLink() ? CONNECT_SLOW_MS : CONNECT_MS));
     // If our join (or their reply) was dropped, say it again until someone connects.
@@ -608,10 +772,14 @@ class CallEngine {
     let tries = 0;
     const again = () => {
       if (this.snap.callId !== callId || this.snap.m.phase !== 'connecting' || this.peers.size > 0 || ++tries > 6) return;
-      void this.send({ k: 'join', fe: !!this.frames, video: this.snap.cam });
+      void this.send(this.joinBody(this.snap.cam));
       this.timers.push(setTimeout(again, JOIN_RETRY_MS));
     };
     this.timers.push(setTimeout(again, JOIN_RETRY_MS));
+    if (!(await media) && this.snap.callId === callId && isLive(this.snap.m.phase)) {
+      void this.send({ k: 'leave' }, undefined, true);
+      this.dispatch({ t: 'failed', reason: 'no-media' });
+    }
   }
 
   decline() {
@@ -653,27 +821,39 @@ class CallEngine {
     const b = s.body;
     switch (b.k) {
       case 'join':
-        this.roster.set(s.from, { fe: b.fe, video: b.video });
+        this.roster.set(s.from, { fe: b.fe, video: b.video, tr: !!b.tr });
+        if (from.userId !== this.userId && this.snap.isCaller && this.snap.m.phase === 'outgoing') this.set({ progress: 'connecting' });
         if (from.userId === this.userId) {
           if (this.snap.m.phase === 'incoming') this.dispatch({ t: 'answered-elsewhere' });
           return;
         }
         if (!this.inCall()) return;
-        await this.send({ k: 'here', fe: !!this.frames, video: this.snap.cam }, s.from, false, 2);
-        if (me < s.from) await this.connectTo(s.from);
+        // Reply and (if I'm the offerer) start the offer at the same time: the offer doesn't need the
+        // reply to have arrived, so waiting for its delivery only added a round trip.
+        await Promise.all([
+          this.send({ k: 'here', fe: !!this.frames, video: this.snap.cam, ...(trickleOn() ? { tr: true } : {}) }, s.from, false, 2),
+          me < s.from ? this.connectTo(s.from) : Promise.resolve(),
+        ]);
         return;
       case 'here':
-        this.roster.set(s.from, { fe: b.fe, video: b.video });
+        this.roster.set(s.from, { fe: b.fe, video: b.video, tr: !!b.tr });
         if (this.inCall() && me < s.from) await this.connectTo(s.from);
         return;
       case 'offer':
-        if (this.inCall()) await this.onOffer(s.from, b.sdp, b.fe);
+        if (this.inCall()) await this.onOffer(s.from, b.sdp, b.fe, !!b.tr);
+        return;
+      case 'cand':
+        if (this.inCall()) this.onRemoteCands(s.from, b.u, b.c);
+        return;
+      case 'ringing':
+        if (this.snap.isCaller && this.snap.m.phase === 'outgoing' && this.snap.progress === 'calling') this.set({ progress: 'ringing' });
         return;
       case 'answer': {
         const p = this.peers.get(s.from);
         if (p && p.pc.signalingState === 'have-local-offer') {
           await p.pc.setRemoteDescription({ type: 'answer', sdp: b.sdp }).catch((e) => console.warn('call answer', e));
           if (p.offerTimer) { clearTimeout(p.offerTimer); p.offerTimer = null; }
+          void this.applyRemoteCands(p);
           this.reapply(p);
         }
         return;
@@ -737,7 +917,7 @@ class CallEngine {
     return Math.max(meshCeiling(this.peers.size), this.snap.saver ? 2 : 0, p.rx) as Tier;
   }
 
-  private makePeer(ep: string, initiator: boolean, fe: boolean): Peer {
+  private makePeer(ep: string, initiator: boolean, fe: boolean, tr: boolean): Peer {
     const userId = parseEndpoint(ep)!.userId;
     const config: RTCConfiguration & { encodedInsertableStreams?: boolean } = {
       iceServers: this.ice?.iceServers as RTCIceServer[] | undefined,
@@ -755,7 +935,9 @@ class CallEngine {
       prev: { lost: 0, recv: 0, t: 0, aBytes: 0, vBytes: 0 },
       tx: { audioBps: 0, videoBps: 0, height: 0, fps: 0, aob: null, budget: null, rtt: null, loss: 0, limitation: null, red: false },
       uplink: 'good', bytesReceived: 0, paramQueue: Promise.resolve(), redNeg: false, peerRed: false, askedRed: false, ptime: 20, lastRenegAt: Date.now(),
+      tr, cands: [], candU: '', candDone: false, candTimer: null, added: new Set(), handling: null,
     };
+    pc.onicecandidate = (e) => this.onLocalCandidate(peer, e.candidate);
     pc.ontrack = (e) => {
       if (fe) this.attachTransforms(peer);
       peer.stream.addTrack(e.track);
@@ -809,6 +991,8 @@ class CallEngine {
     const saver = this.snap.saver;
     p.ptime = this.wantPtime(p);
     let out = tuneOpus(sdp, { maxAverageBitrate: saver ? SAVER_AUDIO : 32_000, ptime: p.ptime });
+    // Let their video start at a sensible bitrate instead of ~300 kbps (not on slow links / data saver).
+    if (!saver && !slowLink() && p.rx < 2) out = videoStartBitrate(out, VIDEO_START_KBPS);
     if (debugOn()) {
       try {
         const cap = Number(localStorage.getItem('kw.calls.testVideoCapKbps'));
@@ -819,9 +1003,10 @@ class CallEngine {
   }
 
   private async connectTo(ep: string) {
-    if (this.peers.has(ep) || !this.local) return;
+    if (this.peers.has(ep) || !(await this.haveMedia())) return;
+    if (this.peers.has(ep) || !this.local || !this.inCall()) return;
     const fe = !!this.frames && !!this.roster.get(ep)?.fe;
-    const peer = this.makePeer(ep, true, fe);
+    const peer = this.makePeer(ep, true, fe, trickleOn() && !!this.roster.get(ep)?.tr);
     const pc = peer.pc;
     pc.addTransceiver(this.audioTrack() ?? 'audio', { direction: 'sendrecv', streams: [this.local] });
     pc.addTransceiver(this.videoTrack() ?? 'video', { direction: 'sendrecv', streams: [this.local] });
@@ -834,11 +1019,14 @@ class CallEngine {
     const pc = peer.pc;
     if (iceRestart) { peer.lastRestartAt = Date.now(); this.restarts++; }
     await pc.setLocalDescription(await pc.createOffer(iceRestart ? { iceRestart: true } : undefined));
-    await waitForIce(pc);
+    // Trickle: send the offer now, candidates follow. Older peers: wait for gathering (vanilla ICE).
+    if (!peer.tr) await waitForIce(pc);
     if (pc.connectionState === 'closed' || !pc.localDescription) return;
     const sdp = this.outgoingSdp(pc.localDescription.sdp, peer);
     const local = pc.localDescription.sdp;
-    await this.send({ k: 'offer', sdp, fe: peer.fe }, peer.ep, false, 3);
+    const body: SignalBody = { k: 'offer', sdp, fe: peer.fe, ...(peer.tr ? { tr: true } : {}) };
+    await this.send(body, peer.ep, false, 3);
+    if (peer.tr) this.flushCands(peer, 0);
     // No answer in time (a dropped message): send the same offer again. The answerer recognises it and
     // repeats its answer rather than renegotiating.
     if (peer.offerTimer) clearTimeout(peer.offerTimer);
@@ -846,44 +1034,108 @@ class CallEngine {
     const check = () => {
       peer.offerTimer = null;
       if (!this.peers.has(peer.ep) || pc.signalingState !== 'have-local-offer' || pc.localDescription?.sdp !== local || ++tries > OFFER_TRIES) return;
-      void this.send({ k: 'offer', sdp, fe: peer.fe }, peer.ep, false, 1);
+      void this.send(body, peer.ep, false, 1);
+      if (peer.tr) this.flushCands(peer, 0);
       peer.offerTimer = setTimeout(check, OFFER_RETRY_MS * 1.5 ** tries);
     };
     peer.offerTimer = setTimeout(check, OFFER_RETRY_MS);
   }
 
-  private async onOffer(ep: string, sdp: string, theirFe: boolean) {
+  private async onOffer(ep: string, sdp: string, theirFe: boolean, theirTr: boolean) {
     let peer = this.peers.get(ep);
     // The same offer again (their retry after our answer was lost): repeat the answer, don't renegotiate.
     if (peer && peer.lastOffer === sdp && peer.lastAnswer) {
-      await this.send({ k: 'answer', sdp: peer.lastAnswer, fe: peer.fe }, ep, false, 2);
+      await this.send({ k: 'answer', sdp: peer.lastAnswer, fe: peer.fe, ...(peer.tr ? { tr: true } : {}) }, ep, false, 2);
+      if (peer.tr) this.flushCands(peer, 0);
       return;
     }
+    if (peer?.handling === sdp) return; // a repeat while we're still answering it
+    // The microphone first (it may still be starting, or waiting for a permission prompt).
+    if (!peer && !(await this.haveMedia())) return;
+    peer = this.peers.get(ep);
+    if (peer?.handling === sdp || !this.inCall()) return;
     const fresh = !peer;
-    if (!peer) peer = this.makePeer(ep, false, theirFe && !!this.frames);
-    const pc = peer.pc;
-    await pc.setRemoteDescription({ type: 'offer', sdp });
-    if (fresh && this.local) {
-      this.attachTransforms(peer);
-      for (const t of pc.getTransceivers()) {
-        const kind = t.receiver.track.kind;
-        t.direction = 'sendrecv';
-        await t.sender.replaceTrack(kind === 'audio' ? this.audioTrack() : this.videoTrack());
-        try { t.sender.setStreams?.(this.local); } catch { /* older browsers */ }
+    const tr = theirTr && trickleOn();
+    if (!peer) peer = this.makePeer(ep, false, theirFe && !!this.frames, tr);
+    else peer.tr = tr;
+    const p = peer;
+    p.handling = sdp;
+    const pc = p.pc;
+    try {
+      await pc.setRemoteDescription({ type: 'offer', sdp });
+      void this.applyRemoteCands(p);
+      if (fresh && this.local) {
+        this.attachTransforms(p);
+        for (const t of pc.getTransceivers()) {
+          const kind = t.receiver.track.kind;
+          t.direction = 'sendrecv';
+          await t.sender.replaceTrack(kind === 'audio' ? this.audioTrack() : this.videoTrack());
+          try { t.sender.setStreams?.(this.local); } catch { /* older browsers */ }
+        }
+        this.codecPrefs(p);
       }
-      this.codecPrefs(peer);
+      // RED is a property of the pair: the offerer decides (it hears our wish via `reneg`), we mirror it.
+      const red = firstAudioCodec(sdp) === 'red';
+      if (red !== p.redNeg) this.setRed(p, red);
+      await pc.setLocalDescription(await pc.createAnswer());
+      if (!fresh) this.reapply(p);
+      if (!p.tr) await waitForIce(pc);
+      if (pc.connectionState === 'closed' || !pc.localDescription) return;
+      const answer = this.outgoingSdp(pc.localDescription.sdp, p);
+      p.lastOffer = sdp;
+      p.lastAnswer = answer;
+      await this.send({ k: 'answer', sdp: answer, fe: p.fe, ...(p.tr ? { tr: true } : {}) }, ep, false, 3);
+      if (p.tr) this.flushCands(p, 0);
+    } finally {
+      if (p.handling === sdp) p.handling = null;
     }
-    // RED is a property of the pair: the offerer decides (it hears our wish via `reneg`), we mirror it.
-    const red = firstAudioCodec(sdp) === 'red';
-    if (red !== peer.redNeg) this.setRed(peer, red);
-    await pc.setLocalDescription(await pc.createAnswer());
-    if (!fresh) this.reapply(peer);
-    await waitForIce(pc);
-    if (pc.connectionState === 'closed' || !pc.localDescription) return;
-    const answer = this.outgoingSdp(pc.localDescription.sdp, peer);
-    peer.lastOffer = sdp;
-    peer.lastAnswer = answer;
-    await this.send({ k: 'answer', sdp: answer, fe: peer.fe }, ep, false, 3);
+  }
+
+  // ------------------------------------------------------------------------------------ trickle ICE
+  /**
+   * A local candidate: keep it in this generation's cumulative list and send the list (the first one at
+   * once, later ones batched). Every `cand` message carries ALL candidates so far, so it supersedes the
+   * earlier ones: a lost message costs nothing, a repeated one is a no-op (docs §3, §12).
+   */
+  private onLocalCandidate(peer: Peer, c: RTCIceCandidate | null) {
+    if (!peer.tr) return;
+    if (!c || !c.candidate) { if (peer.candU) { peer.candDone = true; this.flushCands(peer, 0); } return; }
+    const u = c.usernameFragment || ufragOf(peer.pc.localDescription?.sdp);
+    if (!u) return;
+    if (u !== peer.candU) { peer.candU = u; peer.cands = []; peer.candDone = false; }
+    if (peer.cands.some((x) => x[2] === c.candidate)) return;
+    peer.cands.push([c.sdpMid ?? '0', c.sdpMLineIndex ?? 0, c.candidate]);
+    this.flushCands(peer, peer.cands.length === 1 ? 0 : CAND_BATCH_MS);
+  }
+
+  private flushCands(peer: Peer, delay: number) {
+    if (!peer.tr || !peer.candU || !peer.cands.length) return;
+    if (peer.candTimer) { if (delay > 0) return; clearTimeout(peer.candTimer); }
+    peer.candTimer = setTimeout(() => {
+      peer.candTimer = null;
+      if (!this.peers.has(peer.ep)) return;
+      void this.send({ k: 'cand', u: peer.candU, c: peer.cands.slice(0, 64), ...(peer.candDone ? { done: true } : {}) }, peer.ep, false, 1);
+    }, delay);
+  }
+
+  /** Their candidates (cumulative for one ICE generation): keep them until the matching description is set. */
+  private onRemoteCands(ep: string, u: string, list: Cand[]) {
+    const prev = this.earlyCands.get(ep);
+    const c = prev && prev.u === u ? [...prev.c, ...list.filter((x) => !prev.c.some((y) => y[2] === x[2]))] : list;
+    this.earlyCands.set(ep, { u, c });
+    const p = this.peers.get(ep);
+    if (p) void this.applyRemoteCands(p);
+  }
+
+  private async applyRemoteCands(p: Peer) {
+    const e = this.earlyCands.get(p.ep);
+    if (!e || ufragOf(p.pc.remoteDescription?.sdp) !== e.u) return;
+    for (const [sdpMid, sdpMLineIndex, candidate] of e.c) {
+      const key = `${e.u} ${candidate}`;
+      if (p.added.has(key)) continue;
+      p.added.add(key);
+      await p.pc.addIceCandidate({ candidate, sdpMid, sdpMLineIndex, usernameFragment: e.u }).catch(() => undefined);
+    }
   }
 
   private onPeerState(peer: Peer) {
@@ -956,13 +1208,15 @@ class CallEngine {
     if (p.lostTimer) clearTimeout(p.lostTimer);
     if (p.restartTimer) clearTimeout(p.restartTimer);
     if (p.offerTimer) clearTimeout(p.offerTimer);
-    p.lostTimer = p.restartTimer = p.offerTimer = null;
+    if (p.candTimer) clearTimeout(p.candTimer);
+    p.lostTimer = p.restartTimer = p.offerTimer = p.candTimer = null;
   }
 
   private closePeer(ep: string) {
     const p = this.peers.get(ep);
     if (!p) return;
     this.peers.delete(ep);
+    this.earlyCands.delete(ep);
     this.clearPeerTimers(p);
     try { p.pc.close(); } catch { /* already closed */ }
     p.stream.getTracks().forEach((t) => t.stop());
@@ -1264,6 +1518,7 @@ class CallEngine {
   /** The call ended (any reason): release everything, show "Call ended" briefly, then go idle. */
   private finish() {
     const wasConnected = this.snap.m.everConnected;
+    void nativeCallEnded();
     stopTone();
     if (wasConnected || this.snap.m.reason !== 'elsewhere') endTone();
     if (this.snap.callId) this.ended.add(this.snap.callId);
@@ -1281,8 +1536,11 @@ class CallEngine {
     }
     this.peers.clear();
     this.roster.clear();
+    this.earlyCands.clear();
     this.local?.getTracks().forEach((t) => t.stop());
     this.local = null;
+    this.mediaReady = null;
+    this.mediaGen++;
     this.frames?.close();
     this.frames = null;
     this.callKey = null;
@@ -1292,7 +1550,8 @@ class CallEngine {
     this.suggestDismissed = false;
     this.set({ local: null, peers: [], minimized: false, weak: null, suggestVoice: false });
     if (this.resetTimer) clearTimeout(this.resetTimer);
-    this.resetTimer = setTimeout(() => this.resetNow(), ENDED_SHOW_MS);
+    const r = this.snap.m.reason;
+    this.resetTimer = setTimeout(() => this.resetNow(), r === 'failed' || r === 'no-media' || r === 'relay' ? ENDED_ERROR_MS : ENDED_SHOW_MS);
   }
 
   private resetNow() {

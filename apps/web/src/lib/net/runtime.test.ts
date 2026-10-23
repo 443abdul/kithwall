@@ -82,11 +82,43 @@ describe('failover', () => {
     expect(net.netState()).toMatchObject({ status: 'direct', current: { id: 'primary' } });
   });
 
-  it('reports "blocked" when no route answers', async () => {
+  it('says "blocked" only after sustained failures while our own origin answers, and clears on one good check', async () => {
+    vi.useFakeTimers();
+    let routesDown = true;
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (u.startsWith('/kw-health.json?')) return json();
+      if (routesDown) throw new TypeError('Failed to fetch');
+      return json();
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const net = await load({ NEXT_PUBLIC_API_BASE: '/sb' });
+    // One failed check (a cold start, a phone waking up): nothing is shown.
+    await net.recheck();
+    expect(net.netState().status).toBe('unknown');
+    expect(fetchSpy.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith('/kw-health.json?t='))).toBe(true);
+    expect(fetchSpy.mock.calls.map((c) => String(c[0]))).not.toContain('/api/net/health');
+    for (const gap of [10_000, 10_000, 10_000]) { vi.advanceTimersByTime(gap); await net.recheck(); }
+    expect(net.netState().status).toBe('blocked');
+    routesDown = false;
+    await net.recheck();
+    expect(net.netState().status).toBe('direct');
+  });
+
+  it('nothing answering at all (not even our static file) is "unreachable", not "blocked"', async () => {
+    vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
     const net = await load({ NEXT_PUBLIC_API_BASE: '/sb' });
-    await net.recheck();
-    expect(net.netState().status).toBe('blocked');
+    for (let i = 0; i < 4; i++) { await net.recheck(); vi.advanceTimersByTime(10_000); }
+    expect(net.netState().status).toBe('unreachable');
+  });
+
+  it('HTTP errors from servers that answered never count as blocked', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"msg":"x"}', { status: 503, headers: { 'content-type': 'application/json' } })));
+    const net = await load({ NEXT_PUBLIC_API_BASE: '/sb' });
+    for (let i = 0; i < 5; i++) { await net.recheck(); vi.advanceTimersByTime(10_000); }
+    expect(net.netState().status).toBe('direct');
   });
 });
 

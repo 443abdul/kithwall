@@ -4,10 +4,10 @@
 import { describe, expect, it } from 'vitest';
 import { generateIdentity, newSymmetricKey } from '@kithwall/crypto';
 import {
-  AUDIO_STEPS, DOWN_HOLD, ENTER, MAX_UP_HOLD, meshCeiling, PAUSED, QualityController, SAVER_AUDIO, shareUplink, startTier, STAY, UP_HOLD, videoEncoding,
+  AUDIO_STEPS, DOWN_HOLD, ENTER, HEADROOM, MAX_UP_HOLD, START_UP_HOLD, TIERS, meshCeiling, PAUSED, QualityController, SAVER_AUDIO, shareUplink, startTier, STAY, UP_HOLD, videoEncoding,
   type NetSample,
 } from './quality';
-import { audioPayloadOrder, capVideoBandwidth, firstAudioCodec, isMobileUa, orderAudioCodecs, orderVideoCodecs, tuneOpus } from './sdp';
+import { audioPayloadOrder, capVideoBandwidth, firstAudioCodec, isMobileUa, orderAudioCodecs, orderVideoCodecs, tuneOpus, videoStartBitrate } from './sdp';
 import { cleanIceServers, hasTurn } from './ice';
 import { endpointOf, openSignal, sealSignal } from './signal';
 
@@ -15,10 +15,10 @@ const good = (over: Partial<NetSample> = {}): NetSample => ({ availableOut: 2_00
 const run = (c: QualityController, s: NetSample, n: number) => { let d = c.update(s); for (let i = 1; i < n; i++) d = c.update(s); return d; };
 
 describe('quality controller: video tiers', () => {
-  it('starts at 360p, earns 720p only after several good samples', () => {
+  it('starts at 360p, earns 720p after a couple of good samples (the first step of a call is quick)', () => {
     const c = new QualityController({ ceiling: 0, saver: false });
     expect(c.tier).toBe(1);
-    for (let i = 0; i < UP_HOLD - 1; i++) expect(c.update(good()).tier).toBe(1);
+    for (let i = 0; i < START_UP_HOLD - 1; i++) expect(c.update(good()).tier).toBe(1);
     expect(c.update(good()).tier).toBe(0);
     expect(c.quality).toBe('good');
   });
@@ -56,12 +56,23 @@ describe('quality controller: video tiers', () => {
 
   it('hysteresis: needs clearly more bandwidth to go up than to stay', () => {
     const c = new QualityController({ ceiling: 0, saver: false }, 1);
-    // Enough to stay at 360p but not to enter 720p: stays at 360p forever.
-    expect(run(c, good({ availableOut: (STAY[0]! + ENTER[0]!) / 2 }), 30).tier).toBe(1);
-    // Enough to stay at 720p once there? It never gets there without ENTER[0].
-    expect(run(c, good({ availableOut: ENTER[0]! }), UP_HOLD).tier).toBe(0);
+    const headroom = HEADROOM * (TIERS[1]!.maxBitrate + 32_000);
+    const between = (STAY[0]! + headroom) / 2;
+    expect(between).toBeGreaterThan(STAY[0]!);
+    // Enough to stay at 720p but not a clear sign of room above 360p: stays at 360p.
+    expect(run(c, good({ availableOut: between }), 30).tier).toBe(1);
+    // The estimate shows headroom (Chrome probes up to ~2× what the encoder may send): up to 720p.
+    expect(run(c, good({ availableOut: headroom + 10_000 }), UP_HOLD).tier).toBe(0);
     // And now the in-between value keeps it at 720p (no flapping).
-    expect(run(c, good({ availableOut: (STAY[0]! + ENTER[0]!) / 2 }), 30).tier).toBe(0);
+    expect(run(c, good({ availableOut: between }), 30).tier).toBe(0);
+  });
+
+  it('a capped encoder can still earn the next tier (the estimate never reaches ENTER from below)', () => {
+    // 180p is capped at 140 kbps; the estimate settles well under ENTER[1] but shows headroom.
+    const c = new QualityController({ ceiling: 0, saver: false }, 2);
+    const est = Math.ceil(HEADROOM * (TIERS[2]!.maxBitrate + 32_000));
+    expect(est).toBeLessThan(ENTER[1]!);
+    expect(run(c, good({ availableOut: est }), START_UP_HOLD).tier).toBe(1);
   });
 
   it('recovers from paused by itself once the link is calm (probing the lowest tier first)', () => {
@@ -85,7 +96,7 @@ describe('quality controller: video tiers', () => {
       expect(c.tier).toBe(2);
       holds.push(c.upHold);
     }
-    expect(holds).toEqual([8, 16, MAX_UP_HOLD, MAX_UP_HOLD, MAX_UP_HOLD]);
+    expect(holds).toEqual([UP_HOLD, 8, 16, MAX_UP_HOLD, MAX_UP_HOLD]);
     // A long calm spell forgives.
     run(c, good({ availableOut: 300_000 }), 70);
     expect(c.upHold).toBeLessThan(MAX_UP_HOLD);
@@ -99,7 +110,7 @@ describe('quality controller: video tiers', () => {
     expect(c.configure({ ceiling: PAUSED }).tier).toBe(PAUSED); // "voice only"
     expect(c.update(good()).quality).toBe('good');
     expect(c.configure({ ceiling: 0, saver: false }).tier).toBe(2); // lifted: back to the smallest video, then earn the rest
-    expect(run(c, good(), UP_HOLD).tier).toBe(1);
+    expect(run(c, good(), START_UP_HOLD).tier).toBe(1);
   });
 
   it('CPU-limited encoders step down too (cheap phones)', () => {
@@ -311,5 +322,43 @@ describe('signalling: low-bandwidth fields', () => {
     expect(open({ k: 'state', mic: true, cam: true, net: 3 })).toEqual({ ok: false, reason: 'malformed' });
     expect(open({ k: 'state', mic: true, cam: true, rx: 1.5 })).toEqual({ ok: false, reason: 'malformed' });
     expect(open({ k: 'state', mic: true, cam: true, vp: 'yes' })).toEqual({ ok: false, reason: 'malformed' });
+  });
+  it('trickle ICE: cumulative, bounded candidate lists; ringing; the tr flags', () => {
+    const cand = 'candidate:1 1 udp 2122260223 192.0.2.1 54321 typ host generation 0';
+    expect(open({ k: 'cand', u: 'AbC+/123', c: [['0', 0, cand]] }).ok).toBe(true);
+    expect(open({ k: 'cand', u: 'AbC1', c: [], done: true }).ok).toBe(true);
+    expect(open({ k: 'ringing' }).ok).toBe(true);
+    expect(open({ k: 'join', fe: true, video: false, tr: true }).ok).toBe(true);
+    expect(open({ k: 'offer', sdp: 'v=0', fe: true, tr: true }).ok).toBe(true);
+    // Malformed: bad ufrag, not a candidate line, injected line break, too many, bad index, bad flags.
+    expect(open({ k: 'cand', u: 'a b', c: [['0', 0, cand]] }).ok).toBe(false);
+    expect(open({ k: 'cand', u: 'AbC1', c: [['0', 0, 'a=fingerprint:x']] }).ok).toBe(false);
+    expect(open({ k: 'cand', u: 'AbC1', c: [['0', 0, cand + String.fromCharCode(13, 10) + 'a=evil']] }).ok).toBe(false);
+    expect(open({ k: 'cand', u: 'AbC1', c: Array.from({ length: 65 }, () => ['0', 0, cand]) }).ok).toBe(false);
+    expect(open({ k: 'cand', u: 'AbC1', c: [['0', 99, cand]] }).ok).toBe(false);
+    expect(open({ k: 'cand', u: 'AbC1', c: [['0', 0, cand]], done: 'yes' }).ok).toBe(false);
+    expect(open({ k: 'join', fe: true, video: false, tr: 1 }).ok).toBe(false);
+  });
+});
+
+describe('call start-up', () => {
+  it('asks the other side to start video at a sensible bitrate, on every video codec, without touching audio', () => {
+    const NL = String.fromCharCode(13, 10);
+    const sdp = ['v=0', 'm=audio 9 UDP/TLS/RTP/SAVPF 111', 'a=rtpmap:111 opus/48000/2', 'a=fmtp:111 minptime=10;useinbandfec=1',
+      'm=video 9 UDP/TLS/RTP/SAVPF 96 97 98', 'a=rtpmap:96 VP8/90000', 'a=rtpmap:97 rtx/90000', 'a=fmtp:97 apt=96',
+      'a=rtpmap:98 H264/90000', 'a=fmtp:98 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f', ''].join(NL);
+    const out = videoStartBitrate(sdp, 800);
+    expect(out).toContain(`a=rtpmap:96 VP8/90000${NL}a=fmtp:96 x-google-start-bitrate=800`);
+    expect(out).toContain('a=fmtp:98 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f;x-google-start-bitrate=800');
+    expect(out).toContain(`a=fmtp:97 apt=96${NL}`);
+    expect(out).toContain(`a=fmtp:111 minptime=10;useinbandfec=1${NL}`);
+    // Idempotent and clamped.
+    expect(videoStartBitrate(out, 800)).toBe(out);
+    expect(videoStartBitrate(sdp, 99_999)).toContain('x-google-start-bitrate=2000');
+  });
+
+  it('lists UDP relays first, then TCP, then TLS', () => {
+    const out = cleanIceServers({ iceServers: [{ urls: ['turns:t.example:443?transport=tcp', 'turn:t.example:80?transport=tcp', 'turn:t.example:3478?transport=udp', 'stun:t.example:3478'], username: 'u', credential: 'c' }] });
+    expect(out[0]!.urls).toEqual(['stun:t.example:3478', 'turn:t.example:3478?transport=udp', 'turn:t.example:80?transport=tcp', 'turns:t.example:443?transport=tcp']);
   });
 });

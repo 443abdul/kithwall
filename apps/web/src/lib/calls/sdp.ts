@@ -156,3 +156,31 @@ function h264Rank(c: CodecCap): number {
 export function isMobileUa(ua: string): boolean {
   return /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
 }
+
+/**
+ * Where the other side's video encoder starts (`x-google-start-bitrate`, kbps, on every video codec's fmtp
+ * line in the SDP we SEND: like the Opus parameters, it configures the other side's sender). Chrome's
+ * bandwidth estimate otherwise starts around 300 kbps and climbs for several seconds, so a call on a good
+ * link looks blurry at first. Not used on slow links or with data saver (there the default start is right).
+ * Other browsers ignore it.
+ */
+export function videoStartBitrate(sdp: string, kbps: number): string {
+  const { head, media } = splitSections(sdp);
+  const k = Math.round(Math.min(2_000, Math.max(100, kbps)));
+  for (const sec of media) {
+    if (!sec[0]!.startsWith('m=video')) continue;
+    const pts = sec.map((l) => /^a=rtpmap:(\d+) (VP8|VP9|H264|AV1)\/90000/i.exec(l)?.[1]).filter((x): x is string => !!x);
+    for (const pt of pts) {
+      const fi = sec.findIndex((l) => l.startsWith(`a=fmtp:${pt} `));
+      if (fi >= 0) {
+        const params = parseFmtp(sec[fi]!.slice(`a=fmtp:${pt} `.length)).filter(([n]) => n !== 'x-google-start-bitrate');
+        params.push(['x-google-start-bitrate', String(k)]);
+        sec[fi] = `a=fmtp:${pt} ` + params.map(([n, v]) => (v === '' ? n : `${n}=${v}`)).join(';');
+      } else {
+        const ri = sec.findIndex((l) => l.startsWith(`a=rtpmap:${pt} `));
+        sec.splice(ri + 1, 0, `a=fmtp:${pt} x-google-start-bitrate=${k}`);
+      }
+    }
+  }
+  return join(head, media);
+}

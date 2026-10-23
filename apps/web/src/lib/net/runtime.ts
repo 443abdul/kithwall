@@ -11,7 +11,8 @@
 // protection) and the id of the route that last worked.
 import { NET, routingEnabled, type NetConfig } from './config';
 import { netConnectSources } from './csp';
-import { buildRoutes, endpointsFor, pickRoute, rewriteHttp, rewriteWs, statusOf, type Endpoints, type NetStatus, type Route } from './endpoints';
+import { buildRoutes, endpointsFor, rewriteHttp, rewriteWs, type Endpoints, type NetStatus, type Route } from './endpoints';
+import { HEALTH_START, nextCheckIn, nextHealth, probeOutcome, type HealthSample, type HealthTrack, type Probe } from './health';
 import { verifyMirrorList, type MirrorList, type SignedMirrorList } from './mirrors';
 
 export const NET_KEYS = {
@@ -21,8 +22,6 @@ export const NET_KEYS = {
   dismissed: 'kw.net.dismissed',
 } as const;
 
-const PROBE_TIMEOUT_MS = 6000;
-const RECHECK_MS = 5 * 60_000;
 
 export interface NetState {
   enabled: boolean;
@@ -102,27 +101,60 @@ export function netUrl(url: string): string {
 }
 
 // ---- probing -----------------------------------------------------------------------------------------
+// Each check is one sample for health.ts, which decides what (if anything) to show. A single failed
+// check never shows a banner; see health.ts for the rules.
 
-async function probeUrl(url: string, headers?: Record<string, string>): Promise<boolean> {
+/** Long enough for a static file over 2G or a slow TLS handshake; a censor's drop never answers at all. */
+const PROBE_TIMEOUT_MS = 8000;
+/** Our own origin's health: a static file (public/kw-health.json), so no serverless cold start. */
+export const APP_HEALTH = '/kw-health.json';
+
+async function probeUrl(url: string, headers?: Record<string, string>): Promise<Probe> {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), PROBE_TIMEOUT_MS);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, PROBE_TIMEOUT_MS);
   try {
     const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer', headers, signal: ctl.signal });
-    // Any HTTP answer from Supabase Auth's health endpoint proves the path works; a blocking page from a
-    // censor's middlebox usually answers 200/403 HTML, so require JSON.
-    return res.ok && (res.headers.get('content-type') ?? '').includes('json');
-  } catch {
-    return false;
+    await res.body?.cancel().catch(() => undefined);
+    // Supabase Auth's health endpoint and our static file both answer JSON; a censor's middlebox usually
+    // answers an HTML page (health.ts probeOutcome).
+    return probeOutcome({ status: res.status, contentType: res.headers.get('content-type') ?? '' });
+  } catch (error) {
+    return probeOutcome({ error, timedOut });
   } finally {
     clearTimeout(timer);
   }
 }
 
 const apikey = () => process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
-export const probeRoute = (r: Route) => probeUrl(r.health, { apikey: apikey() });
-const probeApp = () => probeUrl('/api/net/health');
+const routeProbe = (r: Route) => probeUrl(r.health, { apikey: apikey() });
+/** Does this route answer (ok, or a JSON error from a server that is clearly reachable)? */
+export const probeRoute = async (r: Route) => { const p = await routeProbe(r); return p === 'ok' || p === 'neutral'; };
+// Cache-busting query: the file is static (served from the CDN edge), the query only defeats caches.
+const probeApp = () => probeUrl(`${APP_HEALTH}?t=${Date.now().toString(36)}`);
 
+const hidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+const mirrorsKnown = () => state.routes.length > 1;
+
+let track: HealthTrack = HEALTH_START;
+let loopStarted = false;
 let inflight: Promise<NetState> | null = null;
+
+/** Probe every route in parallel; the first that answers in route order (preferring the last one used). */
+async function probeRoutes(): Promise<{ best: Route | null; outcome: Probe }> {
+  const prefer = state.current?.id;
+  const ordered = prefer ? [...state.routes.filter((r) => r.id === prefer), ...state.routes.filter((r) => r.id !== prefer)] : state.routes;
+  const results = await Promise.all(ordered.map((r) => routeProbe(r).catch((): Probe => 'fail')));
+  const i = results.findIndex((p) => p === 'ok' || p === 'neutral');
+  if (i >= 0) {
+    // Back to the first route as soon as it works again.
+    const first = state.routes[0];
+    const firstAt = ordered.findIndex((r) => r.id === first?.id);
+    const best = firstAt >= 0 && (results[firstAt] === 'ok' || results[firstAt] === 'neutral') ? first! : ordered[i]!;
+    return { best, outcome: results[ordered.indexOf(best)]! };
+  }
+  return { best: null, outcome: results.some((p) => p === 'aborted') ? 'aborted' : 'fail' };
+}
 
 /** Health-check the app origin and every route; switch to the first route that works. */
 export function recheck(): Promise<NetState> {
@@ -131,26 +163,45 @@ export function recheck(): Promise<NetState> {
   inflight ??= (async () => {
     update({ checking: true });
     try {
-      const online = typeof navigator === 'undefined' || navigator.onLine !== false;
-      const [appOk, picked] = await Promise.all([probeApp(), pickRoute(state.routes, probeRoute, state.current?.id)]);
-      // Back to the first route as soon as it works again.
-      const best = picked && picked.id !== state.routes[0]?.id && (await probeRoute(state.routes[0]!)) ? state.routes[0]! : picked;
-      if (best) set(NET_KEYS.route, best.id);
-      update({ current: best ?? state.current, status: statusOf(state.routes, best, appOk, online), checkedAt: Date.now() });
+      const at = Date.now();
+      const wasHidden = hidden();
+      const [app, routes] = await Promise.all([probeApp(), probeRoutes()]);
+      if (routes.best) set(NET_KEYS.route, routes.best.id);
+      const sample: HealthSample = {
+        at, app, route: routes.outcome, hidden: wasHidden || hidden(),
+        online: typeof navigator === 'undefined' || navigator.onLine !== false,
+        rerouted: !!routes.best && routes.best.id !== state.routes[0]?.id && routes.best.kind !== 'direct',
+      };
+      track = nextHealth(track, sample, { mirrors: mirrorsKnown() });
+      update({ current: routes.best ?? state.current, status: track.status, checkedAt: Date.now() });
     } finally {
       update({ checking: false });
       inflight = null;
+      schedule();
     }
     return state;
   })();
   return inflight;
 }
 
+// Follow-up checks (health.ts nextCheckIn): soon while something looks wrong, backing off once shown.
+let nextTimer: ReturnType<typeof setTimeout> | null = null;
+function schedule(delay = nextCheckIn(track)) {
+  if (!loopStarted) return;
+  if (nextTimer) clearTimeout(nextTimer);
+  nextTimer = delay === null ? null : setTimeout(() => { nextTimer = null; if (hidden()) return; void recheck(); }, delay);
+}
+
 let debounce: ReturnType<typeof setTimeout> | null = null;
-/** A request failed at the network level: re-check soon (coalesced). */
+let resumedAt = 0;
+/**
+ * A request failed at the network level: check soon (coalesced). Ignored while the page is hidden or
+ * just after it came back (a phone waking up, the WebView resuming, a network switch: requests fail for a
+ * moment and then work); aborted requests never get here.
+ */
 export function reportNetworkFailure() {
-  if (!enabled || debounce) return;
-  debounce = setTimeout(() => { debounce = null; void recheck(); }, 500);
+  if (!enabled || debounce || hidden() || Date.now() - resumedAt < 5_000) return;
+  debounce = setTimeout(() => { debounce = null; if (!hidden()) void recheck(); }, 1_500);
 }
 
 // ---- the signed mirror list --------------------------------------------------------------------------
@@ -231,19 +282,35 @@ export function supabaseNetOptions(): { global?: { fetch: typeof fetch }; realti
 
 // ---- background loop ---------------------------------------------------------------------------------
 
-let loopStarted = false;
 /** Started once by the NetRuntime component. */
 export function startNetLoop(): () => void {
   init();
   if (!enabled || loopStarted) return () => undefined;
   loopStarted = true;
   const first = setTimeout(() => { void refreshMirrorList().finally(() => { void recheck(); }); }, 3000);
-  const every = setInterval(() => { if (state.status !== 'direct' && state.status !== 'unknown') void recheck(); }, RECHECK_MS);
   const daily = setInterval(() => { void refreshMirrorList(); }, 24 * 3600_000);
-  const online = () => { void recheck(); };
+  // Back online: check now, so a shown "offline"/"blocked" clears at once. Offline: confirm in a moment
+  // (OFFLINE_SAMPLES over OFFLINE_SPAN_MS) rather than on a blip during a network switch.
+  const online = () => { resumedAt = Date.now(); schedule(1_500); };
+  const offline = () => schedule(2_000);
+  // Coming back to the page: failures right after a resume don't count; re-check only to clear a shown state.
+  const visible = () => {
+    if (hidden()) return;
+    resumedAt = Date.now();
+    if (track.pending || track.status === 'offline' || track.status === 'unreachable' || track.status === 'blocked') schedule(3_000);
+  };
   addEventListener('online', online);
-  return () => { loopStarted = false; clearTimeout(first); clearInterval(every); clearInterval(daily); removeEventListener('online', online); };
+  addEventListener('offline', offline);
+  document.addEventListener('visibilitychange', visible);
+  return () => {
+    loopStarted = false;
+    clearTimeout(first); clearInterval(daily);
+    if (nextTimer) clearTimeout(nextTimer);
+    nextTimer = null;
+    removeEventListener('online', online); removeEventListener('offline', offline);
+    document.removeEventListener('visibilitychange', visible);
+  };
 }
 
 /** Tests only. */
-export function __resetNetForTests() { started = false; loopStarted = false; inflight = null; state = { ...SERVER_STATE }; listeners.clear(); }
+export function __resetNetForTests() { started = false; loopStarted = false; inflight = null; track = HEALTH_START; resumedAt = 0; state = { ...SERVER_STATE }; listeners.clear(); }

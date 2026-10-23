@@ -12,9 +12,10 @@
 import { b64u, openEnvelope, type Envelope } from '@kithwall/crypto';
 import { useSyncExternalStore } from 'react';
 import { sb, must } from './supabase';
+import { coalescer, droppedPaths, staleInfos, type InfoStamp } from './peopleSync';
 import type { ProfileInfo, ProfileRow } from './types';
 
-interface ProfileInfoRow { user_id: string; audience_id: string; epoch: number; envelope: Envelope; updated_at: string }
+export interface ProfileInfoRow extends InfoStamp { envelope: Envelope }
 
 export interface Person extends ProfileRow {
   info: ProfileInfo | null;      // decrypted profile info if we can read it
@@ -35,7 +36,14 @@ class People {
   private resolver: TrustResolver | null = null;
   private publishedKeys = new Map<string, { s: string; x: string }>();
   private trustOf = new Map<string, SignerTrust>();
+  /** Storage paths of the avatar last decrypted for each person (to free them when it changes). */
+  private avatarPaths = new Map<string, string[]>();
+  private releaseFiles: (paths: string[]) => void = () => undefined;
+  private syncer = coalescer(() => this.syncInfos(), 250);
   version = 0;
+
+  /** Called with storage paths a profile stopped using (lib/media releaseFileUrls), so old pictures are freed. */
+  setFileRelease(fn: (paths: string[]) => void) { this.releaseFiles = fn; }
 
   setKeyLookup(fn: KeyLookup) { this.keyLookup = fn; }
 
@@ -79,6 +87,8 @@ class People {
   private bump() { this.version++; this.listeners.forEach((l) => l()); }
 
   get(id: string): ProfileRow | undefined { return this.rows.get(id); }
+  /** The sealed profile_info row cached for this person (undefined: none read yet). */
+  infoRow(id: string): ProfileInfoRow | undefined { return this.infoRows.get(id); }
 
   /** Drop cached rows (e.g. after an identity-key change) so the next ensure() reads them fresh. */
   forget(ids: Iterable<string>) { for (const id of ids) { this.rows.delete(id); this.infos.delete(id); this.trustOf.delete(id); } this.bump(); }
@@ -174,6 +184,46 @@ class People {
     this.bump();
   }
 
+  /**
+   * Re-read profiles that changed on the server. Requested when a connection's profile changes (the
+   * "profile_info" notice on my private db: topic, see Providers) and when the app comes back to the
+   * foreground or reconnects, so a missed notice never leaves a stale name or photo. Bursts are folded
+   * into one run.
+   */
+  requestSync() { this.syncer.request(); }
+
+  /**
+   * Compare (user, audience, epoch, updated_at) stamps of everyone cached with the server's and fetch the
+   * envelopes of only the rows that changed.
+   */
+  async syncInfos(): Promise<void> {
+    const ids = [...this.rows.keys()];
+    if (!ids.length) return;
+    const fresh: InfoStamp[] = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      fresh.push(...(must(await sb().from('profile_info').select('user_id,audience_id,epoch,updated_at').in('user_id', ids.slice(i, i + 100))) as InfoStamp[]));
+    }
+    const { changed, gone } = staleInfos(this.infoRows, ids, fresh);
+    if (!changed.length && !gone.length) return;
+    const rows: ProfileInfoRow[] = [];
+    for (let i = 0; i < changed.length; i += 100) {
+      rows.push(...(must(await sb().from('profile_info').select('*').in('user_id', changed.slice(i, i + 100))) as ProfileInfoRow[]));
+    }
+    this.applyInfoRows(rows, gone);
+  }
+
+  /** Replace cached envelopes (and drop the ones in `gone`), then re-render: each is decrypted again on read. */
+  applyInfoRows(rows: readonly ProfileInfoRow[], gone: readonly string[] = []) {
+    for (const r of rows) { this.infoRows.set(r.user_id, r); this.infos.delete(r.user_id); }
+    for (const id of gone) {
+      this.infoRows.delete(id); this.infos.delete(id);
+      const paths = this.avatarPaths.get(id);
+      this.avatarPaths.delete(id);
+      if (paths?.length) this.releaseFiles(paths);
+    }
+    if (rows.length || gone.length) this.bump();
+  }
+
   private decryptInfo(id: string): ProfileInfo | null {
     if (this.infos.has(id)) return this.infos.get(id) ?? null;
     const row = this.infoRows.get(id);
@@ -191,6 +241,14 @@ class People {
       }
     }
     this.infos.set(id, info);
+    if (info) {
+      // A new picture: the old one's decrypted copies are no longer needed.
+      const a = info.avatar;
+      const now = a ? [a.big?.path, a.med?.path, a.thumb?.path].filter((p): p is string => !!p) : [];
+      const dropped = droppedPaths(this.avatarPaths.get(id), now);
+      this.avatarPaths.set(id, now);
+      if (dropped.length) this.releaseFiles(dropped);
+    }
     return info;
   }
 }
