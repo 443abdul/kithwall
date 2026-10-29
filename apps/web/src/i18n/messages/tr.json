@@ -2447,5 +2447,14 @@
   "stories.replyToTheirs": "Hikâyesini yanıtladın",
   "bday.title": "Doğum günleri",
   "bday.today": "Bugün",
-  "bday.inDays": "{count, plural, =1 {Yarın} one {# gün sonra} other {# gün sonra}}"
+  "bday.inDays": "{count, plural, =1 {Yarın} one {# gün sonra} other {# gün sonra}}",
+  "media.inertTitle": "{count, plural, one {Fotoğrafı veya videoyu yüklemek için dokun} other {# fotoğrafı veya videoyu yüklemek için dokun}}",
+  "media.inertBody": "Bağlantın olmayan biri gönderdi, bu yüzden otomatik olarak açılmadı.",
+  "appVerify.title": "Bu gerçek Kithwall mı?",
+  "appVerify.body": "Kithwall'u yalnızca Google Play'den veya kithwall.com'dan yükle. Sahte kopyalar farklı bir anahtarla imzalanır.",
+  "appVerify.genuine": "Bu uygulama Kithwall'un resmi anahtarıyla imzalanmış.",
+  "appVerify.unknown": "Bu uygulama Kithwall'un resmi anahtarıyla İMZALANMAMIŞ. Sahte bir kopya olabilir: kaldır ve Kithwall'u Google Play'den veya kithwall.com'dan edin.",
+  "appVerify.fingerprints": "Resmi uygulamanın imzalama sertifikaları (SHA-256):",
+  "appVerify.yours": "Bu uygulamanın sertifikası:",
+  "messages.queued": "Bağlantı bekleniyor. Kendiliğinden gönderilecek."
 }

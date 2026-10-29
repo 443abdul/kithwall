@@ -91,9 +91,26 @@ function sigMessage(h: EnvelopeHeader, f: SignedFields): Uint8Array {
   return utf8(canonicalJson(m));
 }
 
+/**
+ * Encrypted payloads are padded with trailing spaces (Padme, from "Reducing Metadata Leakage from Encrypted
+ * Files and Communication with PURBs", PETS 2019): at least 256 bytes, then rounded so that only the top
+ * few bits of the length survive. Overhead is at most ~12%, so payloads stay well inside the database's
+ * size limits, while the ciphertext length no longer gives away exactly how long a post or message is.
+ * JSON.parse ignores the spaces, so older apps read padded payloads unchanged.
+ */
+export function paddedLength(n: number): number {
+  const L = Math.max(n, 256);
+  const e = Math.floor(Math.log2(L));
+  const s = Math.floor(Math.log2(e)) + 1;
+  const mask = 2 ** (e - s) - 1;
+  return Math.min(Math.max(n, MAX_PAYLOAD), Math.floor((L + mask) / (mask + 1)) * (mask + 1));
+}
+
 function serializePayload(payload: unknown): Uint8Array {
-  const bytes = utf8(canonicalJson(payload));
-  if (bytes.length > MAX_PAYLOAD) invalid('payload too large');
+  const raw = utf8(canonicalJson(payload));
+  if (raw.length > MAX_PAYLOAD) invalid('payload too large');
+  const bytes = new Uint8Array(paddedLength(raw.length)).fill(0x20);
+  bytes.set(raw);
   return bytes;
 }
 

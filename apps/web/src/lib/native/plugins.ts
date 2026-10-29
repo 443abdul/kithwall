@@ -43,6 +43,8 @@ export interface ShellInfo {
   build: string;
   /** Android build flavour: 'play' (FCM) or 'foss' (UnifiedPush, no Google libraries). iOS: 'ios'. */
   flavor: 'play' | 'foss' | 'ios';
+  /** Android: SHA-256 of the app's signing certificate ("AA:BB:..."); older app builds don't send it. */
+  signer?: string;
 }
 
 /** The app shell: screen protection, screenshot notices, leaving the app. */

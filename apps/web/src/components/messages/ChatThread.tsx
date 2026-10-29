@@ -7,7 +7,8 @@ import { VerifiedBadge } from '@/lib/transparency/verified';
 import { isHiddenChat } from '@/lib/safety/hidden';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { myFriendIds } from '@/lib/friends';
 import { invalidateSoon } from '@/lib/invalidate';
 import { useFormat, useT, type MessageKey } from '@/i18n';
 import { useSession } from '@/lib/keys/session';
@@ -41,7 +42,15 @@ import { CallButtons } from '@/components/calls/CallButtons';
 import { ChatKeyNotices } from '@/components/verify/ChatKeyNotices';
 
 interface Line extends ChatLine { row: MessageRow; payload: ChatPayload | null }
-interface Pending { tempId: string; draft: Draft; status: 'sending' | 'failed'; progress: number; error?: string }
+/** 'queued': failed because the device is offline; it is sent again by itself when the connection is back. */
+interface Pending { tempId: string; draft: Draft; status: 'sending' | 'failed' | 'queued'; progress: number; error?: string }
+
+/** Did a send fail because there is no connection (rather than being refused)? */
+function offlineFailure(e: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  const m = (e as Error)?.message ?? '';
+  return /failed to fetch|networkerror|network request failed|load failed|err_internet|timed? ?out/i.test(m);
+}
 
 function useDayLabel() {
   const t = useT();
@@ -191,13 +200,30 @@ function Thread({ c }: { c: ConversationSummary }) {
         invalidateSoon(qc, ['conversations']);
       } catch (e) {
         const code = e instanceof SendError ? e.code : 'failed';
-        setPending((p) => p.map((q) => (q.tempId === tempId ? { ...q, status: 'failed', error: t(`messages.error.${code}` as MessageKey) } : q)));
+        // Offline (a shutdown, a tunnel, flight mode): keep it and send it when the connection returns.
+        const queued = code === 'failed' && offlineFailure(e);
+        setPending((p) => p.map((q) => (q.tempId === tempId
+          ? { ...q, status: queued ? 'queued' : 'failed', error: queued ? t('messages.queued') : t(`messages.error.${code}` as MessageKey) } : q)));
       }
     };
     void run();
   }, [c, qc, t]);
 
   const retry = (p: Pending) => { setPending((xs) => xs.filter((q) => q.tempId !== p.tempId)); send(p.draft); };
+  // Back online: send everything that waited for the connection, in the order it was written.
+  const pendingRef = useRef(pending);
+  useEffect(() => { pendingRef.current = pending; }, [pending]);
+  useEffect(() => {
+    const flush = () => {
+      const waiting = pendingRef.current.filter((q) => q.status === 'queued');
+      if (!waiting.length) return;
+      setPending((xs) => xs.filter((q) => q.status !== 'queued'));
+      waiting.forEach((q) => send(q.draft));
+    };
+    window.addEventListener('online', flush);
+    const timer = setInterval(() => { if (navigator.onLine) flush(); }, 30_000);
+    return () => { window.removeEventListener('online', flush); clearInterval(timer); };
+  }, [send]);
   const discard = (p: Pending) => setPending((xs) => xs.filter((q) => q.tempId !== p.tempId));
 
   const startReply = (l: Line) => {
@@ -291,8 +317,8 @@ function Thread({ c }: { c: ConversationSummary }) {
                   {p.status === 'sending'
                     ? <span>{(p.draft.files.length || p.draft.voice) && p.progress < 1 ? t('messages.sendingProgress', { percent: Math.round(p.progress * 100) }) : t('messages.sending')}</span>
                     : (
-                      <span className="k-chat-failed" role="alert">
-                        <Icon name="alert" /> {p.error}
+                      <span className={p.status === 'queued' ? 'k-chat-queued' : 'k-chat-failed'} role={p.status === 'queued' ? 'status' : 'alert'}>
+                        <Icon name={p.status === 'queued' ? 'clock' : 'alert'} /> {p.error}
                         <button type="button" className="k-chat-linkbtn" onClick={() => retry(p)}>{t('messages.retry')}</button>
                         <button type="button" className="k-chat-linkbtn" onClick={() => discard(p)}>{t('messages.discard')}</button>
                       </span>
@@ -334,6 +360,9 @@ function Bubble({ l, c, first, last, mine, isGroup, replyTo, reactions, seen, re
   const f = useFormat();
   const { userId } = useSession();
   const nameOf = useNameOf();
+  // Media from people I'm not connected with stays inert until tapped (ChatAttachments `trusted`).
+  const friends = useQuery({ queryKey: ['friend-ids'], staleTime: 5 * 60_000, queryFn: myFriendIds });
+  const connections = new Set(friends.data ?? []);
   const p = l.payload;
   const d = readMessage(c, l.row);
   const voice = voiceOf(p);
@@ -369,7 +398,7 @@ function Bubble({ l, c, first, last, mine, isGroup, replyTo, reactions, seen, re
             {d.ok ? (
               <>
                 {voice ? <VoiceNote file={voice.file} meta={voice.meta} messageId={l.id} mine={mine} persist={!isHiddenChat(c.id)} /> : null}
-                {p?.attachments?.length ? <ChatAttachments files={p.attachments} /> : null}
+                {p?.attachments?.length ? <ChatAttachments files={p.attachments} trusted={mine || connections.has(l.sender)} pending={!mine && !friends.data} /> : null}
                 {text ? <p className="k-chat-text" dir="auto"><MessageText text={text} /></p> : null}
                 {p?.link ? <LinkCard link={p.link} /> : null}
               </>

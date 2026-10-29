@@ -52,6 +52,7 @@ export {
 } from './passkey';
 
 export { type Sealed, seal, openSealed } from './seal';
+export { PQ_PUB_LEN, pqKeysFromKx, signPqPub, verifiedPqPub } from './pq';
 
 export {
   type Audience,
@@ -69,7 +70,7 @@ export {
 export { encryptBlob, decryptBlob } from './blob';
 
 export {
-  type EpochRecord, type AdminGrant, epochCommit, keyMatchesCommit, signEpochRecord, verifyEpochRecord, signAdminGrant, verifyAdminGrant,
+  type EpochRecord, type AdminGrant, type MemberAdd, epochCommit, keyMatchesCommit, signEpochRecord, verifyEpochRecord, signAdminGrant, verifyAdminGrant, signMemberAdd, verifyMemberAdd,
 } from './epoch';
 
 export { FILE_CHUNK_SIZE, encryptFile, decryptFile } from './files';

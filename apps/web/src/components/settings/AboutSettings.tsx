@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Logo } from '@/components/shell/Logo';
 import { COMMIT_SHA, shortCommit, sourceUrl } from '@/lib/source';
 import { SettingsPage, Section } from './shared';
+import { AppVerifySection } from './AppVerify';
 
 /** Shown in About; bump with releases. */
 export const APP_VERSION = '2.0.0-preview.2';
@@ -49,6 +50,7 @@ export function AboutSettings() {
         </dl>
         <p className="k-small k-muted">{t('settings.about.body')}</p>
       </Section>
+      <AppVerifySection />
     </SettingsPage>
   );
 }

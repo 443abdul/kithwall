@@ -9,6 +9,7 @@ import { fileUrl, useFileUrl } from '@/lib/media';
 import type { FileRef } from '@/lib/types';
 import type { ChatPayload } from '@/lib/messages';
 import { Spinner } from '@/components/ui/Spinner';
+import { Icon } from '@/components/ui/Icon';
 import { chatItems } from '@/components/gallery/items';
 import { ChatIcon } from './ChatIcon';
 import { safeHref } from './chatModel';
@@ -68,14 +69,31 @@ function Video({ file, onOpen }: { file: FileRef; onOpen: () => void }) {
   );
 }
 
-export function ChatAttachments({ files }: { files: FileRef[] }) {
+/**
+ * `trusted` false (the sender isn't one of my connections, e.g. another member of a circle): nothing is
+ * downloaded or decoded until I tap "Load". Image and video decoders are where zero-click exploits live
+ * (the 2025 WhatsApp / iMessage spyware chains), so media from people I haven't connected with stays inert.
+ */
+export function ChatAttachments({ files, trusted = true, pending = false }: { files: FileRef[]; trusted?: boolean; pending?: boolean }) {
+  const t = useT();
   const [open, setOpen] = useState<number | null>(null);
+  const [allowed, setAllowed] = useState(trusted);
   const valid = files.filter(validRef).slice(0, 6);
   const photos = valid.filter((x) => x.mime.startsWith('image/'));
   const videos = valid.filter((x) => x.mime.startsWith('video/'));
   // Same order as shown: photos, then videos. The gallery renders nothing until opened.
   const items = useMemo(() => chatItems([...photos, ...videos]), [files]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!valid.length) return null;
+  if (pending && !allowed) return <span className="k-chat-inert"><Spinner /></span>;
+  if (!allowed && !trusted) {
+    return (
+      <button type="button" className="k-chat-inert" onClick={() => setAllowed(true)}>
+        <Icon name="shield" />
+        <span><span className="k-chat-inert-title">{t('media.inertTitle', { count: valid.length })}</span>
+          <span className="k-small k-muted">{t('media.inertBody')}</span></span>
+      </button>
+    );
+  }
   return (
     <div className="k-chat-media">
       {photos.length ? (

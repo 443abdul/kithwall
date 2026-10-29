@@ -2447,5 +2447,14 @@
   "stories.replyToTheirs": "回复了对方的快拍",
   "bday.title": "生日",
   "bday.today": "今天",
-  "bday.inDays": "{count, plural, =1 {明天} other {# 天后}}"
+  "bday.inDays": "{count, plural, =1 {明天} other {# 天后}}",
+  "media.inertTitle": "{count, plural, other {点按以加载 # 张照片或视频}}",
+  "media.inertBody": "由未与你建立联系的人发送，因此未自动打开。",
+  "appVerify.title": "这是正版 Kithwall 吗？",
+  "appVerify.body": "请仅从 Google Play 或 kithwall.com 安装 Kithwall。仿冒版本使用的是不同的密钥签名。",
+  "appVerify.genuine": "此应用使用 Kithwall 官方密钥签名。",
+  "appVerify.unknown": "此应用未使用 Kithwall 官方密钥签名。它可能是仿冒版本：请卸载它，并从 Google Play 或 kithwall.com 获取 Kithwall。",
+  "appVerify.fingerprints": "官方应用的签名证书（SHA-256）：",
+  "appVerify.yours": "此应用的证书：",
+  "messages.queued": "正在等待网络连接，连接后将自动发送。"
 }

@@ -71,7 +71,7 @@ export async function updateEvent(e: EventRow, info: EventInfo): Promise<void> {
 export async function inviteToEvent(e: { id: string; audience_id: string }, friendIds: string[], name: string): Promise<number> {
   let n = 0;
   for (const f of friendIds) {
-    const r = await sb().from('audience_members').insert({ audience_id: e.audience_id, member_id: f, role: 'member', status: 'active' });
+    const r = await sb().from('audience_members').insert({ audience_id: e.audience_id, member_id: f, role: 'member', status: 'active', ...keyring.memberAdd(e.audience_id, f) });
     if (r.error && r.error.code !== '23505') throw new Error(r.error.message);
     if (!r.error) {
       n++;

@@ -150,3 +150,36 @@ export function judgeIncoming(args: {
   const identity = args.record && rot?.trust === 'unvouched' ? args.record.rotated_by : undefined;
   return identity ? { ok: false, reason: v.reason, identity } : { ok: false, reason: v.reason };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Signed member additions (roadmap 2026-11, batch 2). The server lists who should get an audience's key
+// (pending_key_deliveries); a compromised server could add a member row of its own and have honest devices
+// seal the key to it (the 2025 WhatsApp group analysis, ePrint 2025/794). So before sealing to a member of
+// a list, group, event or conversation, a device checks that someone entitled added them, by signature.
+
+/** Rows created before signed additions existed are accepted as they are (the server was trusted then). */
+export const MEMBER_SIG_CUTOFF = '2026-10-31T00:00:00Z';
+
+export interface MemberAddRow {
+  audience_id: string; member_id: string; role: 'admin' | 'member'; status: string;
+  add_by?: string | null; add_sig?: string | null; created_at: string;
+}
+
+/**
+ * May I seal this audience's key to `row.member_id`? `verify(signerId, sig)` checks the add signature with
+ * the signer's trusted identity key. Owners and legacy rows pass; otherwise the adder must be the owner
+ * (lists), an active admin (groups / events) or any active member (conversations: members add people they
+ * know), or, for events only, the member themselves (circle events are joined directly).
+ */
+export function memberVouched(aud: AudienceMeta, roster: Roster, row: MemberAddRow, verify: (signerId: string, sig: string) => boolean): boolean {
+  if (aud.kind === 'friends' || aud.kind === 'self') return true;
+  if (row.member_id === aud.owner_id) return true;
+  if (row.created_at < MEMBER_SIG_CUTOFF) return true;
+  const by = row.add_by;
+  if (!by || !row.add_sig || !verify(by, row.add_sig)) return false;
+  if (by === aud.owner_id) return true;
+  if (aud.kind === 'list') return false;
+  if (aud.kind === 'conversation') return roster.members.has(by);
+  if (by === row.member_id) return aud.kind === 'event';
+  return roster.admins.has(by);
+}

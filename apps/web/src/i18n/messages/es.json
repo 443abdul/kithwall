@@ -2447,5 +2447,14 @@
   "stories.replyToTheirs": "Respondiste a su historia",
   "bday.title": "Cumpleaños",
   "bday.today": "Hoy",
-  "bday.inDays": "{count, plural, =1 {Mañana} one {En # día} other {En # días}}"
+  "bday.inDays": "{count, plural, =1 {Mañana} one {En # día} other {En # días}}",
+  "media.inertTitle": "{count, plural, one {Toca para cargar la foto o el vídeo} other {Toca para cargar # fotos o vídeos}}",
+  "media.inertBody": "Lo envió alguien con quien no estás conectado, así que no se abrió automáticamente.",
+  "appVerify.title": "¿Es este el Kithwall auténtico?",
+  "appVerify.body": "Instala Kithwall solo desde Google Play o kithwall.com. Las copias falsas están firmadas con una clave distinta.",
+  "appVerify.genuine": "Esta app está firmada con la clave oficial de Kithwall.",
+  "appVerify.unknown": "Esta app NO está firmada con la clave oficial de Kithwall. Puede ser una copia falsa: desinstálala y descarga Kithwall desde Google Play o kithwall.com.",
+  "appVerify.fingerprints": "Certificados de firma de la app oficial (SHA-256):",
+  "appVerify.yours": "Certificado de esta app:",
+  "messages.queued": "Esperando conexión. Se enviará automáticamente."
 }

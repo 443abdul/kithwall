@@ -20,7 +20,7 @@
 // Security review R-K-2: admins count as key authorities only with a chain of signed grants back to the
 // owner (./authority.ts verifiedAdmins); unsigned (server-made) admins can't get a key adopted.
 import {
-  b64u, epochCommit, newSymmetricKey, openSealed, seal, signAdminGrant, signEpochRecord, type Identity, type Sealed, type Unlocked,
+  b64u, epochCommit, newSymmetricKey, openSealed, pqKeysFromKx, seal, signPqPub, verifiedPqPub, signAdminGrant, signEpochRecord, signMemberAdd, verifyMemberAdd, type Identity, type Sealed, type Unlocked,
 } from '@kithwall/crypto';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSyncExternalStore } from 'react';
@@ -28,8 +28,8 @@ import { sb, must } from '../supabase';
 import type { AudienceRow } from '../types';
 import { people } from '../people';
 import {
-  judgeIncoming, isKeyAuthority, recordIsValid, verifiedAdmins,
-  type AudienceMeta, type EpochRecordRow, type GrantRow, type Roster, type TrustedSigner,
+  judgeIncoming, isKeyAuthority, memberVouched, recordIsValid, verifiedAdmins,
+  type AudienceMeta, type EpochRecordRow, type GrantRow, type MemberAddRow, type Roster, type TrustedSigner,
 } from './authority';
 import { onPinsChanged, resolveSigners, sealGate } from './pins';
 import { resealTarget } from './resealCore';
@@ -114,6 +114,7 @@ class Keyring {
     await this.ensureOwn(this.friendsAudience!);
     await this.ensureOwn(this.selfAudience!);
     this.setReady(true);
+    await this.publishPq().catch((e) => console.warn('pq key', e));
     await this.deliverPending().catch((e) => console.warn('key delivery', e));
     this.channel = sb().channel(`keys:${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audience_keys', filter: `recipient_id=eq.${userId}` },
@@ -127,6 +128,48 @@ class Keyring {
       if (this.waiting.size) void this.ingest([...this.waiting.values()]).then((n) => { if (n) this.bump(); });
     }, 60_000);
     this.bump();
+  }
+
+  /**
+   * Which (audience, recipient) pairs someone entitled really added (signed member additions, authority.ts
+   * memberVouched). Members the server listed without such a signature get no keys from this device.
+   */
+  private async vouchedMembers(rows: { audience_id: string; recipient_id: string }[]): Promise<Set<string>> {
+    const out = new Set<string>();
+    const cx = await this.context([...new Set(rows.map((r) => r.audience_id))]);
+    await people.ensure([...cx.members.values()].map((m) => m.add_by ?? '').filter(Boolean));
+    for (const r of rows) {
+      const aud = cx.auds.get(r.audience_id);
+      if (!aud) continue;
+      const key = `${r.audience_id}|${r.recipient_id}`;
+      if (aud.kind === 'friends' || aud.kind === 'self' || r.recipient_id === aud.owner_id) { out.add(key); continue; }
+      const row = cx.members.get(key);
+      const roster = cx.rosters.get(r.audience_id) ?? { admins: new Set<string>(), members: new Set<string>() };
+      const ok = !!row && memberVouched(aud, roster, row, (by, sig) => {
+        const pub = this.signerOf(by)?.s;
+        return !!pub && verifyMemberAdd(b64u.decode(pub), { audienceId: r.audience_id, memberId: r.recipient_id, addedBy: by }, sig);
+      });
+      if (ok) out.add(key);
+      else console.warn('key delivery: not delivering to a member nobody entitled added', r.audience_id, r.recipient_id);
+    }
+    return out;
+  }
+
+  /** My signature for adding `memberId` to an audience (store it with the audience_members row). */
+  memberAdd(aud: string, memberId: string): { add_by: string; add_sig: string } {
+    if (!this.u || !this.userId) throw new Error('locked');
+    return { add_by: this.userId, add_sig: signMemberAdd(this.u.identity.signPriv, { audienceId: aud, memberId, addedBy: this.userId }) };
+  }
+
+  /** Publish my ML-KEM-768 public key (derived from my X25519 key, signed by my identity key) if it isn't yet. */
+  private async publishPq() {
+    const id = this.u!.identity;
+    const pub = pqKeysFromKx(id.kxPriv).pub;
+    const row = (await sb().from('profiles').select('pq_pub, pq_sig').eq('id', this.userId!).maybeSingle()).data as { pq_pub: string | null; pq_sig: string | null } | null;
+    const have = verifiedPqPub({ userId: this.userId!, kxPub: id.kxPub, pqPub: row?.pq_pub, sig: row?.pq_sig, signPub: id.signPub });
+    if (have && b64u.encode(have) === b64u.encode(pub)) return;
+    const pq_sig = signPqPub({ userId: this.userId!, kxPub: id.kxPub, pqPub: pub, signPriv: id.signPriv });
+    must(await sb().from('profiles').update({ pq_pub: b64u.encode(pub), pq_sig }).eq('id', this.userId!));
   }
 
   async stop() {
@@ -159,8 +202,9 @@ class Keyring {
   }
 
   /** Audience rows, active rosters and epoch records for these audiences (whatever RLS lets us see). */
-  private async context(audIds: string[]): Promise<{ auds: Map<string, AudienceMeta>; rosters: Map<string, Roster>; records: Map<string, EpochRecordRow> }> {
+  private async context(audIds: string[]): Promise<{ auds: Map<string, AudienceMeta>; rosters: Map<string, Roster>; records: Map<string, EpochRecordRow>; members: Map<string, MemberAddRow> }> {
     const auds = new Map<string, AudienceMeta>();
+    const members = new Map<string, MemberAddRow>();
     const rosters = new Map<string, Roster>();
     const records = new Map<string, EpochRecordRow>();
     const grants = new Map<string, GrantRow[]>();
@@ -168,11 +212,12 @@ class Keyring {
       const chunk = audIds.slice(i, i + 100);
       const [a, m, r] = await Promise.all([
         sb().from('audiences').select('id, kind, owner_id, current_epoch').in('id', chunk),
-        sb().from('audience_members').select('audience_id, member_id, role, grant_by, grant_sig').in('audience_id', chunk).eq('status', 'active'),
+        sb().from('audience_members').select('audience_id, member_id, role, status, grant_by, grant_sig, add_by, add_sig, created_at').in('audience_id', chunk).eq('status', 'active'),
         sb().from('audience_epochs').select('audience_id, epoch, rotated_by, commit, sig').in('audience_id', chunk),
       ]);
       for (const row of (a.data ?? []) as AudienceMeta[]) auds.set(row.id, row);
-      for (const row of (m.data ?? []) as ({ audience_id: string } & GrantRow)[]) {
+      for (const row of (m.data ?? []) as ({ audience_id: string } & GrantRow & MemberAddRow)[]) {
+        members.set(`${row.audience_id}|${row.member_id}`, row);
         const g = grants.get(row.audience_id) ?? [];
         g.push(row);
         grants.set(row.audience_id, g);
@@ -187,7 +232,7 @@ class Keyring {
       const admins = a ? verifiedAdmins(a, g, (id) => this.signerOf(id)?.s) : new Set<string>();
       rosters.set(audId, { admins, members: new Set(g.map((x) => x.member_id)) });
     }
-    return { auds, rosters, records };
+    return { auds, rosters, records, members };
   }
 
   /** The identity key this device trusts for someone (my own: from my unlocked identity). */
@@ -309,8 +354,13 @@ class Keyring {
    * Seal a key to one person. `own` is our own copy: a duplicate there means someone else already put a
    * key in our slot, which must not be silently accepted (it is re-read and judged instead).
    */
-  private async storeFor(aud: string, epoch: number, recipient: string, recipientKxPub: Uint8Array, key: Uint8Array, own = false) {
-    const sealed = seal({ recipientKxPub, senderSignPriv: this.u!.identity.signPriv, context: ctx(aud, epoch, recipient), plaintext: key });
+  /**
+   * Seal one key to one person. With their published, signature-checked ML-KEM key (or my own derived one)
+   * the box is hybrid post-quantum (crypto seal v2); people whose app hasn't published one yet get v1.
+   */
+  private async storeFor(aud: string, epoch: number, recipient: string, recipientKxPub: Uint8Array, key: Uint8Array, own = false, recipientPqPub: Uint8Array | null = null) {
+    const pq = recipient === this.userId ? pqKeysFromKx(this.u!.identity.kxPriv).pub : recipientPqPub;
+    const sealed = seal({ recipientKxPub, senderSignPriv: this.u!.identity.signPriv, context: ctx(aud, epoch, recipient), plaintext: key, recipientPqPub: pq });
     const res = await sb().from('audience_keys').insert({ audience_id: aud, epoch, recipient_id: recipient, sealed_by: this.userId, sealed });
     if (!res.error) return;
     if (res.error.code === '23505') {
@@ -332,18 +382,27 @@ class Keyring {
     const ids = [...new Set(rows.map((r) => r.recipient_id))];
     // Fresh published keys for everyone we are about to seal to.
     const profs = new Map<string, { s: string; x: string }>();
+    const pqs = new Map<string, Uint8Array>();
     for (let i = 0; i < ids.length; i += 100) {
-      const { data } = await sb().from('profiles').select('id, sign_pub, kx_pub').in('id', ids.slice(i, i + 100));
-      for (const p of (data ?? []) as { id: string; sign_pub: string; kx_pub: string }[]) profs.set(p.id, { s: p.sign_pub, x: p.kx_pub });
+      const { data } = await sb().from('profiles').select('id, sign_pub, kx_pub, pq_pub, pq_sig').in('id', ids.slice(i, i + 100));
+      for (const p of (data ?? []) as { id: string; sign_pub: string; kx_pub: string; pq_pub: string | null; pq_sig: string | null }[]) {
+        profs.set(p.id, { s: p.sign_pub, x: p.kx_pub });
+        try {
+          const pq = verifiedPqPub({ userId: p.id, kxPub: b64u.decode(p.kx_pub), pqPub: p.pq_pub, sig: p.pq_sig, signPub: b64u.decode(p.sign_pub) });
+          if (pq) pqs.set(p.id, pq);
+        } catch { /* malformed keys: classic box */ }
+      }
     }
     const allowed = await sealGate([...profs].map(([id, p]) => ({ id, ...p })));
+    const vouched = await this.vouchedMembers(rows);
     let n = 0;
     for (const r of rows) {
+      if (!vouched.has(`${r.audience_id}|${r.recipient_id}`)) continue;
       const key = this.get(r.audience_id, r.epoch);
       const p = profs.get(r.recipient_id);
       if (!key || !p || !allowed.has(r.recipient_id)) continue;
       try {
-        await this.storeFor(r.audience_id, r.epoch, r.recipient_id, b64u.decode(p.x), key);
+        await this.storeFor(r.audience_id, r.epoch, r.recipient_id, b64u.decode(p.x), key, false, pqs.get(r.recipient_id) ?? null);
         n++;
       } catch (e) {
         // Not entitled (any more), or the record isn't there yet for a relay: the authority delivers.

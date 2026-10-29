@@ -54,6 +54,33 @@ public class KithwallShellPlugin extends Plugin {
         return o == null ? "https://www.kithwall.com" : o;
     }
 
+    /**
+     * SHA-256 of the certificate this installed app is signed with ("AA:BB:..."), or "" if unknown. The page
+     * compares it with the fingerprints the website publishes (assetlinks.json): a repackaged copy is signed
+     * with someone else's key. (A deliberately modified app could lie here; this catches the common fakes.)
+     */
+    private String signerSha256() {
+        try {
+            android.content.pm.PackageManager pm = getContext().getPackageManager();
+            android.content.pm.Signature[] sigs;
+            if (Build.VERSION.SDK_INT >= 28) {
+                PackageInfo p = pm.getPackageInfo(getContext().getPackageName(), android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES);
+                sigs = p.signingInfo == null ? null : p.signingInfo.getApkContentsSigners();
+            } else {
+                @SuppressWarnings("deprecation")
+                PackageInfo p = pm.getPackageInfo(getContext().getPackageName(), android.content.pm.PackageManager.GET_SIGNATURES);
+                sigs = p.signatures;
+            }
+            if (sigs == null || sigs.length == 0) return "";
+            byte[] d = java.security.MessageDigest.getInstance("SHA-256").digest(sigs[0].toByteArray());
+            StringBuilder b = new StringBuilder();
+            for (int i = 0; i < d.length; i++) { if (i > 0) b.append(':'); b.append(String.format("%02X", d[i])); }
+            return b.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     @PluginMethod
     public void info(PluginCall call) {
         JSObject r = new JSObject();
@@ -69,6 +96,7 @@ public class KithwallShellPlugin extends Plugin {
             r.put("version", "");
             r.put("build", "");
         }
+        r.put("signer", signerSha256());
         call.resolve(r);
     }
 

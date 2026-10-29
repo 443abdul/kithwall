@@ -116,3 +116,29 @@ export function verifyAdminGrant(signPub: Uint8Array, g: AdminGrant, sig: string
   }
   return edVerifyB64(sig, msg, signPub);
 }
+
+/**
+ * Who added a member to an audience (roadmap 2026-11, batch 2): signed by the person who added them, so
+ * key holders deliver audience keys only to members someone entitled really added. A row the server
+ * inserted on its own carries no valid signature and gets no keys.
+ */
+export interface MemberAdd { audienceId: string; memberId: string; addedBy: string }
+
+function memberAddMessage(g: MemberAdd): Uint8Array {
+  if (typeof g !== 'object' || g === null) invalid('member add must be an object');
+  assertString(g.audienceId, 'audienceId');
+  assertString(g.memberId, 'memberId');
+  assertString(g.addedBy, 'addedBy');
+  return utf8(canonicalJson({ d: 'kithwall/v2/member-add', audienceId: g.audienceId, memberId: g.memberId, addedBy: g.addedBy }));
+}
+
+export function signMemberAdd(signPriv: Uint8Array, g: MemberAdd): string {
+  return b64u.encode(edSign(memberAddMessage(g), signPriv));
+}
+
+/** Never throws; false on any problem. */
+export function verifyMemberAdd(signPub: Uint8Array, g: MemberAdd, sig: unknown): boolean {
+  let msg: Uint8Array;
+  try { msg = memberAddMessage(g); } catch { return false; }
+  return typeof sig === 'string' && edVerifyB64(sig, msg, signPub);
+}

@@ -2447,5 +2447,14 @@
   "stories.replyToTheirs": "ان کی اسٹوری کا جواب دیا",
   "bday.title": "سالگرہیں",
   "bday.today": "آج",
-  "bday.inDays": "{count, plural, =1 {کل} one {# دن میں} other {# دن میں}}"
+  "bday.inDays": "{count, plural, =1 {کل} one {# دن میں} other {# دن میں}}",
+  "media.inertTitle": "{count, plural, one {تصویر یا ویڈیو لوڈ کرنے کے لیے ٹیپ کریں} other {# تصاویر یا ویڈیوز لوڈ کرنے کے لیے ٹیپ کریں}}",
+  "media.inertBody": "یہ کسی ایسے شخص نے بھیجا ہے جس سے آپ جڑے ہوئے نہیں ہیں، اس لیے یہ خود بخود نہیں کھلا۔",
+  "appVerify.title": "کیا یہ اصلی Kithwall ہے؟",
+  "appVerify.body": "Kithwall صرف Google Play یا kithwall.com سے انسٹال کریں۔ جعلی کاپیاں کسی دوسری کی سے سائن کی جاتی ہیں۔",
+  "appVerify.genuine": "یہ ایپ Kithwall کی آفیشل کی سے سائن کی گئی ہے۔",
+  "appVerify.unknown": "یہ ایپ Kithwall کی آفیشل کی سے سائن نہیں کی گئی ہے۔ یہ جعلی کاپی ہو سکتی ہے: اسے ان انسٹال کریں اور Kithwall کو Google Play یا kithwall.com سے حاصل کریں۔",
+  "appVerify.fingerprints": "آفیشل ایپ کے سائننگ سرٹیفکیٹس (SHA-256):",
+  "appVerify.yours": "اس ایپ کا سرٹیفکیٹ:",
+  "messages.queued": "کنکشن کا انتظار ہے۔ یہ خود بخود بھیج دیا جائے گا۔"
 }

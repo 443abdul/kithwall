@@ -124,6 +124,10 @@ export async function createConversation(memberIds: string[], dm: string | null 
     throw new Error(conv.error.code === 'P0429' ? 'You\'ve started too many conversations today. Try again tomorrow.' : conv.error.message);
   }
   if (name?.trim() && !dm) await writeName(aud, name.trim()).catch((e) => console.warn('conversation name', e));
+  // Sign each addition (the database created the rows), so devices deliver keys to these members only.
+  for (const id of ids) {
+    await sb().from('audience_members').update(keyring.memberAdd(aud.id, id)).match({ audience_id: aud.id, member_id: id });
+  }
   await keyring.deliverPending();
   return conv.data as ConversationRow;
 }
@@ -223,7 +227,7 @@ export async function addMembers(conv: ConversationRow, memberIds: string[]) {
   const ids = [...new Set(memberIds)].filter((m) => m !== me());
   if (!ids.length) return;
   for (const m of ids) {
-    const r = await sb().from('audience_members').insert({ audience_id: conv.audience_id, member_id: m, status: 'active', role: 'member', invited_by: me() });
+    const r = await sb().from('audience_members').insert({ audience_id: conv.audience_id, member_id: m, status: 'active', role: 'member', invited_by: me(), ...keyring.memberAdd(conv.audience_id, m) });
     if (r.error && r.error.code !== '23505') {
       throw new Error(r.error.code === '42501' ? 'You can only add your friends to this conversation.' : r.error.message);
     }

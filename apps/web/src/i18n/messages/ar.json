@@ -2447,5 +2447,14 @@
   "stories.replyToTheirs": "ردّ على قصته",
   "bday.title": "أعياد الميلاد",
   "bday.today": "اليوم",
-  "bday.inDays": "{count, plural, zero {اليوم} one {غدًا} two {بعد يومين} few {بعد # أيام} many {بعد # يومًا} other {بعد # يوم}}"
+  "bday.inDays": "{count, plural, zero {اليوم} one {غدًا} two {بعد يومين} few {بعد # أيام} many {بعد # يومًا} other {بعد # يوم}}",
+  "media.inertTitle": "{count, plural, zero {اضغط لتحميل الوسائط} one {اضغط لتحميل الصورة أو الفيديو} two {اضغط لتحميل صورتين أو فيديوهين} few {اضغط لتحميل # صور أو فيديوهات} many {اضغط لتحميل # صورة أو فيديو} other {اضغط لتحميل # صورة أو فيديو}}",
+  "media.inertBody": "أرسله شخص لست متصلًا به، لذا لم يُفتح تلقائيًا.",
+  "appVerify.title": "هل هذا هو Kithwall الحقيقي؟",
+  "appVerify.body": "لا تثبّت Kithwall إلا من Google Play أو kithwall.com. النسخ المزيّفة موقّعة بمفتاح مختلف.",
+  "appVerify.genuine": "هذا التطبيق موقّع بمفتاح Kithwall الرسمي.",
+  "appVerify.unknown": "هذا التطبيق ليس موقّعًا بمفتاح Kithwall الرسمي. قد يكون نسخة مزيّفة: أزِل تثبيته واحصل على Kithwall من Google Play أو kithwall.com.",
+  "appVerify.fingerprints": "شهادات توقيع التطبيق الرسمي (SHA-256):",
+  "appVerify.yours": "شهادة هذا التطبيق:",
+  "messages.queued": "في انتظار الاتصال. ستُرسل تلقائيًا."
 }

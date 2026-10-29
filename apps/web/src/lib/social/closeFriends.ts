@@ -48,7 +48,7 @@ export async function closeMembers(): Promise<string[]> {
 
 export async function addCloseFriend(userId: string): Promise<void> {
   const aud = await ensureCloseList();
-  const r = await sb().from('audience_members').insert({ audience_id: aud, member_id: userId, status: 'active', role: 'member' });
+  const r = await sb().from('audience_members').insert({ audience_id: aud, member_id: userId, status: 'active', role: 'member', ...keyring.memberAdd(aud, userId) });
   if (r.error && r.error.code !== '23505') throw new Error(r.error.message);
   await keyring.deliverPending();
 }

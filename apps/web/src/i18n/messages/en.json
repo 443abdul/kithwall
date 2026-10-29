@@ -2443,5 +2443,14 @@
   "stories.replyToTheirs": "Replied to their story",
   "bday.title": "Birthdays",
   "bday.today": "Today",
-  "bday.inDays": "{count, plural, one {Tomorrow} other {In # days}}"
+  "bday.inDays": "{count, plural, one {Tomorrow} other {In # days}}",
+  "media.inertTitle": "{count, plural, one {Tap to load the photo or video} other {Tap to load # photos or videos}}",
+  "media.inertBody": "Sent by someone you aren't connected with, so it wasn't opened automatically.",
+  "appVerify.title": "Is this the real Kithwall?",
+  "appVerify.body": "Only install Kithwall from Google Play or kithwall.com. Fake copies are signed with a different key.",
+  "appVerify.genuine": "This app is signed with Kithwall's official key.",
+  "appVerify.unknown": "This app is NOT signed with Kithwall's official key. It may be a fake copy: uninstall it and get Kithwall from Google Play or kithwall.com.",
+  "appVerify.fingerprints": "The official app's signing certificates (SHA-256):",
+  "appVerify.yours": "This app's certificate:",
+  "messages.queued": "Waiting for a connection. It will send by itself."
 }

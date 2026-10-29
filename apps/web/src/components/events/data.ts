@@ -110,7 +110,7 @@ export async function inviteGuests(e: EventRow2, ids: string[], name: string) {
 
 /** Join a circle event I can see (I'm in its circle) and answer at the same time. */
 export async function joinAndRsvp(e: EventRow2, rsvp: Rsvp) {
-  const r = await sb().from('audience_members').insert({ audience_id: e.audience_id, member_id: me(), role: 'member', status: 'active' });
+  const r = await sb().from('audience_members').insert({ audience_id: e.audience_id, member_id: me(), role: 'member', status: 'active', ...keyring.memberAdd(e.audience_id, me()) });
   if (r.error && r.error.code !== '23505') throw new Error(r.error.message);
   await setRsvp(e.audience_id, rsvp);
 }

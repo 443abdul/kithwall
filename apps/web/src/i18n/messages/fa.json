@@ -2447,5 +2447,14 @@
   "stories.replyToTheirs": "به استوری او پاسخ داد",
   "bday.title": "تولدها",
   "bday.today": "امروز",
-  "bday.inDays": "{count, plural, =1 {فردا} one {# روز دیگر} other {# روز دیگر}}"
+  "bday.inDays": "{count, plural, =1 {فردا} one {# روز دیگر} other {# روز دیگر}}",
+  "media.inertTitle": "{count, plural, one {برای بارگیری عکس یا ویدیو ضربه بزنید} other {برای بارگیری # عکس یا ویدیو ضربه بزنید}}",
+  "media.inertBody": "کسی آن را فرستاده که با او در ارتباط نیستید، برای همین خودکار باز نشد.",
+  "appVerify.title": "آیا این Kithwall واقعی است؟",
+  "appVerify.body": "Kithwall را فقط از Google Play یا kithwall.com نصب کنید. نسخه‌های جعلی با کلید دیگری امضا شده‌اند.",
+  "appVerify.genuine": "این برنامه با کلید رسمی Kithwall امضا شده است.",
+  "appVerify.unknown": "این برنامه با کلید رسمی Kithwall امضا نشده است. ممکن است نسخه‌ای جعلی باشد: آن را حذف کنید و Kithwall را از Google Play یا kithwall.com دریافت کنید.",
+  "appVerify.fingerprints": "گواهی‌های امضای برنامهٔ رسمی (SHA-256):",
+  "appVerify.yours": "گواهی این برنامه:",
+  "messages.queued": "در انتظار اتصال. خودبه‌خود ارسال می‌شود."
 }

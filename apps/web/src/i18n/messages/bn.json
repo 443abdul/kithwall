@@ -2447,5 +2447,14 @@
   "stories.replyToTheirs": "তাদের স্টোরিতে উত্তর দিয়েছেন",
   "bday.title": "জন্মদিন",
   "bday.today": "আজ",
-  "bday.inDays": "{count, plural, =1 {আগামীকাল} one {# দিন পরে} other {# দিন পরে}}"
+  "bday.inDays": "{count, plural, =1 {আগামীকাল} one {# দিন পরে} other {# দিন পরে}}",
+  "media.inertTitle": "{count, plural, one {ছবি বা ভিডিও লোড করতে ট্যাপ করুন} other {# টি ছবি বা ভিডিও লোড করতে ট্যাপ করুন}}",
+  "media.inertBody": "এমন কেউ পাঠিয়েছেন যার সাথে আপনি কানেক্টেড নন, তাই এটি নিজে থেকে খোলা হয়নি।",
+  "appVerify.title": "এটি কি আসল Kithwall?",
+  "appVerify.body": "Kithwall শুধু Google Play বা kithwall.com থেকে ইনস্টল করুন। নকল কপিগুলো অন্য কী দিয়ে সাইন করা থাকে।",
+  "appVerify.genuine": "এই অ্যাপটি Kithwall-এর অফিসিয়াল কী দিয়ে সাইন করা।",
+  "appVerify.unknown": "এই অ্যাপটি Kithwall-এর অফিসিয়াল কী দিয়ে সাইন করা নয়। এটি নকল কপি হতে পারে: এটি আনইনস্টল করুন এবং Google Play বা kithwall.com থেকে Kithwall নিন।",
+  "appVerify.fingerprints": "অফিসিয়াল অ্যাপের সাইনিং সার্টিফিকেট (SHA-256):",
+  "appVerify.yours": "এই অ্যাপের সার্টিফিকেট:",
+  "messages.queued": "কানেকশনের অপেক্ষায়। এটি নিজে থেকেই পাঠানো হবে।"
 }

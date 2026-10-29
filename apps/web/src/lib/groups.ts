@@ -196,7 +196,7 @@ export async function resealGroup(g: GroupRow, info: GroupInfo | null) {
 export async function inviteToGroup(g: { id: string; audience_id: string }, friendIds: string[], groupNameText: string): Promise<number> {
   let n = 0;
   for (const f of friendIds) {
-    const r = await sb().from('audience_members').insert({ audience_id: g.audience_id, member_id: f, role: 'member', status: 'invited' });
+    const r = await sb().from('audience_members').insert({ audience_id: g.audience_id, member_id: f, role: 'member', status: 'invited', ...keyring.memberAdd(g.audience_id, f) });
     if (r.error && r.error.code !== '23505') throw new Error(r.error.message);
     if (!r.error) {
       n++;

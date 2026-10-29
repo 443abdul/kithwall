@@ -18,7 +18,7 @@ minimum metadata.
   blocked, and in the app opens the system notification settings (`KithwallPush.openSettings`).
 - Short video statuses (up to 60 s / 50 MB), encrypted on the device like post videos.
 
-## Batch 1: social features (recommended next, ~1–2 weeks)
+## Batch 1: social features (shipped 2026-10-30)
 
 | Feature | Why | E2EE design |
 |---|---|---|
@@ -32,9 +32,17 @@ minimum metadata.
 | Multi-emoji reactions on posts | FB/Discord | Same as `message_reactions` (encrypted) |
 | Pinned post on profile, drafts, mute/snooze a person or circle, birthday reminders | Small, frequently asked | All in the vault or inside sealed envelopes |
 
-## Batch 2: privacy and security hardening (from the research brief)
+## Batch 2: privacy and security hardening (from the research brief; status as of 2026-10-30)
 
-Ranked by impact for effort:
+Ranked by impact for effort. Shipped: 1 (signed member additions, `lib/keys/authority.ts memberVouched`),
+2 (media from non-connections in chats stays inert until tapped), 3 (hybrid X25519 + ML-KEM-768 key
+wrapping, `packages/crypto/src/pq.ts`, seal v2), 6 (Padme padding of every encrypted payload), part of 8
+(Settings → About shows whether the installed app carries Kithwall's signing certificate) and part of 9
+(chat messages written offline send themselves when the connection returns). Already in place before this
+round: 4 (calls use RTCRtpScriptTransform when available), 5 (passkey PRF unlock), the strict nonce CSP, and
+key-change warnings with a vouched key-change chain (7, short of a public Merkle log). Still open: the
+public key-transparency log, a second non-Cloudflare CDN and bridges (needs owner accounts), and the
+legal review of PECA/SMPRA (10).
 
 1. **Signed circle membership changes.** Clients reject members the server added on its own, and show a
    system line for every add/remove (cf. the 2025 WhatsApp group analysis, ePrint 2025/794).
