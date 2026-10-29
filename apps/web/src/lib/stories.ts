@@ -12,6 +12,7 @@ import { identity, me } from './keys/session';
 import { keyring } from './keys/keyring';
 import { people } from './people';
 import { deleteMedia, fileRefPaths, uploadEncrypted } from './media';
+import { ensureCloseList } from './social/closeFriends';
 import type { Decrypted } from './content';
 import type { FileRef, PostPayload } from './types';
 
@@ -34,7 +35,7 @@ export interface StoryPayload {
 
 export type StoryVideo = NonNullable<PostPayload['video']>;
 
-export type StoryAudience = { kind: 'connections' } | { kind: 'circle'; circleId: string };
+export type StoryAudience = { kind: 'connections' } | { kind: 'close' } | { kind: 'circle'; circleId: string };
 
 export const STORY_MAX_TEXT = 500;
 /** Video statuses are short: at most a minute and 50 MB. */
@@ -66,6 +67,7 @@ async function encodePhoto(file: Blob): Promise<{ bytes: Uint8Array; w: number; 
 async function resolveAudience(a: StoryAudience): Promise<{ audienceId: string; groupId: string | null }> {
   await keyring.whenReady();
   if (a.kind === 'connections') return { audienceId: keyring.friendsAudience!.id, groupId: null };
+  if (a.kind === 'close') return { audienceId: await ensureCloseList(), groupId: null };
   const g = must(await sb().from('groups').select('id, audience_id').eq('id', a.circleId).single()) as { id: string; audience_id: string };
   return { audienceId: g.audience_id, groupId: g.id };
 }

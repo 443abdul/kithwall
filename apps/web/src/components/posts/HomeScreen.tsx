@@ -13,6 +13,7 @@ import { InstallNudge } from '@/components/install/InstallNudge';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { InviteCard } from '@/components/people/InviteCard';
 import { StoriesRow } from '@/components/stories/Stories';
+import { Birthdays } from './Birthdays';
 import { Composer, Feed } from '.';
 
 export function HomeScreen() {
@@ -32,6 +33,7 @@ export function HomeScreen() {
       </>}
     >
       <StoriesRow />
+      <Birthdays />
       <RecoveryNudge />
       <PushNudge />
       <InstallNudge />

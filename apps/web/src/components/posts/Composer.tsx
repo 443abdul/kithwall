@@ -32,6 +32,10 @@ import { LinkCard } from './Media';
 import { MAX_VIDEO_BYTES, probeVideo, uploadVideo, videoMime, type VideoProbe } from './video';
 import { PostOptionChips, PostOptionsDialog, scheduleProblemKey, useWhen, type PostOptionsValue } from './PostOptions';
 import { checkSchedule } from '@/lib/chat/ephemeral';
+import { ensureCloseList } from '@/lib/social/closeFriends';
+import { notifyMentions, resolveMentions } from '@/lib/social/engage';
+import { loadDraft, saveDraft } from '@/lib/social/prefs';
+import { finishPoll, PollEditor } from './Poll';
 
 const MAX_TEXT = 8000;
 const MAX_PHOTOS = 10;
@@ -55,10 +59,11 @@ export function useMyCircles(enabled = true) {
   });
 }
 
-async function resolve(a: ComposerAudience): Promise<{ audience: Audience; groupId?: string; eventId?: string }> {
+export async function resolve(a: ComposerAudience): Promise<{ audience: Audience; groupId?: string; eventId?: string }> {
   switch (a.kind) {
     case 'connections': return { audience: { kind: 'friends' } };
     case 'only_me': return { audience: { kind: 'self' } };
+    case 'close': return { audience: { kind: 'audience', id: await ensureCloseList() } };
     case 'circle': {
       const g = await getGroup(a.circleId);
       if (!g) throw new Error('circle');
@@ -99,6 +104,22 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
   const when = useWhen();
   const [options, setOptions] = useState<PostOptionsValue>({ disappear: null, schedule: null });
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [poll, setPoll] = useState<NonNullable<PostPayload['poll']> | null>(null);
+
+  // Drafts (kept in my encrypted vault, per composer): restored when the composer opens empty, saved a
+  // moment after typing stops, cleared once the post goes out.
+  const draftKey = `composer:${JSON.stringify(initial)}`;
+  const draftLoaded = useRef(false);
+  useEffect(() => {
+    if (!userId || draftLoaded.current) return;
+    draftLoaded.current = true;
+    loadDraft(draftKey).then((d) => { if (d?.text) setText((cur) => cur || d.text); }).catch(() => undefined);
+  }, [userId, draftKey]);
+  useEffect(() => {
+    if (!userId || !draftLoaded.current) return;
+    const timer = setTimeout(() => { void saveDraft(draftKey, text).catch(() => undefined); }, 1500);
+    return () => clearTimeout(timer);
+  }, [text, userId, draftKey]);
 
   // Follow a changed `audience` prop (compared by value: callers pass object literals).
   const initialKey = JSON.stringify(initial);
@@ -182,7 +203,9 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
     setErr(null);
     const body = text.trim().slice(0, MAX_TEXT);
     const pendingLink = req.current;
-    if (!body && !photos.length && !video && !link && !pendingLink) { setErr(t('feed.writeSomething')); return; }
+    const readyPoll = finishPoll(poll);
+    if (poll && !readyPoll) { setErr(t('poll.needTwo')); return; }
+    if (!body && !photos.length && !video && !link && !pendingLink && !readyPoll) { setErr(t('feed.writeSomething')); return; }
     const schedule = options.schedule;
     if (schedule) {
       const problem = checkSchedule(schedule);
@@ -196,6 +219,9 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
       const payload: PostPayload = {};
       let kind: PostKind = 'status';
       if (body) payload.text = body;
+      if (readyPoll) payload.poll = readyPoll;
+      const mentioned = body ? await resolveMentions(body).catch(() => [] as string[]) : [];
+      if (mentioned.length) payload.mentions = mentioned;
       if (photos.length) {
         kind = 'photo';
         payload.photos = [];
@@ -231,7 +257,9 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
         publishAt: schedule ? schedule.toISOString() : null, disappearSecs: options.disappear,
       });
       if (uploaded.length) await linkPostMedia(uploaded, id);
-      setText(''); clearPhotos(); setVideo(null); setLink(null); skip.current.clear();
+      if (mentioned.length && !schedule) await notifyMentions(mentioned, 'post', id);
+      setText(''); clearPhotos(); setVideo(null); setLink(null); setPoll(null); skip.current.clear();
+      void saveDraft(draftKey, '').catch(() => undefined);
       setOptions({ disappear: null, schedule: null });
       if (schedule) {
         toast({ message: t('schedule.done', { when: when(schedule) }), action: { label: t('schedule.view'), onClick: () => router.push('/you/scheduled') } });
@@ -249,12 +277,13 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
 
   const audienceLabel = audience.kind === 'connections' ? t('feed.toConnections')
     : audience.kind === 'only_me' ? t('feed.toOnlyMe')
+    : audience.kind === 'close' ? t('close.audience')
     : audience.kind === 'circle' ? (circles.find((c) => c.id === audience.circleId)?.name ?? t('feed.audienceCircle'))
     : t('feed.audienceEvent');
-  const audienceIcon = audience.kind === 'only_me' ? 'lock' : audience.kind === 'circle' ? 'circles' : audience.kind === 'event' ? 'calendar' : 'users';
+  const audienceIcon = audience.kind === 'only_me' ? 'lock' : audience.kind === 'close' ? 'heart' : audience.kind === 'circle' ? 'circles' : audience.kind === 'event' ? 'calendar' : 'users';
   // Right after sign-in the keyring is still loading this account's keys: wait instead of failing.
   const keysReady = useKeyringReady();
-  const canPost = !busy && keysReady && (!!text.trim() || photos.length > 0 || !!video || !!link);
+  const canPost = !busy && keysReady && (!!text.trim() || photos.length > 0 || !!video || !!link || !!poll);
 
   return (
     <Card className="k-composer">
@@ -305,6 +334,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
           </div>
         ) : null}
 
+        {poll ? <PollEditor value={poll} onChange={setPoll} /> : null}
         {progress ? (
           <div className="k-composer-progress" role="status" aria-live="polite">
             <span className="k-small">{progress.label}</span>
@@ -320,6 +350,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
           <input ref={videoInput} type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={(e) => void pickVideo(e.target.files?.[0])} />
           <IconButton icon="image" label={t('feed.addPhotos')} disabled={busy || !!video || photos.length >= MAX_PHOTOS} onClick={() => photoInput.current?.click()} />
           <IconButton icon="video" label={t('feed.addVideo')} disabled={busy || photos.length > 0 || !!video} onClick={() => videoInput.current?.click()} />
+          <IconButton icon="listBullet" label={t('poll.add')} disabled={busy || !!poll} onClick={() => setPoll({ options: ['', ''] })} />
           <IconButton icon="clock" label={t('schedule.options')} disabled={busy} aria-haspopup="dialog"
             variant={options.disappear || options.schedule ? 'soft' : 'ghost'} onClick={() => setOptionsOpen(true)} />
           <span className="k-spacer" />
@@ -354,7 +385,7 @@ export function AudienceOptions({ value, circles, onPick, allowOnlyMe = true }: 
   allowOnlyMe?: boolean;
 }) {
   const t = useT();
-  const opt = (a: ComposerAudience, icon: 'users' | 'lock' | 'circles', title: string, sub: string) => {
+  const opt = (a: ComposerAudience, icon: 'users' | 'lock' | 'circles' | 'heart', title: string, sub: string) => {
     const on = a.kind === value.kind && (a.kind !== 'circle' || (value.kind === 'circle' && value.circleId === a.circleId));
     return (
       <li key={a.kind === 'circle' ? a.circleId : a.kind}>
@@ -370,6 +401,7 @@ export function AudienceOptions({ value, circles, onPick, allowOnlyMe = true }: 
     <div className="k-stack">
       <ul className="k-list" role="list">
         {opt({ kind: 'connections' }, 'users', t('feed.toConnections'), t('feed.toConnectionsSub'))}
+        {opt({ kind: 'close' }, 'heart', t('close.audience'), t('close.audienceSub'))}
         {allowOnlyMe ? opt({ kind: 'only_me' }, 'lock', t('feed.toOnlyMe'), t('feed.toOnlyMeSub')) : null}
       </ul>
       <h3 className="k-section-title">{t('feed.circlesHeading')}</h3>

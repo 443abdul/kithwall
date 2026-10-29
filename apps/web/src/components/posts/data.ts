@@ -43,7 +43,7 @@ export async function fetchScopePage(scope: FeedScope, before?: string): Promise
 
 const kinds = new Map<string, string>();
 
-async function rememberAudienceKinds(rows: PostRow[]) {
+export async function rememberAudienceKinds(rows: PostRow[]) {
   const ids = [...new Set(rows.map((r) => r.audience_id).filter((x): x is string => !!x && !kinds.has(x)))];
   if (!ids.length) return;
   const found = must(await sb().from('audiences').select('id, kind').in('id', ids)) as { id: string; kind: string }[];

@@ -36,7 +36,11 @@ export interface CommentRow {
   edited_at?: string | null;
 }
 
-export interface LikeRow { target_kind: 'post' | 'comment' | 'photo'; target_id: Uuid; user_id: Uuid; created_at: string }
+export interface LikeRow {
+  target_kind: 'post' | 'comment' | 'photo'; target_id: Uuid; user_id: Uuid; created_at: string;
+  /** An encrypted emoji reaction (lib/social/engage); none = a heart. */
+  sealed?: unknown;
+}
 
 /**
  * Reference to an encrypted file in the media bucket. Large files (videos) are stored as several
@@ -59,6 +63,10 @@ export interface PostPayload {
   note?: { title: string; body: string; tagged: Uuid[] };
   sharedText?: string;
   tagged?: Uuid[];
+  /** A poll: 2–6 options; votes are encrypted rows in post_votes (lib/social/engage). `ends`: ISO time. */
+  poll?: { question?: string; options: string[]; multi?: boolean; ends?: string };
+  /** Connections mentioned with @handle (they get a notification). */
+  mentions?: Uuid[];
 }
 
 export interface CommentPayload { text: string; /** Kithwall 2: id of the comment this replies to (one level). */ replyTo?: string }
@@ -79,6 +87,10 @@ export interface ProfileInfo {
   featuredFriends?: Uuid[];
   friends?: Uuid[];             // my friend list, shared with my friends (unless hidden)
   hideFriends?: boolean;
+  /** A post of mine shown first on my profile. */
+  pinnedPost?: Uuid;
+  /** Fields only my close friends may read, encrypted with that list's key (lib/social/visibility). */
+  x?: { a: string; e: number; c: string };
 }
 
 export interface MessageRow {

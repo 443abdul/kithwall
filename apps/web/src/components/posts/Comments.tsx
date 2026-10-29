@@ -24,6 +24,7 @@ import { threadComments } from './logic';
 import { Menu } from './Menu';
 import { ReportDialog } from './ReportDialog';
 import { deriveSubkey } from '@kithwall/crypto';
+import { notifyMentions, resolveMentions } from '@/lib/social/engage';
 
 interface Item { row: CommentRow; text: string | null; replyTo?: string; created_at: string; id: string }
 
@@ -73,6 +74,9 @@ export function Comments({ post, contentKey, focusSignal }: { post: PostRow; con
       const parentAuthor = replyTo ? items.find((x) => x.id === replyTo.id)?.row.author_id : null;
       await notifySafe(post.author_id, 'comment', 'post', post.id, snippet(body, 60));
       if (parentAuthor && parentAuthor !== post.author_id) await notifySafe(parentAuthor, 'comment', 'post', post.id, snippet(body, 60));
+      // @mentions: only connections who can read the post are notified.
+      const mentioned = (await resolveMentions(body).catch(() => [] as string[])).filter((id) => id !== post.author_id && id !== parentAuthor);
+      await notifyMentions(mentioned, 'post', post.id);
     } catch {
       toast({ message: t('feed.failed'), tone: 'danger' });
     } finally { setBusy(false); }

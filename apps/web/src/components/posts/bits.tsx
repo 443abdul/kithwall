@@ -1,5 +1,6 @@
 'use client';
 // Small building blocks shared by posts, comments, stories and profiles.
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useFormat, useT } from '@/i18n';
@@ -37,7 +38,7 @@ export function RichText({ text, clamp = 700, className }: { text: string; clamp
     <div className={className ? `k-rich ${className}` : 'k-rich'} dir="auto">
       {segmentText(shown).map((s, i) => s.kind === 'link'
         ? <ExternalLink key={i} href={s.href} text={s.text} className="k-ltr">{s.text}</ExternalLink>
-        : <span key={i}>{s.text}</span>)}
+        : <span key={i}>{withMentions(s.text)}</span>)}
       {long ? (
         <> <button type="button" className="k-linkbtn" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? t('feed.showLess') : t('feed.readMore')}
@@ -45,6 +46,22 @@ export function RichText({ text, clamp = 700, className }: { text: string; clamp
       ) : null}
     </div>
   );
+}
+
+/** Plain text with @handles turned into profile links (only the text the person wrote; never HTML). */
+function withMentions(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(/(^|[^\p{L}\p{N}_@.])@([a-z0-9][a-z0-9._-]{1,29})/giu)) {
+    const at = m.index! + m[1]!.length;
+    const handle = m[2]!.replace(/[._-]+$/, '');
+    if (at > last) parts.push(text.slice(last, at));
+    parts.push(<Link key={at} href={'/u/' + encodeURIComponent(handle.toLowerCase())} className="k-mention k-ltr">@{handle}</Link>);
+    last = at + 1 + handle.length;
+  }
+  if (!parts.length) return text;
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
 }
 
 /**

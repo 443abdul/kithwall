@@ -13,6 +13,7 @@ import { b64u, openEnvelope, type Envelope } from '@kithwall/crypto';
 import { useSyncExternalStore } from 'react';
 import { sb, must } from './supabase';
 import { coalescer, droppedPaths, staleInfos, type InfoStamp } from './peopleSync';
+import { openExtra } from './social/profileTiers';
 import type { ProfileInfo, ProfileRow } from './types';
 
 export interface ProfileInfoRow extends InfoStamp { envelope: Envelope }
@@ -238,6 +239,12 @@ class People {
             audienceKey: key, signPub: b64u.decode(prof.sign_pub),
           });
         } catch (e) { console.warn('profile info failed verification', id, e); }
+        // Close-friends fields: merged in when this device holds that list's key (lib/social/visibility).
+        if (info?.x) {
+          const extra = openExtra(id, info.x, this.keyLookup);
+          info = { ...info, ...(extra ?? {}) };
+          delete info.x;
+        }
       }
     }
     this.infos.set(id, info);

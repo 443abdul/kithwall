@@ -3,10 +3,12 @@
 // opens the pop-out gallery, components/gallery), link preview / click-to-play embed, a heart (counts only for the author — calm, no public
 // like counts), one-level comments, and edit / delete / report. Phase 3: a disappearing post shows how long
 // it has left and leaves the screen the moment it expires; the author's scheduled post says when it goes out.
+// Batch 1 (docs/v2/roadmap-2026-11.md): emoji reactions (encrypted; the author sees the breakdown), polls,
+// reposts, save, mute the author, and pin to my profile.
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useT, type MessageKey } from '@/i18n';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -33,6 +35,12 @@ import { useClock } from '@/lib/chat/clock';
 import { isExpired, isScheduled, timeLeft } from '@/lib/chat/ephemeral';
 import { useWhen } from './PostOptions';
 import { usePostLike } from './useLike';
+import { PollView } from './Poll';
+import { SharedPost, ShareDialog } from './Share';
+import { REACTIONS, reactionOf, setReaction, type Reaction } from '@/lib/social/engage';
+import { isSaved, loadSocialPrefs, setMuted, setSaved, useSocialPrefs } from '@/lib/social/prefs';
+import { myInfo, saveProfileInfo } from '@/lib/friends';
+import { likesKey, notifySafe } from '@/lib/feed/feed';
 import { postItems, postVideoIndex } from '@/components/gallery/items';
 
 // The gallery is its own chunk, loaded the first time someone opens a photo or video.
@@ -51,11 +59,11 @@ export function PostCardSkeleton() {
 }
 
 /** `expanded`: the post permalink (/post/[id]) shows the comments open. */
-export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; onRemoved?: (id: string) => void; expanded?: boolean }) {
+export function PostCard({ row, onRemoved, expanded = false, pinned = false }: { row: PostRow; onRemoved?: (id: string) => void; expanded?: boolean; pinned?: boolean }) {
   const t = useT();
   const toast = useToast();
   const qc = useQueryClient();
-  const { userId } = useSession();
+  const { userId, status } = useSession();
   useKeyringVersion();
   usePeopleVersion();
   const author = usePerson(row.author_id);
@@ -71,6 +79,13 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
   const [showComments, setShowComments] = useState(expanded);
   const now = useClock([row]);
   const when = useWhen();
+  const [sharing, setSharing] = useState(false);
+  const [picker, setPicker] = useState(false);
+  const prefs = useSocialPrefs();
+  useEffect(() => { if (status === 'ready') void loadSocialPrefs().catch(() => undefined); }, [status]);
+  const saved = isSaved(prefs, row.id);
+  const isPinned = mine && myInfo()?.pinnedPost === row.id;
+  const canPin = mine && row.wall_owner_id === userId && !row.group_id && !row.event_id;
 
   // Feeds seed the per-post likes / comments caches in two batched queries per page (prefetchEngagement)
   // and Realtime keeps them current, so remounting a feed doesn't refetch every card one by one.
@@ -80,12 +95,43 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
   const likeCount = like.count;
   const commentCount = comments.data?.length ?? 0;
   const toggleLike = like.toggle;
+  const myLike = like.rows.find((l) => l.user_id === userId) ?? null;
+  const myReaction: Reaction | null = myLike ? reactionOf(row, myLike) : null;
+  // The author sees how many of each reaction (still nobody else sees counts).
+  const breakdown = useMemo(() => {
+    if (!mine) return [] as [Reaction, number][];
+    const m = new Map<Reaction, number>();
+    for (const l of like.rows) { const e = reactionOf(row, l); m.set(e, (m.get(e) ?? 0) + 1); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [mine, like.rows, row]);
+  async function react(e: Reaction | null) {
+    setPicker(false);
+    try {
+      await setReaction(row, e);
+      await qc.invalidateQueries({ queryKey: likesKey('post', row.id) });
+      if (e && !liked) await notifySafe(row.author_id, 'like', 'post', row.id);
+    } catch { toast({ message: t('feed.failed'), tone: 'danger' }); }
+  }
   const items = useMemo(() => (payload ? postItems(payload) : []), [payload]);
   const galleryPost = useMemo(() => (payload ? { row, payload } : null), [row, payload]);
 
   const name = author?.name ?? '…';
   const profileHref = author ? `/u/${author.username}` : undefined;
+  async function run(fn: () => Promise<unknown>, done: MessageKey) {
+    try { await fn(); toast({ message: t(done) }); } catch { toast({ message: t('feed.failed'), tone: 'danger' }); }
+  }
+  const pin = (on: boolean) => run(async () => {
+    const info = myInfo();
+    if (!info) throw new Error('profile not loaded');
+    const next = { ...info };
+    if (on) next.pinnedPost = row.id; else delete next.pinnedPost;
+    await saveProfileInfo(next);
+    await qc.invalidateQueries({ queryKey: ['pinned-post'] });
+  }, on ? 'post.pinned' : 'post.unpinned');
   const menu = [
+    ...(payload ? [{ label: saved ? t('post.unsave') : t('post.save'), icon: 'book' as const, onSelect: () => void run(() => setSaved(row.id, !saved), saved ? 'post.unsaved' : 'post.saved') }] : []),
+    ...(canPin && payload ? [{ label: isPinned ? t('post.unpin') : t('post.pin'), icon: 'mapPin' as const, onSelect: () => void pin(!isPinned) }] : []),
+    ...(!mine ? [{ label: t('post.mute', { name }), icon: 'eyeOff' as const, onSelect: () => void run(() => setMuted(row.author_id, 30), 'post.muted') }] : []),
     ...(mine && payload ? [{ label: t('feed.edit'), icon: 'edit' as const, onSelect: () => setEditing(true) }] : []),
     ...(mine || row.wall_owner_id === userId ? [{ label: t('feed.delete'), icon: 'trash' as const, danger: true, onSelect: () => setDeleting(true) }] : []),
     ...(!mine ? [{ label: t('feed.report'), icon: 'flag' as const, onSelect: () => setReporting(true) }] : []),
@@ -105,6 +151,7 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
         <div className="k-post-who">
           {profileHref ? <Link href={profileHref} className="k-post-name">{name}</Link> : <span className="k-post-name">{name}</span>}
           <span className="k-post-meta">
+            {pinned ? <span className="k-pin-tag"><Icon name="mapPin" /> {t('post.pinnedTag')} ·</span> : null}
             <RelativeTime iso={row.created_at} />
             {row.edited_at ? <span className="k-muted">· {t('feed.edited')}</span> : null}
             {left ? (
@@ -127,25 +174,40 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
           ? <p className="k-post-waiting k-muted k-small"><Icon name="key" /> {t('feed.waitingKey', { name })}</p>
           : <p className="k-post-waiting k-muted k-small"><Icon name="alert" /> {t('feed.unverified')}</p>
       ) : (
-        <PostBody payload={d.value} onOpenMedia={setGallery} />
+        <PostBody payload={d.value} row={row} onOpenMedia={setGallery} />
       )}
 
       {d.ok ? (
         <>
           <div className="k-post-actions">
             <button type="button" className="k-action" aria-pressed={liked} data-on={liked ? '' : undefined} onClick={() => void toggleLike()}>
-              <Icon name="heart" /><span>{liked ? t('feed.liked') : t('feed.like')}</span>
+              {myReaction && myReaction !== '❤️' ? <span className="k-react-emoji" aria-hidden>{myReaction}</span> : <Icon name="heart" />}
+              <span>{liked ? t('feed.liked') : t('feed.like')}</span>
+            </button>
+            <button type="button" className="k-action k-action-sm" aria-expanded={picker} aria-label={t('react.pick')} onClick={() => setPicker((v) => !v)}>
+              <Icon name="plus" />
             </button>
             <button type="button" className="k-action" aria-expanded={showComments || commentCount > 0}
               onClick={() => { setShowComments(true); setFocusComment((n) => n + 1); }}>
               <Icon name="comment" /><span>{commentCount ? t('feed.commentCount', { count: commentCount }) : t('feed.comment')}</span>
             </button>
+            <button type="button" className="k-action" onClick={() => setSharing(true)}>
+              <Icon name="share" /><span>{t('share.action')}</span>
+            </button>
             {mine && likeCount > 0 ? (
               <span className="k-post-likes k-small k-muted" title={t('feed.likeCountPrivate')}>
-                <Icon name="lock" /> {t('feed.likeCount', { count: likeCount })}
+                <Icon name="lock" /> <span aria-hidden>{breakdown.map(([e, n]) => `${e} ${n}`).join('  ')}</span>
+                <span className="k-sr-only">{t('feed.likeCount', { count: likeCount })}</span>
               </span>
             ) : null}
           </div>
+          {picker ? (
+            <div className="k-react-row" role="group" aria-label={t('react.pick')}>
+              {REACTIONS.map((e) => (
+                <button key={e} type="button" className="k-react-btn" aria-pressed={myReaction === e} onClick={() => void react(myReaction === e ? null : e)}>{e}</button>
+              ))}
+            </div>
+          ) : null}
           {showComments || commentCount > 0 ? <Comments post={row} contentKey={postContentKey(row)} focusSignal={focusComment} /> : null}
         </>
       ) : null}
@@ -154,6 +216,7 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
         <Gallery items={items} start={gallery} post={galleryPost} onClose={() => setGallery(null)} />
       ) : null}
       {editing && payload ? <EditDialog row={row} payload={payload} onClose={() => setEditing(false)} /> : null}
+      {sharing ? <ShareDialog row={row} onClose={() => setSharing(false)} /> : null}
       <Dialog open={deleting} onClose={() => setDeleting(false)} title={t('feed.deleteTitle')}
         footer={<>
           <Button variant="ghost" onClick={() => setDeleting(false)}>{t('feed.cancel')}</Button>
@@ -175,7 +238,7 @@ export function PostCard({ row, onRemoved, expanded = false }: { row: PostRow; o
 }
 
 /** `onOpenMedia(i)`: open the gallery at item i (photos first, then the video); without it the video plays inline. */
-export function PostBody({ payload, onOpenMedia }: { payload: PostPayload; onOpenMedia?: (i: number) => void }) {
+export function PostBody({ payload, row, nested = false, onOpenMedia }: { payload: PostPayload; row?: PostRow; nested?: boolean; onOpenMedia?: (i: number) => void }) {
   const text = [payload.text, payload.sharedText].filter(Boolean).join('\n\n');
   return (
     <div className="k-post-body">
@@ -189,6 +252,8 @@ export function PostBody({ payload, onOpenMedia }: { payload: PostPayload; onOpe
       {payload.photos?.length ? <PhotoGrid photos={payload.photos} onOpen={(i) => onOpenMedia?.(i)} /> : null}
       {payload.video ? <VideoPlayer video={payload.video} onOpen={onOpenMedia ? () => onOpenMedia(postVideoIndex(payload)) : undefined} /> : null}
       {payload.link ? <LinkCard link={payload.link} /> : null}
+      {payload.poll && row ? <PollView row={row} poll={payload.poll} /> : null}
+      {row?.kind === 'share' && row.shared_post_id && !nested ? <SharedPost id={row.shared_post_id} /> : null}
     </div>
   );
 }

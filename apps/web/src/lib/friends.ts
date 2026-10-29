@@ -5,6 +5,8 @@ import { identity, me } from './keys/session';
 import { keyring } from './keys/keyring';
 import { people, profileHeader } from './people';
 import type { FriendshipRow, ProfileInfo } from './types';
+import { loadVisibility, myPrivateFields, saveMyPrivateFields, sealExtra, splitProfile, tierOf } from './social/visibility';
+import { ensureCloseList } from './social/closeFriends';
 
 const pair = (a: string, b: string) => (a < b ? { user_a: a, user_b: b } : { user_a: b, user_b: a });
 export const other = (f: FriendshipRow, self: string) => (f.user_a === self ? f.user_b : f.user_a);
@@ -80,14 +82,33 @@ export async function unblock(userId: string) {
 // My encrypted profile info (shared with my friends audience).
 export function myInfo(): ProfileInfo | null { return people.person(me())?.info ?? null; }
 
-export async function saveProfileInfo(info: ProfileInfo) {
+/**
+ * Seal my profile. Each field goes where Settings → Privacy → Profile says (lib/social/visibility):
+ * connections (this envelope), close friends (inside it, under the close list's key) or only me (vault).
+ * `replacePrivate`: the caller passes every field (the editor); otherwise my 'only me' fields are kept.
+ */
+export async function saveProfileInfo(info: ProfileInfo, opts: { replacePrivate?: boolean } = {}) {
   await keyring.whenReady();
   const aud = keyring.friendsAudience!.id;
   const { key, epoch } = await keyring.current(aud);
+  const vis = await loadVisibility();
+  const prevPrivate = await myPrivateFields();
+  const full: ProfileInfo = opts.replacePrivate ? { ...info } : { ...prevPrivate, ...info };
+  delete full.friends;
+  const { open, close, mine } = splitProfile(full, vis);
   // Keep my friend list in sync (friends can see who my friends are unless I hide it).
-  const friends = info.hideFriends ? undefined : await myFriendIds();
-  const payload: ProfileInfo = { ...info, friends };
-  if (!payload.friends) delete payload.friends; // canonicalJson rejects undefined values
+  const friendsTier = tierOf(vis, 'friends');
+  if (!info.hideFriends && friendsTier !== 'me') {
+    const ids = await myFriendIds();
+    if (friendsTier === 'close') close.friends = ids; else open.friends = ids;
+  }
+  if (Object.keys(close).length) {
+    const list = await ensureCloseList();
+    const k = await keyring.current(list);
+    open.x = sealExtra(me(), list, k.epoch, k.key, close);
+  }
+  if (JSON.stringify(mine) !== JSON.stringify(prevPrivate)) await saveMyPrivateFields(mine);
+  const payload: ProfileInfo = open;
   const envelope = sealEnvelope({ header: profileHeader(me(), aud, epoch), payload, audienceKey: key, signPriv: identity().signPriv });
   const row = { user_id: me(), audience_id: aud, epoch, envelope, updated_at: new Date().toISOString() };
   // Show it everywhere on this device right away (rail, You, posts, chats…); the server sets updated_at.

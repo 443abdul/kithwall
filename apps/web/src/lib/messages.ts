@@ -69,6 +69,8 @@ export interface ChatPayload extends MessagePayload {
   link?: { url: string; title?: string; description?: string; site?: string; image?: FileRef };
   /** Voice note (phase 4): length and waveform; the audio itself is the audio/* file in `attachments`. */
   voice?: VoiceMeta;
+  /** A reply to (or reaction on) one of the recipient's stories: whose story it was. */
+  story?: { author: string };
 }
 
 export const MAX_MESSAGE_CHARS = 20_000;

@@ -11,7 +11,8 @@ export type ComposerAudience =
   | { kind: 'connections' }                    // everyone you're connected with
   | { kind: 'circle'; circleId: string }
   | { kind: 'event'; eventId: string }
-  | { kind: 'only_me' };
+  | { kind: 'only_me' }
+  | { kind: 'close' };                         // my close friends list (lib/social/closeFriends)
 
 export interface FeedProps {
   scope: FeedScope;

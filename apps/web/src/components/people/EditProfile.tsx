@@ -1,6 +1,8 @@
 'use client';
 // Edit my profile: photo (re-encoded, encrypted, readable by my connections), name, short bio and a few
-// About fields. All of it is sealed to my connections audience (lib/friends saveProfileInfo).
+// About fields. Each field goes to whoever Settings → Privacy → Profile allows (connections, close friends or
+// only me; lib/friends saveProfileInfo). 'Only me' fields come from the vault, so they are merged in here.
+import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useT } from '@/i18n';
@@ -18,6 +20,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { saveAvatar, setProfilePicture } from '@/lib/photos';
 import { clean } from '@/lib/feed/feed';
 import type { ProfileInfo } from '@/lib/types';
+import { myPrivateFields } from '@/lib/social/visibility';
 
 const BIO_MAX = 160;
 
@@ -39,11 +42,31 @@ export function EditProfileDialog({ onClose }: { onClose: () => void }) {
   const [school, setSchool] = useState(start.education?.[0]?.school ?? '');
   const [languages, setLanguages] = useState(start.languages ?? '');
   const [website, setWebsite] = useState(start.contact?.website ?? '');
+  const [birthday, setBirthday] = useState(start.birthday ?? '');
+  const [priv, setPriv] = useState<Partial<ProfileInfo> | null>(null);
   const [busy, setBusy] = useState<null | 'save' | 'photo'>(null);
   const [err, setErr] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const [filled, setFilled] = useState(!!loaded);
   const [noInfo, setNoInfo] = useState(false);
+
+  // 'Only me' fields live in my vault, not in the envelope myInfo() reads.
+  useEffect(() => {
+    let live = true;
+    myPrivateFields().then((p) => {
+      if (!live) return;
+      setPriv(p);
+      if (p.bio) setBio(p.bio);
+      if (p.currentCity) setCity(p.currentCity);
+      if (p.hometown) setHometown(p.hometown);
+      if (p.work?.[0]?.employer) setWork(p.work[0].employer);
+      if (p.education?.[0]?.school) setSchool(p.education[0].school);
+      if (p.languages) setLanguages(p.languages);
+      if (p.contact?.website) setWebsite(p.contact.website);
+      if (p.birthday) setBirthday(p.birthday);
+    }).catch(() => { if (live) setPriv({}); });
+    return () => { live = false; };
+  }, []);
 
   useEffect(() => {
     if (filled) return;
@@ -54,7 +77,7 @@ export function EditProfileDialog({ onClose }: { onClose: () => void }) {
       if (info && live) {
         setName(info.name ?? ''); setBio(info.bio ?? ''); setCity(info.currentCity ?? ''); setHometown(info.hometown ?? '');
         setWork(info.work?.[0]?.employer ?? ''); setSchool(info.education?.[0]?.school ?? ''); setLanguages(info.languages ?? '');
-        setWebsite(info.contact?.website ?? ''); setFilled(true);
+        setWebsite(info.contact?.website ?? ''); setBirthday(info.birthday ?? ''); setFilled(true);
         clearInterval(timer);
       } else if (++tries % 3 === 1) void people.refreshInfo(myId()).catch(() => undefined);
       // A brand-new account may have no profile yet: after a while, let it be created from scratch.
@@ -62,7 +85,7 @@ export function EditProfileDialog({ onClose }: { onClose: () => void }) {
     }, 500);
     return () => { live = false; clearInterval(timer); };
   }, [filled]);
-  const ready = filled || noInfo;
+  const ready = (filled || noInfo) && priv !== null;
 
   async function changePhoto(f: File | undefined) {
     if (file.current) file.current.value = '';
@@ -83,13 +106,14 @@ export function EditProfileDialog({ onClose }: { onClose: () => void }) {
     if (!name.trim()) { setErr(t('profile.nameRequired')); return; }
     setBusy('save'); setErr(null);
     try {
-      const cur = myInfo() ?? start; // re-read: the photo may have changed meanwhile
+      const cur: ProfileInfo = { ...(priv ?? {}), ...(myInfo() ?? start) }; // re-read: the photo may have changed meanwhile
       const next: ProfileInfo = { ...cur, name: name.trim().slice(0, 80) };
       const set = <K extends keyof ProfileInfo>(k: K, v: ProfileInfo[K] | undefined) => { if (v) next[k] = v; else delete next[k]; };
       set('bio', bio.trim().slice(0, BIO_MAX) || undefined);
       set('currentCity', city.trim().slice(0, 100) || undefined);
       set('hometown', hometown.trim().slice(0, 100) || undefined);
       set('languages', languages.trim().slice(0, 200) || undefined);
+      set('birthday', /^\d{4}-\d{2}-\d{2}$/.test(birthday) ? birthday : undefined);
       const w = work.trim().slice(0, 100);
       set('work', w ? [{ ...(cur.work?.[0] ?? {}), employer: w }, ...(cur.work?.slice(1) ?? [])] : cur.work?.slice(1).length ? cur.work.slice(1) : undefined);
       const s = school.trim().slice(0, 100);
@@ -98,7 +122,7 @@ export function EditProfileDialog({ onClose }: { onClose: () => void }) {
       const contact = { ...(cur.contact ?? {}) };
       if (site) contact.website = site; else delete contact.website;
       set('contact', Object.keys(contact).length ? contact : undefined);
-      await saveProfileInfo(clean(next));
+      await saveProfileInfo(clean(next), { replacePrivate: true });
       await qc.invalidateQueries({ queryKey: ['profile-by-handle'] });
       toast({ message: t('profile.saved') });
       onClose();
@@ -130,8 +154,9 @@ export function EditProfileDialog({ onClose }: { onClose: () => void }) {
         <TextField label={t('profile.work')} value={work} maxLength={100} dir="auto" onChange={(e) => setWork(e.target.value)} />
         <TextField label={t('profile.education')} value={school} maxLength={100} dir="auto" onChange={(e) => setSchool(e.target.value)} />
         <TextField label={t('profile.languages')} value={languages} maxLength={200} dir="auto" onChange={(e) => setLanguages(e.target.value)} />
+        <TextField label={t('profile.birthday')} type="date" value={birthday} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setBirthday(e.target.value)} />
         <TextField label={t('profile.website')} value={website} maxLength={200} type="url" inputMode="url" dir="ltr" onChange={(e) => setWebsite(e.target.value)} />
-        <p className="k-muted k-small"><Icon name="lock" /> {t('profile.encryptedNote')}</p>
+        <p className="k-muted k-small"><Icon name="lock" /> {t('profile.encryptedNote')} <Link href="/you/settings/privacy#profile">{t('visibility.manage')}</Link></p>
         {err ? <p className="k-error" role="alert"><Icon name="alert" />{err}</p> : null}
       </div>
     </Dialog>

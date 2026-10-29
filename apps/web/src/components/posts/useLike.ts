@@ -35,5 +35,5 @@ export function usePostLike(row: PostRow) {
     }
   }
 
-  return { liked, count, toggle };
+  return { liked, count, toggle, rows: likes.data ?? [] };
 }

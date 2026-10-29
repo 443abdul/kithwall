@@ -20,6 +20,7 @@ import { useKeyringVersion } from '@/lib/hooks';
 import { useSession } from '@/lib/keys/session';
 import { KeyWaitingError } from '@/lib/keys/keyring';
 import { downloadFile, useFileUrl } from '@/lib/media';
+import { openDm, sendMessage } from '@/lib/messages';
 import { formatBytes } from '@/components/posts/bits';
 import { probeVideo, uploadVideo, videoMime, type VideoProbe } from '@/components/posts/video';
 import { usePeopleVersion, usePerson } from '@/lib/people';
@@ -188,6 +189,7 @@ function StoryViewer({ rings, start, seen, onClose }: {
 
   const fwd = dir === 'rtl' ? -1 : 1;
   function onKey(e: React.KeyboardEvent) {
+    if ((e.target as HTMLElement).tagName === 'INPUT') return; // typing a reply
     if (e.key === 'ArrowRight') { e.preventDefault(); go(fwd === 1 ? 1 : -1); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); go(fwd === 1 ? -1 : 1); }
     else if (e.key === ' ' && e.target === e.currentTarget) { e.preventDefault(); setPaused((p) => !p); }
@@ -277,7 +279,7 @@ function StoryViewer({ rings, start, seen, onClose }: {
               <Button size="sm" variant="soft" icon="eye" onClick={() => setViewers(true)}>{t('stories.viewersTitle')}</Button>
               <IconButton icon="trash" size="sm" variant="soft" label={t('stories.delete')} onClick={() => setConfirmDelete(true)} />
             </>
-          ) : <span className="k-spacer" />}
+          ) : <StoryReply author={story.author_id} onFocus={() => setPaused(true)} />}
           <IconButton icon="forward" size="sm" variant="soft" label={t('stories.next')} onClick={() => go(1)} />
         </div>
       </div>
@@ -288,6 +290,36 @@ function StoryViewer({ rings, start, seen, onClose }: {
           <Button variant="danger" onClick={() => void remove()}>{t('feed.delete')}</Button>
         </>} />
     </dialog>
+  );
+}
+
+const STORY_REACTIONS = ['❤️', '😂', '😮', '😢', '👏', '🔥'];
+
+/** Reply to (or react on) someone's story: it arrives as an ordinary encrypted message in your chat with them. */
+function StoryReply({ author, onFocus }: { author: string; onFocus: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function send(body: string) {
+    const v = body.trim().slice(0, 2000);
+    if (!v || busy) return;
+    setBusy(true);
+    try {
+      const conv = await openDm(author);
+      await sendMessage(conv, { text: v, story: { author } });
+      setText('');
+      toast({ message: t('stories.replySent') });
+    } catch { toast({ message: t('feed.failed'), tone: 'danger' }); } finally { setBusy(false); }
+  }
+  return (
+    <form className="k-story-reply" onSubmit={(e) => { e.preventDefault(); void send(text); }}>
+      <div className="k-story-reacts" role="group" aria-label={t('react.pick')}>
+        {STORY_REACTIONS.map((e) => <button key={e} type="button" className="k-react-btn" disabled={busy} onClick={() => void send(e)}>{e}</button>)}
+      </div>
+      <input className="k-story-reply-input" value={text} maxLength={2000} dir="auto" placeholder={t('stories.replyPlaceholder')}
+        aria-label={t('stories.replyPlaceholder')} onFocus={onFocus} onChange={(e) => setText(e.target.value)} />
+    </form>
   );
 }
 
@@ -407,6 +439,7 @@ export function StoryComposer({ open, onClose }: { open: boolean; onClose: () =>
   }
 
   const audienceLabel = audience.kind === 'connections' ? t('feed.toConnections')
+    : audience.kind === 'close' ? t('close.audience')
     : circles.find((c) => c.id === audience.circleId)?.name ?? t('feed.audienceCircle');
   return (
     <Dialog open={open} onClose={onClose} title={t('stories.newTitle')} sheet dismissible={!busy}
@@ -465,7 +498,7 @@ export function StoryComposer({ open, onClose }: { open: boolean; onClose: () =>
         <div className="k-row">
           <span className="k-label">{t('stories.audience')}</span>
           <button type="button" className="k-chip k-chip-btn" aria-haspopup="dialog" onClick={() => setPicking(true)}>
-            <Icon name={audience.kind === 'circle' ? 'circles' : 'users'} /><span>{audienceLabel}</span><Icon name="down" />
+            <Icon name={audience.kind === 'circle' ? 'circles' : audience.kind === 'close' ? 'heart' : 'users'} /><span>{audienceLabel}</span><Icon name="down" />
           </button>
         </div>
         <p className="k-muted k-small"><Icon name="clock" /> {t('stories.expiryNote')}</p>
@@ -473,7 +506,7 @@ export function StoryComposer({ open, onClose }: { open: boolean; onClose: () =>
       </div>
       <Dialog open={picking} onClose={() => setPicking(false)} title={t('stories.audience')} sheet>
         <AudienceOptions value={audience} circles={circles} allowOnlyMe={false}
-          onPick={(a: ComposerAudience) => { if (a.kind === 'connections' || a.kind === 'circle') setAudience(a); setPicking(false); }} />
+          onPick={(a: ComposerAudience) => { if (a.kind === 'connections' || a.kind === 'close' || a.kind === 'circle') setAudience(a); setPicking(false); }} />
       </Dialog>
     </Dialog>
   );

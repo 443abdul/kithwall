@@ -363,6 +363,9 @@ function Bubble({ l, c, first, last, mine, isGroup, replyTo, reactions, seen, re
                 <span className="k-chat-quote-text" dir="auto">{snippet(quoteText, 100)}</span>
               </button>
             ) : null}
+            {d.ok && p?.story ? (
+              <span className="k-chat-story-tag k-small"><Icon name="sparkle" /> {p.story.author === userId ? t('stories.replyToYours') : t('stories.replyToTheirs')}</span>
+            ) : null}
             {d.ok ? (
               <>
                 {voice ? <VoiceNote file={voice.file} meta={voice.meta} messageId={l.id} mine={mine} persist={!isHiddenChat(c.id)} /> : null}

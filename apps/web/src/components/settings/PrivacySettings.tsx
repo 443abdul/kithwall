@@ -22,6 +22,7 @@ import { PersonAvatar } from '@/components/messages/look';
 import { SettingsPage, Section } from './shared';
 import { loadCallPrefs, saveCallPrefs, useCallPrefs } from '@/lib/calls/prefs';
 import { CallCheck } from '@/components/calls/CallCheck';
+import { CloseFriendsSection, MutedSection, ProfileVisibilitySection } from './ProfileVisibility';
 
 function useSaver() {
   const t = useT();
@@ -192,7 +193,10 @@ export function PrivacySettings() {
       <MessagesPrivacy />
       <CallsPrivacy />
       <ConnectionsPrivacy />
+      <ProfileVisibilitySection />
+      <CloseFriendsSection />
       <PostsPrivacy />
+      <MutedSection />
       <Blocked />
     </SettingsPage>
   );
