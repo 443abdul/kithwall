@@ -283,3 +283,19 @@ export function videoEncoding(tier: Tier, captureHeight: number, budget: number 
   const cap = budget ? Math.max(STAY[tier]! * 0.8, Math.floor(budget * 0.85)) : spec.maxBitrate;
   return { active: true, scaleResolutionDownBy: scale, maxBitrate: Math.round(Math.min(spec.maxBitrate, cap)), maxFramerate: spec.fps };
 }
+
+/**
+ * Fraction of my packets lost on the way to them since the previous sample. Audio is the honest signal (it
+ * is always flowing and not retransmitted); video only counts when it actually sent enough packets, and
+ * a kind with no new receiver report this round (lost counter unchanged, few packets) counts as clean.
+ */
+export function deltaLoss(sent: Record<string, number>, lost: Record<string, number>, pSent: Record<string, number>, pLost: Record<string, number>): number {
+  let worst = 0;
+  for (const kind of ['audio', 'video']) {
+    const ds = (sent[kind] ?? 0) - (pSent[kind] ?? 0);
+    const dl = (lost[kind] ?? 0) - (pLost[kind] ?? 0);
+    if (ds < (kind === 'audio' ? 20 : 40) || dl <= 0) continue;
+    worst = Math.max(worst, Math.min(1, dl / (ds + dl)));
+  }
+  return worst;
+}

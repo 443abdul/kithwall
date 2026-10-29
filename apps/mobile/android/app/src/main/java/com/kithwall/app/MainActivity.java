@@ -130,6 +130,7 @@ public class MainActivity extends BridgeActivity {
     private final OnBackPressedCallback back = new OnBackPressedCallback(true) {
         @Override
         public void handleOnBackPressed() {
+            if (KwChromeClient.exitFullscreen()) return;
             if (bridge == null || bridge.getWebView() == null) { moveTaskToBack(true); return; }
             WebView w = bridge.getWebView();
             String url = w.getUrl();

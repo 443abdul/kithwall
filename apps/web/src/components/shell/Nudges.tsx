@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/Card';
 import { Button, ButtonLink, IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/Toast';
+import { pushFailureToast } from '@/components/push/pushFailure';
 
 export function RecoveryNudge({ force }: { force?: boolean }) {
   const t = useT();
@@ -68,8 +69,7 @@ export function PushNudge() {
     if (!userId) return;
     setBusy(true);
     try { await enablePush(userId); setHidden(true); toast({ message: t('nudge.pushOn') }); }
-    // The app's foss build explains a missing UnifiedPush app itself (native dialog).
-    catch (e) { if ((e as { code?: string } | null)?.code !== 'no_distributor') toast({ message: t('nudge.pushFailed'), tone: 'danger' }); }
+    catch (e) { pushFailureToast(e, t, toast); }
     finally { setBusy(false); }
   }
   return (

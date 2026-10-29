@@ -60,6 +60,13 @@ export async function nativeEnablePush(): Promise<void> {
   await store();
 }
 
+/** Open the system's notification settings for this app (older app builds don't have it: false). */
+export async function nativeOpenSettings(): Promise<boolean> {
+  const p = await nativePlugin('KithwallPush');
+  if (typeof p.openSettings !== 'function') return false;
+  try { await p.openSettings(); return true; } catch { return false; }
+}
+
 /** Turn them off: delete the server row, forget the token and the device key. */
 export async function nativeDisablePush(): Promise<void> {
   const p = await nativePlugin('KithwallPush');

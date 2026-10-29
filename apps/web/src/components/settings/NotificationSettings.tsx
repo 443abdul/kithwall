@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useT, type MessageKey } from '@/i18n';
 import { useSession } from '@/lib/keys/session';
 import {
-  DEFAULT_PUSH_PREFS, disablePush, enablePush, loadPushPrefs, pushEnabledHere,
+  DEFAULT_PUSH_PREFS, disablePush, enablePush, loadPushPrefs, openNotificationSettings, pushEnabledHere,
   pushSupport, savePushPrefs, sendTestPush, usePushValue, usePushVersion, type PushPrefs,
 } from '@/lib/push';
 import { Switch } from '@/components/ui/Switch';
@@ -16,6 +16,8 @@ import { InstallHere } from '@/components/install/InstallHere';
 import { useShellHref } from '@/components/shell/AppShell';
 import { useToast } from '@/components/ui/Toast';
 import { SettingsPage, Section } from './shared';
+import { pushFailureToast } from '@/components/push/pushFailure';
+import { isNative } from '@/lib/native';
 
 const KINDS: [keyof PushPrefs, MessageKey, MessageKey][] = [
   ['messages', 'settings.notifications.messages', 'settings.notifications.messagesBody'],
@@ -57,8 +59,7 @@ function PushSection() {
       setOn(next);
       toast({ message: next ? t('nudge.pushOn') : t('settings.notifications.offHere') });
     } catch (e) {
-      // The app's foss build explains a missing UnifiedPush app itself (native dialog).
-      if ((e as { code?: string } | null)?.code !== 'no_distributor') toast({ message: t('nudge.pushFailed'), tone: 'danger' });
+      pushFailureToast(e, t, toast);
     } finally { setBusy(null); }
   }
   async function setPref(k: keyof PushPrefs, val: boolean) {
@@ -80,7 +81,12 @@ function PushSection() {
     <>
       <Section id="push" title={t('settings.notifications.push')} description={t('settings.notifications.pushBody')}>
         {iosNeedsInstall ? <Callout>{t('nudge.pushIos')}</Callout> : !supported ? <Callout>{t('settings.notifications.unsupported')}</Callout>
-          : blocked ? <Callout tone="warning">{t('settings.notifications.blocked')}</Callout> : null}
+          : blocked && isNative() ? (
+            <Callout tone="warning">
+              <span>{t('nudge.pushBlockedApp')} </span>
+              <Button variant="secondary" size="sm" onClick={() => void openNotificationSettings()}>{t('nudge.pushOpenSettings')}</Button>
+            </Callout>
+          ) : blocked ? <Callout tone="warning">{t('settings.notifications.blocked')}</Callout> : null}
         <Switch checked={!!on} disabled={on === null || busy !== null || (!on && cant)} label={t('settings.notifications.thisDevice')}
           description={on ? t('settings.notifications.onHere') : t('settings.notifications.offHereBody')} onChange={(x) => void toggle(x)} />
         <div><Button variant="secondary" size="sm" busy={busy === 'test'} disabled={!on || busy !== null} onClick={() => void test()}>{t('settings.notifications.test')}</Button></div>

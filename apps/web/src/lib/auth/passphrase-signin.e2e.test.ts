@@ -54,10 +54,16 @@ run('Passphrase sign-in through the server (R-W3)', () => {
   it('signs in with the right key only, answers wrong keys and unknown handles alike, and limits per handle', async () => {
     const handle = `pss${randomBytes(4).toString('hex')}`;
     const passphrase = 'correct horse battery staple orbit';
+    const proof = await altcha();
     const start = await call<{ challengeId: string; userId: string; email: string }>(
-      '/api/auth/passkey/register/options', { handle, altcha: await altcha(), mode: 'passphrase' });
+      '/api/auth/passkey/register/options', { handle, altcha: proof, mode: 'passphrase' });
     expect(start.status).toBe(200);
     created.push(start.data.userId);
+    // Each proof works once; a second attempt with it (the old passphrase-after-passkey bug) gets a specific
+    // code the sign-up page retries with a fresh proof, not a generic error.
+    const again = await call<{ code: string }>('/api/auth/passkey/register/options', { handle: `${handle}x`, altcha: proof, mode: 'passphrase' });
+    expect(again.status).toBe(400);
+    expect(again.data.code).toBe('proof_failed');
     const d = await deriveFromPassword(start.data.email, passphrase);
     const { bundle } = createKeyBundle(start.data.userId, d.passwordKEK);
     expect((await call('/api/auth/passkey/register/verify', { challengeId: start.data.challengeId, bundle, authKey: d.authKey })).status).toBe(200);

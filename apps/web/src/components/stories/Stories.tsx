@@ -1,10 +1,11 @@
 'use client';
 // Stories (24 h) at the top of Home: a row of rings (yours first, then unseen, then seen), a full-screen
-// viewer (tap / hold / swipe, progress bars, keyboard), and a composer for a photo or text story shared
-// with your connections or one circle. Views are recorded privately: only the author sees who viewed.
+// viewer (tap / hold / swipe, progress bars, keyboard), and a composer for a text, photo or short video
+// story shared with your connections or one circle. A video story is decrypted on this device, plays for
+// its own length and moves on when it ends. Views are recorded privately: only the author sees who viewed.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
-import { useLocale, useT } from '@/i18n';
+import { useFormat, useLocale, useT } from '@/i18n';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
@@ -18,11 +19,13 @@ import type { ComposerAudience } from '@/components/posts';
 import { useKeyringVersion } from '@/lib/hooks';
 import { useSession } from '@/lib/keys/session';
 import { KeyWaitingError } from '@/lib/keys/keyring';
-import { useFileUrl } from '@/lib/media';
+import { downloadFile, useFileUrl } from '@/lib/media';
+import { formatBytes } from '@/components/posts/bits';
+import { probeVideo, uploadVideo, videoMime, type VideoProbe } from '@/components/posts/video';
 import { usePeopleVersion, usePerson } from '@/lib/people';
 import {
   createStory, deleteStory, listStories, markStoryViewed, readStory, seenStoryIds, storyViewers,
-  STORY_BACKGROUNDS, STORY_MAX_TEXT, type StoryAudience, type StoryRow,
+  STORY_BACKGROUNDS, STORY_MAX_TEXT, STORY_VIDEO_MAX_BYTES, STORY_VIDEO_MAX_S, type StoryAudience, type StoryRow, type StoryVideo,
 } from '@/lib/stories';
 import { buildRings, hoursLeft, startIndex, step, type Ring } from './logic';
 
@@ -130,9 +133,20 @@ function StoryViewer({ rings, start, seen, onClose }: {
   const avatar = useFileUrl(author?.info?.avatar?.thumb);
   const d = readStory(story);
   const photo = useFileUrl(d.ok ? d.value.photo?.file : null);
+  const vid = useStoryVideo(d.ok ? d.value.video : undefined);
+  const [muted, setMuted] = useState(false);
+  const videoEl = useRef<HTMLVideoElement>(null);
+  const isVideo = d.ok && !!d.value.video;
   const mine = story.author_id === userId;
-  const ready = d.ok && (!d.value.photo || !!photo);
+  const ready = d.ok && (!d.value.photo || !!photo) && (!isVideo || vid.s === 'ready');
   const stopped = paused || held || viewers || confirmDelete || !ready;
+  // A video story follows the viewer's play / pause; without permission to play sound it plays muted.
+  useEffect(() => {
+    const v = videoEl.current;
+    if (!v || !isVideo || vid.s !== 'ready') return;
+    if (stopped) { v.pause(); return; }
+    v.play().catch(() => { v.muted = true; setMuted(true); void v.play().catch(() => undefined); });
+  }, [stopped, isVideo, vid.s]);
 
   useEffect(() => {
     const el = ref.current;
@@ -155,9 +169,10 @@ function StoryViewer({ rings, start, seen, onClose }: {
   const goRef = useRef(go);
   useEffect(() => { goRef.current = go; });
 
-  // Timer: advance after STORY_MS of visible, unpaused time (held / paused / hidden tab stop it).
+  // Timer: advance after STORY_MS of visible, unpaused time (held / paused / hidden tab stop it). A video
+  // story advances when the video ends instead (its progress bar is the video's position).
   useEffect(() => {
-    if (stopped) return;
+    if (stopped || isVideo) return;
     let last = performance.now();
     let raf = 0;
     const tick = (now: number) => {
@@ -169,7 +184,7 @@ function StoryViewer({ rings, start, seen, onClose }: {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [stopped, pos]);
+  }, [stopped, pos, isVideo]);
 
   const fwd = dir === 'rtl' ? -1 : 1;
   function onKey(e: React.KeyboardEvent) {
@@ -211,7 +226,7 @@ function StoryViewer({ rings, start, seen, onClose }: {
     } catch { toast({ message: t('feed.failed'), tone: 'danger' }); }
   }
 
-  const pct = Math.min(100, (elapsed / STORY_MS) * 100);
+  const pct = Math.min(100, isVideo ? elapsed : (elapsed / STORY_MS) * 100);
   const bg = d.ok && !d.value.photo ? (d.value.bg ?? 0) % STORY_BACKGROUNDS : null;
   return (
     <dialog ref={ref} className="k-storyview" aria-label={t('stories.viewer')} onKeyDown={onKey}
@@ -229,6 +244,7 @@ function StoryViewer({ rings, start, seen, onClose }: {
             <span className="k-storyview-name">{mine ? t('stories.yours') : author?.name ?? '…'}</span>
             <span className="k-storyview-time"><RelativeTime iso={story.created_at} /> · {t('stories.hoursLeft', { count: hoursLeft(story.expires_at) })}</span>
           </span>
+          {isVideo ? <IconButton icon={muted ? 'volumeOff' : 'volume'} size="sm" label={muted ? t('stories.unmute') : t('stories.mute')} onClick={() => setMuted(!muted)} /> : null}
           <IconButton icon={paused ? 'play' : 'pause'} size="sm" label={paused ? t('stories.play') : t('stories.pause')} onClick={() => setPaused(!paused)} />
           <IconButton icon="close" size="sm" label={t('common.close')} onClick={onClose} />
         </header>
@@ -236,6 +252,14 @@ function StoryViewer({ rings, start, seen, onClose }: {
           onContextMenu={(e) => e.preventDefault()}>
           {!d.ok ? (
             <p className="k-storyview-msg">{d.reason === 'waiting' ? t('stories.waiting') : t('stories.unverified')}</p>
+          ) : d.value.video ? (
+            vid.s === 'ready' ? (
+              <video ref={videoEl} className="k-storyview-img" src={vid.url} playsInline muted={muted} preload="auto"
+                poster={vid.poster ?? undefined} aria-label={d.value.text || t('stories.video')}
+                onTimeUpdate={(e) => { const v = e.currentTarget; if (v.duration > 0) setElapsed((v.currentTime / v.duration) * 100); }}
+                onEnded={() => goRef.current(1)} />
+            ) : vid.s === 'error' ? <p className="k-storyview-msg">{t('stories.videoFailed')}</p>
+              : <p className="k-storyview-msg"><Spinner size={32} /> <span className="k-small k-ltr">{vid.pct}%</span></p>
           ) : d.value.photo ? (
             photo
               // eslint-disable-next-line @next/next/no-img-element
@@ -243,7 +267,7 @@ function StoryViewer({ rings, start, seen, onClose }: {
               : <Spinner size={32} />
           ) : null}
           {d.ok && d.value.text ? (
-            <div className={d.value.photo ? 'k-storyview-caption' : 'k-storyview-text'}><RichText text={d.value.text} clamp={STORY_MAX_TEXT} /></div>
+            <div className={d.value.photo || d.value.video ? 'k-storyview-caption' : 'k-storyview-text'}><RichText text={d.value.text} clamp={STORY_MAX_TEXT} /></div>
           ) : null}
         </div>
         <div className="k-storyview-nav">
@@ -265,6 +289,28 @@ function StoryViewer({ rings, start, seen, onClose }: {
         </>} />
     </dialog>
   );
+}
+
+type VidState = { s: 'loading'; pct: number } | { s: 'ready'; url: string; poster: string | null } | { s: 'error' };
+
+/** Download and decrypt a video story on this device; the object URL is revoked when the story changes. */
+function useStoryVideo(video: StoryVideo | undefined): VidState {
+  const [st, setSt] = useState<VidState>({ s: 'loading', pct: 0 });
+  const poster = useFileUrl(video?.poster);
+  const path = video?.file.path;
+  useEffect(() => {
+    if (!video) return;
+    const ac = new AbortController();
+    let url: string | null = null;
+    setSt({ s: 'loading', pct: 0 });
+    const mime = /^video\/(mp4|webm|quicktime)$/.test(video.file.mime) ? video.file.mime : 'video/mp4';
+    downloadFile(video.file, { signal: ac.signal, onProgress: (got, total) => setSt({ s: 'loading', pct: Math.min(99, Math.floor((got / total) * 100)) }) })
+      .then((plain) => { url = URL.createObjectURL(new Blob([plain as BlobPart], { type: mime })); setSt({ s: 'ready', url, poster: null }); })
+      .catch((e) => { if ((e as Error).name !== 'AbortError') setSt({ s: 'error' }); });
+    return () => { ac.abort(); if (url) URL.revokeObjectURL(url); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
+  return st.s === 'ready' ? { ...st, poster } : st;
 }
 
 function ViewersSheet({ storyId, open, onClose }: { storyId: string; open: boolean; onClose: () => void }) {
@@ -304,7 +350,10 @@ export function StoryComposer({ open, onClose }: { open: boolean; onClose: () =>
   const toast = useToast();
   const qc = useQueryClient();
   const circles = useMyCircles(open);
-  const [mode, setMode] = useState<'text' | 'photo'>('text');
+  const f = useFormat();
+  const [mode, setMode] = useState<'text' | 'photo' | 'video'>('text');
+  const [clip, setClip] = useState<{ file: File; probe: VideoProbe } | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
   const [text, setText] = useState('');
   const [bg, setBg] = useState(0);
   const [file, setFile] = useState<File | null>(null);
@@ -313,26 +362,48 @@ export function StoryComposer({ open, onClose }: { open: boolean; onClose: () =>
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const videoInput = useRef<HTMLInputElement>(null);
 
   const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  const clipUrl = useMemo(() => (clip ? URL.createObjectURL(clip.file) : null), [clip]);
+  useEffect(() => () => { if (clipUrl) URL.revokeObjectURL(clipUrl); }, [clipUrl]);
 
-  function reset() { setText(''); setFile(null); setBg(0); setErr(null); setMode('text'); }
+  function reset() { setText(''); setFile(null); setClip(null); setBg(0); setErr(null); setMode('text'); setProgress(null); }
+
+  async function pickClip(picked: File | undefined) {
+    if (videoInput.current) videoInput.current.value = '';
+    if (!picked) return;
+    setErr(null);
+    if (!videoMime(picked) || picked.size === 0) { setErr(t('feed.videoType')); return; }
+    if (picked.size > STORY_VIDEO_MAX_BYTES) { setErr(t('feed.videoTooBig', { size: formatBytes(STORY_VIDEO_MAX_BYTES, f.number) })); return; }
+    const probe = await probeVideo(picked);
+    if (!probe.playable) { setErr(t('feed.videoType')); return; }
+    if (probe.duration && probe.duration > STORY_VIDEO_MAX_S + 0.5) { setErr(t('stories.videoTooLong', { s: STORY_VIDEO_MAX_S })); return; }
+    setClip({ file: picked, probe });
+  }
 
   async function share() {
     setErr(null);
     if (mode === 'text' && !text.trim()) { setErr(t('feed.writeSomething')); return; }
     if (mode === 'photo' && !file) { setErr(t('stories.choosePhoto')); return; }
+    if (mode === 'video' && !clip) { setErr(t('stories.chooseVideo')); return; }
     setBusy(true);
     try {
-      await createStory({ audience, text, ...(mode === 'text' ? { bg } : { photo: file! }) });
+      if (mode === 'video') {
+        setProgress(0);
+        const up = await uploadVideo(clip!.file, clip!.probe, (sent, total) => setProgress(Math.floor((sent / total) * 100)));
+        await createStory({ audience, text, video: up });
+      } else {
+        await createStory({ audience, text, ...(mode === 'text' ? { bg } : { photo: file! }) });
+      }
       toast({ message: t('stories.shared') });
       await qc.invalidateQueries({ queryKey: ['stories'] });
       reset();
       onClose();
     } catch (e) {
       setErr(e instanceof KeyWaitingError ? t('feed.keyWaiting') : t('feed.failed'));
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setProgress(null); }
   }
 
   const audienceLabel = audience.kind === 'connections' ? t('feed.toConnections')
@@ -345,7 +416,7 @@ export function StoryComposer({ open, onClose }: { open: boolean; onClose: () =>
       </>}>
       <div className="k-stack">
         <Segmented label={t('stories.newTitle')} value={mode} onChange={setMode} block
-          options={[{ value: 'text', label: t('stories.text'), icon: 'edit' }, { value: 'photo', label: t('stories.photo'), icon: 'image' }]} />
+          options={[{ value: 'text', label: t('stories.text'), icon: 'edit' }, { value: 'photo', label: t('stories.photo'), icon: 'image' }, { value: 'video', label: t('stories.videoTab'), icon: 'video' }]} />
         {mode === 'text' ? (
           <>
             <div className="k-story-draft" data-bg={bg}>
@@ -358,6 +429,24 @@ export function StoryComposer({ open, onClose }: { open: boolean; onClose: () =>
                   aria-label={t('stories.background', { n: i + 1 })} onClick={() => setBg(i)} />
               ))}
             </div>
+          </>
+        ) : mode === 'video' ? (
+          <>
+            <input ref={videoInput} type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={(e) => void pickClip(e.target.files?.[0])} />
+            {clipUrl ? (
+              <div className="k-story-draft k-story-draft-photo">
+                <video src={clipUrl} controls playsInline muted preload="metadata" />
+              </div>
+            ) : null}
+            <Button variant="soft" icon="video" onClick={() => videoInput.current?.click()} disabled={busy}>{clipUrl ? t('stories.changeVideo') : t('stories.chooseVideo')}</Button>
+            <p className="k-muted k-small">{t('stories.videoHint', { s: STORY_VIDEO_MAX_S })}</p>
+            <textarea className="k-story-captionfield" aria-label={t('stories.caption')} placeholder={t('stories.caption')} dir="auto" value={text}
+              maxLength={STORY_MAX_TEXT} rows={2} onChange={(e) => setText(e.target.value)} />
+            {progress !== null ? (
+              <span className="k-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label={t('stories.uploading', { pct: progress })}>
+                <span style={{ inlineSize: `${progress}%` }} />
+              </span>
+            ) : null}
           </>
         ) : (
           <>

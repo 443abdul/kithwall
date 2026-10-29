@@ -17,6 +17,9 @@ import { androidOrigins, parseCertFingerprints } from '../native/association';
 
 export const RP_NAME = 'Kithwall';
 const CHALLENGE_TTL_S = 5 * 60;
+/** Passphrase sign-up runs Argon2id (64 MiB, t=3) on the device between /register/options and /verify; on a
+ *  slow phone (or a starved emulator) that alone can take minutes, so its challenge lives longer. */
+const TTL_BY_INTENT: Partial<Record<Intent, number>> = { register_passphrase: 15 * 60 };
 
 // ---------------------------------------------------------------------------------------------
 // Relying party
@@ -144,7 +147,7 @@ export async function storeChallenge(row: {
   const { data, error } = await db.from('webauthn_challenges').insert({
     intent: row.intent, challenge: row.challenge, ip_tag: row.tag, user_id: row.userId ?? null,
     new_user_id: row.newUserId ?? null, handle: row.handle ?? null, webauthn_user_id: row.webauthnUserId ?? null,
-    expires_at: new Date(Date.now() + CHALLENGE_TTL_S * 1000).toISOString(),
+    expires_at: new Date(Date.now() + (TTL_BY_INTENT[row.intent] ?? CHALLENGE_TTL_S) * 1000).toISOString(),
   }).select('id').single();
   if (error || !data) throw new Error(error?.message ?? 'challenge insert failed');
   // Opportunistic cleanup (the hourly job also does this).

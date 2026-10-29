@@ -95,6 +95,8 @@ export interface NativePushRegistration {
 export interface KithwallPushPlugin {
   permission(): Promise<{ state: 'granted' | 'denied' | 'prompt' }>;
   requestPermission(): Promise<{ state: 'granted' | 'denied' | 'prompt' }>;
+  /** Open this app's notification settings (the only way back once the permission was refused). */
+  openSettings?(): Promise<void>;
   /** Get (or create) this install's push address and key. May show the UnifiedPush distributor picker. */
   register(opts?: { vapid?: string }): Promise<NativePushRegistration>;
   /** What register() would return, without prompting or creating anything; {} when not registered. */

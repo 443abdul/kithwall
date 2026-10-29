@@ -34,6 +34,13 @@ export type AccountErrorCode =
   | 'last_unlock_method'
   /** The operator has paused sign-ups. */
   | 'signups_closed'
+  /** Inside the app: the platform refused passkeys because the website doesn't list this build of the app yet
+   *  (Digital Asset Links / associated domains). Offer the passphrase; a passkey can be added later. */
+  | 'passkey_not_linked'
+  /** Sign-up: the ALTCHA proof was invalid or already spent (each attempt needs a fresh one). Nothing was created. */
+  | 'proof_failed'
+  /** Sign-up: more than 5 minutes passed between starting and finishing; nothing was created. */
+  | 'signup_expired'
   // Account recovery from a @handle (lib/auth/recover-client.ts):
   /** No account has this handle. */
   | 'no_account'

@@ -40,6 +40,7 @@ import { capVideoBandwidth, firstAudioCodec, isMobileUa, orderAudioCodecs, order
 import { getCallDevices, mediaErr, micAllowed, micConstraints, type MediaErr } from './devices';
 import { nativeCallActive, nativeCallEnded } from '../native/calls';
 import {
+  deltaLoss,
   meshCeiling, PAUSED, QualityController, SAVER_AUDIO, shareUplink, startTier, videoEncoding,
   type Decision, type Limitation, type NetSample, type Quality, type QualityReason, type Tier,
 } from './quality';
@@ -173,7 +174,7 @@ interface Peer {
   /** Idempotency: the last offer we answered and our answer to it. */
   lastOffer: string | null;
   lastAnswer: string | null;
-  prev: { lost: number; recv: number; t: number; aBytes: number; vBytes: number };
+  prev: { lost: number; recv: number; t: number; aBytes: number; vBytes: number; sent: Record<string, number>; rLost: Record<string, number> };
   /** Uplink to this peer as last measured (debug / tests). */
   tx: { audioBps: number; videoBps: number; height: number; fps: number; aob: number | null; budget: number | null; rtt: number | null; loss: number; limitation: Limitation | null; red: boolean };
   uplink: Quality;
@@ -932,7 +933,7 @@ class CallEngine {
       ctl: new QualityController({ ceiling: 0, saver: this.snap.saver }, startTier(netInfo(), this.snap.saver)),
       decision: null, applied: { audio: '', video: '' }, sentVp: false,
       relayed: null, safety: null, lostTimer: null, restartTimer: null, restartAttempts: 0, lastRestartAt: 0, offerTimer: null, lastOffer: null, lastAnswer: null,
-      prev: { lost: 0, recv: 0, t: 0, aBytes: 0, vBytes: 0 },
+      prev: { lost: 0, recv: 0, t: 0, aBytes: 0, vBytes: 0, sent: {}, rLost: {} },
       tx: { audioBps: 0, videoBps: 0, height: 0, fps: 0, aob: null, budget: null, rtt: null, loss: 0, limitation: null, red: false },
       uplink: 'good', bytesReceived: 0, paramQueue: Promise.resolve(), redNeg: false, peerRed: false, askedRed: false, ptime: 20, lastRenegAt: Date.now(),
       tr, cands: [], candU: '', candDone: false, candTimer: null, added: new Set(), handling: null,
@@ -1294,7 +1295,12 @@ class CallEngine {
         let rtt: number | null = null;
         let aob: number | null = null;
         let lost = 0, recv = 0, bytes = 0, aBytes = 0, vBytes = 0, height = 0, fps = 0, jitter: number | null = null;
-        let outLoss = 0;
+        // Outbound loss per kind from cumulative counters (packets they report lost / packets I sent since the
+        // last sample). remote-inbound-rtp's fractionLost is only refreshed when a new receiver report arrives,
+        // so a paused video stream kept its last (often high) value for the rest of the call and pinned the
+        // controller in "voice only" on perfectly good links.
+        const sent: Record<string, number> = {};
+        const rLost: Record<string, number> = {};
         let limitation: Limitation | null = null;
         report.forEach((s) => {
           if (s.type === 'transport' && s.selectedCandidatePairId) pairId = s.selectedCandidatePairId;
@@ -1303,6 +1309,7 @@ class CallEngine {
             if (s.kind === 'audio' && typeof s.jitter === 'number') jitter = s.jitter;
           }
           if (s.type === 'outbound-rtp') {
+            sent[s.kind] = (sent[s.kind] ?? 0) + (s.packetsSent ?? 0);
             if (s.kind === 'audio') aBytes += s.bytesSent ?? 0;
             else {
               vBytes += s.bytesSent ?? 0;
@@ -1312,7 +1319,7 @@ class CallEngine {
             }
           }
           if (s.type === 'remote-inbound-rtp') {
-            if (typeof s.fractionLost === 'number') outLoss = Math.max(outLoss, s.fractionLost);
+            rLost[s.kind] = (rLost[s.kind] ?? 0) + Math.max(0, s.packetsLost ?? 0);
             if (rtt === null && typeof s.roundTripTime === 'number') rtt = s.roundTripTime;
           }
         });
@@ -1325,12 +1332,13 @@ class CallEngine {
           const rc = report.get(pair.remoteCandidateId);
           p.relayed = lc?.candidateType === 'relay' || rc?.candidateType === 'relay';
         }
+        const outLoss = deltaLoss(sent, rLost, p.prev.sent, p.prev.rLost);
         const dl = lost - p.prev.lost;
         const dr = recv - p.prev.recv;
         const dt = p.prev.t ? (now - p.prev.t) / 1000 : 0;
         const bps = (cur: number, prev: number) => (dt > 0 && cur >= prev ? Math.round(((cur - prev) * 8) / dt) : 0);
         p.tx = { ...p.tx, audioBps: bps(aBytes, p.prev.aBytes), videoBps: bps(vBytes, p.prev.vBytes), height, fps, aob, rtt, loss: outLoss, limitation, red: p.redNeg && p.pc.signalingState === 'stable' };
-        p.prev = { lost, recv, t: now, aBytes, vBytes };
+        p.prev = { lost, recv, t: now, aBytes, vBytes, sent, rLost };
         p.bytesReceived = bytes;
         const inLoss = dr + dl > 0 ? Math.max(0, dl) / (dr + Math.max(0, dl)) : 0;
         if (p.state !== 'connected') { samples.push(null); continue; }

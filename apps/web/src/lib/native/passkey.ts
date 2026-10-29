@@ -52,10 +52,35 @@ function mapError(e: unknown): AccountError {
     case 'exists': return new AccountError('unknown', 'This device already has a passkey for this account.');
     case 'unsupported': return new AccountError('passkey_unsupported', 'Passkeys are not available on this device.');
     // The password manager couldn't link this app to the website (assetlinks.json doesn't list this build's
-    // signing key yet). Same outcome as a device without passkeys: the flows offer the passphrase.
-    case 'not_linked': return new AccountError('passkey_unsupported', 'Passkeys are not set up for this app yet.');
+    // signing key yet, e.g. a test build). The flows offer the passphrase; a passkey can be added later.
+    case 'not_linked': return new AccountError('passkey_not_linked', 'Passkeys are not set up for this app yet.');
     default: return new AccountError('unknown', (e as Error)?.message ?? 'Passkey error');
   }
+}
+
+/**
+ * Does the website's Digital Asset Links file list any Android app? It is empty until the operator sets
+ * ANDROID_CERT_SHA256 (docs/v2/05-native.md §2); then Credential Manager refuses every passkey request from
+ * the app, often with a generic "unsupported" / "no credential" error. null = couldn't tell.
+ */
+export async function siteListsApp(): Promise<boolean | null> {
+  try {
+    const res = await fetch('/.well-known/assetlinks.json', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const links = (await res.json()) as unknown;
+    return Array.isArray(links) && links.length > 0;
+  } catch { return null; }
+}
+
+/** Native error → AccountError, naming the missing app ↔ website link when that is what really happened. */
+export async function nativePasskeyError(e: unknown): Promise<AccountError> {
+  const err = mapError(e);
+  if (err.code === 'passkey_not_linked') return err;
+  const code = nativeErrorCode(e);
+  if ((code === 'unsupported' || code === 'no_credential' || code === 'failed') && (await siteListsApp()) === false) {
+    return new AccountError('passkey_not_linked', 'Passkeys are not set up for this app yet.');
+  }
+  return err;
 }
 
 /** The registration response in @simplewebauthn's JSON shape (unpadded base64url everywhere). */
@@ -102,7 +127,7 @@ export async function nativeCreate(options: PublicKeyCredentialCreationOptionsJS
   try {
     const r = await (await nativePlugin('KithwallPasskey')).create({ requestJson: JSON.stringify(request) });
     out = JSON.parse(r.responseJson) as Json;
-  } catch (e) { throw mapError(e); }
+  } catch (e) { throw await nativePasskeyError(e); }
   const { output, enabled } = extractPrf(out);
   return { response: toRegistrationJSON(out), prf: output, enabled };
 }
@@ -113,7 +138,7 @@ export async function nativeGet(options: PublicKeyCredentialRequestOptionsJSON, 
   try {
     const r = await (await nativePlugin('KithwallPasskey')).get({ requestJson: JSON.stringify(request) });
     out = JSON.parse(r.responseJson) as Json;
-  } catch (e) { throw mapError(e); }
+  } catch (e) { throw await nativePasskeyError(e); }
   const { output } = extractPrf(out);
   return { response: toAuthenticationJSON(out), prf: output };
 }

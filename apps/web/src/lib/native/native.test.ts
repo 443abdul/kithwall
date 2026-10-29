@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { androidOrigins, appleAppSiteAssociation, assetLinks, isAppleTeamId, parseCertFingerprints } from './association';
-import { b64urlDecode, b64urlEncode, extractPrf, prfExtension, toAuthenticationJSON, toRegistrationJSON } from './passkey';
+import { b64urlDecode, b64urlEncode, extractPrf, nativePasskeyError, prfExtension, toAuthenticationJSON, toRegistrationJSON } from './passkey';
 import { backAction, downloadBlob } from './runtime';
 import { notThenable } from './index';
 import { GET as assetLinksRoute } from '../../app/.well-known/assetlinks.json/route';
@@ -176,5 +176,28 @@ describe('plugin proxies (notThenable)', () => {
     expect(await p.info()).toEqual([]);
     expect(calls).toEqual(['info']);
     expect('then' in p).toBe(false);
+  });
+});
+
+describe('native passkey errors (nativePasskeyError)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+  const stubLinks = (links: unknown, ok = true) =>
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok, json: async () => links })));
+
+  it("names the missing app ↔ website link instead of \"this device can't use passkeys\"", async () => {
+    stubLinks([]);
+    expect((await nativePasskeyError({ code: 'not_linked' })).code).toBe('passkey_not_linked');
+    // Credential Manager often reports the missing association as "unsupported" or "no credential".
+    expect((await nativePasskeyError({ code: 'unsupported' })).code).toBe('passkey_not_linked');
+    expect((await nativePasskeyError({ code: 'no_credential' })).code).toBe('passkey_not_linked');
+    expect((await nativePasskeyError({ code: 'cancelled' })).code).toBe('passkey_cancelled');
+  });
+
+  it('keeps the usual meaning once the website lists the app', async () => {
+    stubLinks([{ relation: ['delegate_permission/common.get_login_creds'] }]);
+    expect((await nativePasskeyError({ code: 'unsupported' })).code).toBe('passkey_unsupported');
+    expect((await nativePasskeyError({ code: 'no_credential' })).code).toBe('passkey_cancelled');
+    stubLinks(null, false);   // can't tell: don't guess
+    expect((await nativePasskeyError({ code: 'unsupported' })).code).toBe('passkey_unsupported');
   });
 });

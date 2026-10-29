@@ -371,7 +371,7 @@ function SecureStep({ headingId, headingRef, handle, onDone }: StepProps & { han
     setBusy(kind); setErr(null);
     try { await fn(); await onDone(); } catch (x) {
       const code = errorCode(x);
-      if (code === 'passkey_unsupported' || code === 'prf_unsupported') setCanPasskey(false);
+      if (code === 'passkey_unsupported' || code === 'passkey_not_linked' || code === 'prf_unsupported') setCanPasskey(false);
       setErr(accountErrorMessage(t, x));
     } finally { setBusy(null); }
   }

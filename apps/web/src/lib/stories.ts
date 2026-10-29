@@ -3,15 +3,17 @@
 // device to an audience key (my connections, or a circle) and signed with my identity key. The server
 // only stores ciphertext, the audience/epoch, the circle id and the expiry it sets itself
 // (supabase/migrations/20261022000300_stories.sql). Photos are re-encoded on device (drops EXIF/GPS),
-// encrypted, uploaded, and linked to the story so readers can fetch them only while it is live.
+// encrypted, uploaded, and linked to the story so readers can fetch them only while it is live. Short
+// videos (≤ STORY_VIDEO_MAX_S) are encrypted on device and uploaded by the composer (components/posts/
+// video.ts), then linked the same way.
 import { b64u, openEnvelope, sealEnvelope, type Envelope, type EnvelopeHeader } from '@kithwall/crypto';
 import { sb, must } from './supabase';
 import { identity, me } from './keys/session';
 import { keyring } from './keys/keyring';
 import { people } from './people';
-import { deleteMedia, uploadEncrypted } from './media';
+import { deleteMedia, fileRefPaths, uploadEncrypted } from './media';
 import type { Decrypted } from './content';
-import type { FileRef } from './types';
+import type { FileRef, PostPayload } from './types';
 
 export interface StoryRow {
   id: string; author_id: string; audience_id: string; epoch: number; group_id: string | null;
@@ -26,11 +28,18 @@ export interface StoryPayload {
   /** Background swatch index for text stories (0 … STORY_BACKGROUNDS-1). */
   bg?: number;
   photo?: { file: FileRef; w: number; h: number };
+  /** A short video status (encrypted parts + poster), same shape as a post's video. */
+  video?: StoryVideo;
 }
+
+export type StoryVideo = NonNullable<PostPayload['video']>;
 
 export type StoryAudience = { kind: 'connections' } | { kind: 'circle'; circleId: string };
 
 export const STORY_MAX_TEXT = 500;
+/** Video statuses are short: at most a minute and 50 MB. */
+export const STORY_VIDEO_MAX_S = 60;
+export const STORY_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
 const PHOTO_MAX_SIDE = 1440;
 
 export function storyHeader(s: Pick<StoryRow, 'id' | 'author_id' | 'audience_id' | 'epoch' | 'group_id'>): EnvelopeHeader {
@@ -61,7 +70,17 @@ async function resolveAudience(a: StoryAudience): Promise<{ audienceId: string; 
   return { audienceId: g.audience_id, groupId: g.id };
 }
 
-export async function createStory(args: { audience: StoryAudience; text?: string; bg?: number; photo?: Blob }): Promise<StoryRow> {
+/** Every storage object a story owns (photo, or video parts + poster). */
+export function storyPaths(p: StoryPayload | null | undefined): string[] {
+  if (!p) return [];
+  return [
+    ...(p.photo ? [p.photo.file.path] : []),
+    ...(p.video ? [...fileRefPaths(p.video.file), ...(p.video.poster ? [p.video.poster.path] : [])] : []),
+  ];
+}
+
+/** `video`: already encrypted and uploaded by the composer; on failure here its objects are deleted too. */
+export async function createStory(args: { audience: StoryAudience; text?: string; bg?: number; photo?: Blob; video?: { video: StoryVideo; paths: string[] } }): Promise<StoryRow> {
   const id = crypto.randomUUID();
   const { audienceId, groupId } = await resolveAudience(args.audience);
   const { key, epoch } = await keyring.current(audienceId);
@@ -69,7 +88,8 @@ export async function createStory(args: { audience: StoryAudience; text?: string
   const text = args.text?.trim().slice(0, STORY_MAX_TEXT);
   if (text) payload.text = text;
   if (typeof args.bg === 'number') payload.bg = Math.max(0, Math.min(STORY_BACKGROUNDS - 1, Math.floor(args.bg)));
-  let uploaded: string[] = [];
+  let uploaded: string[] = args.video ? [...args.video.paths] : [];
+  if (args.video) payload.video = args.video.video;
   try {
     if (args.photo) {
       const enc = await encodePhoto(args.photo);
@@ -77,7 +97,7 @@ export async function createStory(args: { audience: StoryAudience; text?: string
       uploaded = [ref.path];
       payload.photo = { file: { ...ref, w: enc.w, h: enc.h }, w: enc.w, h: enc.h };
     }
-    if (!payload.text && !payload.photo) throw new Error('empty story');
+    if (!payload.text && !payload.photo && !payload.video) throw new Error('empty story');
     const row = { id, author_id: me(), audience_id: audienceId, epoch, group_id: groupId };
     const envelope = sealEnvelope({ header: storyHeader(row), payload, audienceKey: key, signPriv: identity().signPriv });
     const saved = must(await sb().from('stories').insert({ ...row, envelope }).select().single()) as StoryRow;
@@ -138,7 +158,7 @@ export async function storyViewers(storyId: string): Promise<StoryViewer[]> {
 }
 
 export async function deleteStory(row: StoryRow, payload?: StoryPayload | null): Promise<void> {
-  const paths = payload?.photo ? [payload.photo.file.path] : [];
+  const paths = storyPaths(payload);
   must(await sb().from('stories').delete().eq('id', row.id));
   cache.delete(row.id);
   if (paths.length) await deleteMedia(paths).catch(() => undefined);

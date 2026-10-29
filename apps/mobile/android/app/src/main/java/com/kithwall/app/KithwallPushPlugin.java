@@ -1,6 +1,9 @@
 package com.kithwall.app;
 
 import android.Manifest;
+import android.content.Intent;
+import android.net.Uri;
+import android.provider.Settings;
 import android.os.Build;
 
 import androidx.core.app.NotificationManagerCompat;
@@ -56,6 +59,28 @@ public class KithwallPushPlugin extends Plugin {
             return;
         }
         requestPermissionForAlias("notifications", call, "permissionDone");
+    }
+
+    /**
+     * Android asks for the notification permission at most twice; after that (or when notifications were
+     * switched off for the app) only the system settings can turn them back on. Opens this app's
+     * notification settings page (the app's details page on older systems).
+     */
+    @PluginMethod
+    public void openSettings(PluginCall call) {
+        Intent i;
+        if (Build.VERSION.SDK_INT >= 26) {
+            i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
+        } else {
+            i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getContext().getPackageName(), null));
+        }
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            getContext().startActivity(i);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("no settings screen", "failed");
+        }
     }
 
     @PermissionCallback

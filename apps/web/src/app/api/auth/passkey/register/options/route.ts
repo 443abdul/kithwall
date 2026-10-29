@@ -32,10 +32,10 @@ export async function POST(req: Request) {
     if (await rateLimited(tag, intent)) return fail('rate_limited', 429, 'Too many sign-up attempts. Please try again later.');
 
     const pow = parsePayload(body.altcha);
-    if (!pow || !(await verifyPayload(pow))) return fail('unknown', 400, 'We couldn\'t confirm you\'re a person. Reload the page and try again.');
+    if (!pow || !(await verifyPayload(pow))) return fail('proof_failed', 400, 'We couldn\'t confirm you\'re a person. Please try again.');
     const spent = await admin().from('altcha_spent').insert({ signature: pow.challenge.signature });
     if (spent.error) {
-      if (spent.error.code === '23505') return fail('unknown', 400, 'This sign-up form has already been used. Reload the page and try again.');
+      if (spent.error.code === '23505') return fail('proof_failed', 400, 'This security check was already used. Please try again.');
       throw new Error(spent.error.message);
     }
 

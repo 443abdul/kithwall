@@ -10,10 +10,18 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
+import android.content.pm.ActivityInfo;
+import android.graphics.Color;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
 
 import androidx.core.content.FileProvider;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -40,6 +48,12 @@ import com.getcapacitor.BridgeWebChromeClient;
  * FileProvider: the WebView reads a picked file lazily (when the page encrypts and uploads it), and by then
  * a photo-picker / documents URI could no longer be read ("NotReadableError ... permission problems"), so
  * the attachment preview was broken and sending failed. Copies older than a day are removed.
+ *
+ * Fullscreen video. Capacitor's client answers every fullscreen request (a YouTube/Vimeo embed's button, a
+ * <video>'s fullscreen control, element.requestFullscreen) by hiding the view straight away, so nothing
+ * could go fullscreen in the app. Here the player's view is laid over the whole window with the system bars
+ * hidden, the screen may rotate freely while it is up, and Back (MainActivity) or the player's own button
+ * leaves it.
  */
 class KwChromeClient extends BridgeWebChromeClient {
     private final AppCompatActivity activity;
@@ -49,9 +63,52 @@ class KwChromeClient extends BridgeWebChromeClient {
     private static final Handler main = new Handler(Looper.getMainLooper());
     private static final long KEEP_MS = 24L * 60 * 60 * 1000;
 
+    private View fullView;
+    private CustomViewCallback fullCallback;
+    private int savedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+    private static KwChromeClient current;
+
+    /** MainActivity's Back: leave fullscreen video first. True if it did. */
+    static boolean exitFullscreen() {
+        KwChromeClient c = current;
+        if (c == null || c.fullView == null) return false;
+        c.onHideCustomView();
+        return true;
+    }
+
+    @Override
+    public void onShowCustomView(View view, CustomViewCallback callback) {
+        if (fullView != null) { callback.onCustomViewHidden(); return; }
+        fullView = view;
+        fullCallback = callback;
+        ViewGroup decor = (ViewGroup) activity.getWindow().getDecorView();
+        view.setBackgroundColor(Color.BLACK);
+        decor.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(activity.getWindow(), decor);
+        bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        bars.hide(WindowInsetsCompat.Type.systemBars());
+        savedOrientation = activity.getRequestedOrientation();
+        activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
+    }
+
+    @Override
+    public void onHideCustomView() {
+        View view = fullView;
+        CustomViewCallback cb = fullCallback;
+        fullView = null;
+        fullCallback = null;
+        if (view == null) return;
+        ViewGroup decor = (ViewGroup) activity.getWindow().getDecorView();
+        decor.removeView(view);
+        WindowCompat.getInsetsController(activity.getWindow(), decor).show(WindowInsetsCompat.Type.systemBars());
+        activity.setRequestedOrientation(savedOrientation);
+        if (cb != null) cb.onCustomViewHidden();
+    }
+
     KwChromeClient(Bridge bridge) {
         super(bridge);
         this.activity = bridge.getActivity();
+        current = this;
         this.picker = activity.registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), (res) -> {
             ValueCallback<Uri[]> cb = callback;
             callback = null;

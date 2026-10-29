@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { accountApi, type Capabilities } from '@/lib/auth/account';
 import { fetchChallenge, solve } from '@/lib/auth/altcha';
+import { proofSource, type ProofSource } from '@/lib/auth/pow';
 import { useSession } from '@/lib/keys/session';
 import { useT } from '@/i18n';
 import { Button } from '@/components/ui/Button';
@@ -29,33 +30,25 @@ export function normalizeHandle(raw: string): string {
   return raw.trim().replace(/^@+/, '').toLowerCase().replace(/\s+/g, '');
 }
 
-/** Starts the proof-of-work immediately; returns a getter that resolves to the payload. */
+/**
+ * Starts the proof-of-work immediately; `get()` resolves to a proof for one sign-up attempt. Proofs are
+ * single use (the server spends each one), so every attempt gets a fresh one (lib/auth/pow.ts).
+ */
 function useProofOfWork() {
-  const job = useRef<Promise<string> | null>(null);
-  const ctl = useRef<AbortController | null>(null);
+  const src = useRef<ProofSource | null>(null);
   const [closed, setClosed] = useState(false);
-  const start = () => {
-    ctl.current?.abort();
-    const c = new AbortController();
-    ctl.current = c;
-    const p = fetchChallenge().then((r) => {
-      if (!r.signupsEnabled) { setClosed(true); throw new Error('closed'); }
-      return solve(r.challenge, c.signal);
-    });
-    p.catch(() => undefined); // surfaced when awaited
-    job.current = p;
-    return p;
-  };
+  const make = () => proofSource(async (signal) => {
+    const r = await fetchChallenge();
+    if (!r.signupsEnabled) { setClosed(true); throw new Error('closed'); }
+    return solve(r.challenge, signal);
+  });
   useEffect(() => {
-    start();
-    return () => ctl.current?.abort();
+    src.current = make();
+    return () => { src.current?.stop(); src.current = null; };
   }, []);
   return {
     closed,
-    /** Payload, restarting once if the background attempt failed. */
-    get: async () => {
-      try { return await (job.current ?? start()); } catch { return await start(); }
-    },
+    get: () => (src.current ??= make()).take(),
   };
 }
 
@@ -126,17 +119,21 @@ export function JoinFlow() {
     setBusy(true); setErr(null);
     creating.current = true;
     try {
-      const altcha = await pow.get();
-      await accountApi.createAccount({
-        displayName: name.trim(), handle: h, altcha, inviteCode: invite,
-        passphrase: withPhrase ? phrase : undefined,
-      });
+      const input = { displayName: name.trim(), handle: h, inviteCode: invite, passphrase: withPhrase ? phrase : undefined };
+      try {
+        await accountApi.createAccount({ ...input, altcha: await pow.get() });
+      } catch (e) {
+        // The security check failed before anything was created (e.g. its challenge expired while the page
+        // sat open): once more with a fresh proof.
+        if (errorCode(e) !== 'proof_failed') throw e;
+        await accountApi.createAccount({ ...input, altcha: await pow.get() });
+      }
       markRecoveryNudge();
       go(4);
     } catch (e) {
       creating.current = false;
       const code = errorCode(e);
-      if (code === 'passkey_unsupported' || code === 'prf_unsupported') setUsePhrase(true);
+      if (code === 'passkey_unsupported' || code === 'passkey_not_linked' || code === 'prf_unsupported') setUsePhrase(true);
       if (code === 'handle_taken' || code === 'handle_invalid') { setHandleState(code === 'handle_taken' ? 'taken' : 'invalid'); go(2); }
       setErr(pow.closed ? t('join.closed') : accountErrorMessage(t, e));
     } finally { setBusy(false); }

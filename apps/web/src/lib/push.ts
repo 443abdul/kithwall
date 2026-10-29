@@ -126,6 +126,24 @@ export function wasEnabled(uid: string): boolean {
   try { return localStorage.getItem(ENABLED_KEY(uid)) === '1'; } catch { return false; }
 }
 
+/**
+ * Why turning push on didn't work, for the UI: 'blocked' (refused earlier or switched off in settings: only
+ * the settings can undo it), 'pending' (the browser parked the request in its quiet UI, a bell in the
+ * address bar, and the promise never settles until the person finds it), 'dismissed' (closed the prompt).
+ */
+export class PushError extends Error {
+  constructor(public code: 'blocked' | 'pending' | 'dismissed', message: string) { super(message); }
+}
+
+/** Give up waiting for the permission prompt after this long (Chrome on Android's quiet prompt never answers). */
+const PROMPT_WAIT_MS = 20_000;
+
+/** The app's notification settings (native only); false where there is no such screen to open. */
+export async function openNotificationSettings(): Promise<boolean> {
+  if (!isNative()) return false;
+  return (await nativePush()).nativeOpenSettings();
+}
+
 async function store(sub: PushSubscription) {
   const j = sub.toJSON();
   if (!j.endpoint || !j.keys?.p256dh || !j.keys?.auth) throw new Error('Your browser returned an incomplete push subscription.');
@@ -152,7 +170,11 @@ async function nativeRefreshPermission(): Promise<void> {
 export async function enablePush(userId: string): Promise<void> {
   if (isNative()) {
     const n = await nativePush();
-    try { await n.nativeEnablePush(); } finally { await nativeRefreshPermission(); }
+    try { await n.nativeEnablePush(); }
+    catch (e) {
+      if (e instanceof n.NativePushError && e.code === 'denied') throw new PushError('blocked', 'Notifications are turned off for Kithwall on this phone.');
+      throw e;
+    } finally { await nativeRefreshPermission(); }
     rememberEnabled(userId, true);
     changed();
     return;
@@ -161,12 +183,20 @@ export async function enablePush(userId: string): Promise<void> {
   if (s.iosNeedsInstall) throw new Error('On iPhone and iPad, add Kithwall to your Home Screen first, then turn on notifications from there.');
   if (!s.supported) throw new Error('This browser doesn’t support push notifications.');
   // Ask first, while we're still inside the user's gesture.
-  const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+  let perm: NotificationPermission | 'pending' = Notification.permission;
+  if (perm === 'default') {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    perm = await Promise.race([
+      Notification.requestPermission(),
+      new Promise<'pending'>((resolve) => { timer = setTimeout(() => resolve('pending'), PROMPT_WAIT_MS); }),
+    ]).finally(() => clearTimeout(timer));
+  }
   if (perm !== 'granted') {
     changed();
-    throw new Error(perm === 'denied'
-      ? 'Notifications are blocked for Kithwall in your browser settings. Allow them there, then try again.'
-      : 'You didn’t allow notifications.');
+    if (perm === 'pending') throw new PushError('pending', 'Your browser is waiting for an answer: look for a bell icon next to the address.');
+    throw perm === 'denied'
+      ? new PushError('blocked', 'Notifications are blocked for Kithwall in your browser settings. Allow them there, then try again.')
+      : new PushError('dismissed', 'You didn’t allow notifications.');
   }
   const reg = await registerServiceWorker();
   if (!reg) throw new Error('This browser doesn’t support service workers.');

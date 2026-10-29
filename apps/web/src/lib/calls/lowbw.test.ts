@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateIdentity, newSymmetricKey } from '@kithwall/crypto';
 import {
-  AUDIO_STEPS, DOWN_HOLD, ENTER, HEADROOM, MAX_UP_HOLD, START_UP_HOLD, TIERS, meshCeiling, PAUSED, QualityController, SAVER_AUDIO, shareUplink, startTier, STAY, UP_HOLD, videoEncoding,
+  AUDIO_STEPS, deltaLoss, DOWN_HOLD, ENTER, HEADROOM, MAX_UP_HOLD, START_UP_HOLD, TIERS, meshCeiling, PAUSED, QualityController, SAVER_AUDIO, shareUplink, startTier, STAY, UP_HOLD, videoEncoding,
   type NetSample,
 } from './quality';
 import { audioPayloadOrder, capVideoBandwidth, firstAudioCodec, isMobileUa, orderAudioCodecs, orderVideoCodecs, tuneOpus, videoStartBitrate } from './sdp';
@@ -360,5 +360,15 @@ describe('call start-up', () => {
   it('lists UDP relays first, then TCP, then TLS', () => {
     const out = cleanIceServers({ iceServers: [{ urls: ['turns:t.example:443?transport=tcp', 'turn:t.example:80?transport=tcp', 'turn:t.example:3478?transport=udp', 'stun:t.example:3478'], username: 'u', credential: 'c' }] });
     expect(out[0]!.urls).toEqual(['stun:t.example:3478', 'turn:t.example:3478?transport=udp', 'turn:t.example:80?transport=tcp', 'turns:t.example:443?transport=tcp']);
+  });
+});
+
+describe('deltaLoss (outbound loss from cumulative counters)', () => {
+  it('measures loss since the last sample, not a stale fraction', () => {
+    expect(deltaLoss({ audio: 100, video: 400 }, { audio: 0, video: 40 }, { audio: 50, video: 200 }, { audio: 0, video: 0 })).toBeCloseTo(40 / 240);
+  });
+  it('treats a paused or silent stream (no new packets / no new reports) as clean', () => {
+    expect(deltaLoss({ audio: 150, video: 400 }, { audio: 2, video: 40 }, { audio: 100, video: 400 }, { audio: 2, video: 40 })).toBe(0);
+    expect(deltaLoss({ audio: 105 }, { audio: 5 }, { audio: 100 }, { audio: 0 })).toBe(0); // too few packets to judge
   });
 });

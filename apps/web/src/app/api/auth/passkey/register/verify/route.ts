@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   let createdUser: string | null = null;
   try {
     const ch = await consumeChallenge(body.challengeId, passphrase ? 'register_passphrase' : 'register');
-    if (!ch || !ch.new_user_id || !ch.handle) return fail('unknown', 400, 'This sign-up expired. Please start again.');
+    if (!ch || !ch.new_user_id || !ch.handle) return fail('signup_expired', 400, 'This sign-up expired. Please start again.');
 
     let cred = null;
     if (!passphrase) {
