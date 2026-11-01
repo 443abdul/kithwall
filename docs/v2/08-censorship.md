@@ -390,6 +390,16 @@ KITHWALL_FALLBACK_ORIGINS=https://m1.example     # Android, at `npx cap sync`
 | **4 — distribution** | F-Droid submission (foss flavour), reproducible-build CI check, IPFS copy of list + APK | $0 | Submit F-Droid metadata; pin an IPFS CID |
 | Optional | Supabase custom domain (`api.kithwall.com`) | +$10 (paid Supabase plan) | Only if wanted; not needed for resistance |
 
+**Phase 0 status (2026-11-02).** Done: the mirror-list key exists (offline, `NEXT_PUBLIC_MIRROR_LIST_PUBKEY` set);
+`KITHWALL_SB_REWRITE=1` is on in production. Measured on production, a request through `/sb` takes about 0.3 s
+longer than going to `supabase.co` directly (Vercel's proxy hop), and bodies of 60 MB pass through unchanged
+(Supabase's own per-file limit answers, not Vercel). So `/sb` is configured as a fallback,
+`NEXT_PUBLIC_API_ALTERNATES=/sb`, not as the primary (`NEXT_PUBLIC_API_BASE` stays unset): people reach Supabase
+directly, and the failover in §2.2 switches to `/sb` only when `supabase.co` stops answering. Still open in phase
+0: publishing the first signed list (`KITHWALL_MIRROR_LIST`, with the APK entry and its SHA-256), the first GitHub
+release carrying the Play-signed universal APK, and `NEXT_PUBLIC_APK_CERT_SHA256` (the Play App Signing
+certificate, so a downloaded APK and the Play Store version update each other).
+
 **Typical total:** ≈ **€10–15/month** (3 domains + one VPS, Cloudflare Free, Worker free tier) — under
 €20 with Workers Paid.
 
