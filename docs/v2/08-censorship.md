@@ -395,10 +395,17 @@ KITHWALL_FALLBACK_ORIGINS=https://m1.example     # Android, at `npx cap sync`
 longer than going to `supabase.co` directly (Vercel's proxy hop), and bodies of 60 MB pass through unchanged
 (Supabase's own per-file limit answers, not Vercel). So `/sb` is configured as a fallback,
 `NEXT_PUBLIC_API_ALTERNATES=/sb`, not as the primary (`NEXT_PUBLIC_API_BASE` stays unset): people reach Supabase
-directly, and the failover in §2.2 switches to `/sb` only when `supabase.co` stops answering. Still open in phase
-0: publishing the first signed list (`KITHWALL_MIRROR_LIST`, with the APK entry and its SHA-256), the first GitHub
-release carrying the Play-signed universal APK, and `NEXT_PUBLIC_APK_CERT_SHA256` (the Play App Signing
-certificate, so a downloaded APK and the Play Store version update each other).
+directly, and the failover in §2.2 switches to `/sb` only when `supabase.co` stops answering. Also done: the
+first GitHub release (`v2.2.0`) carries the Play-signed universal APK from Play Console → App bundle explorer, so
+a downloaded APK and the Play Store version update each other; `NEXT_PUBLIC_APK_CERT_SHA256` is the Play App
+Signing certificate; and signed list version 1 is published in `KITHWALL_MIRROR_LIST` (primary + its `/sb`, the
+APK URL with its SHA-256, the certificate), expiring 2027-01-30, so it must be re-signed with a higher version
+before then.
+
+**Each Android release:** download the "Signed, universal APK" for the new version from App bundle explorer,
+check it (`apksigner verify --print-certs`: certificate `7E:70:27:7E:…:5A:20`), attach it to a GitHub release
+`v<version>` with its SHA-256 in the notes, then sign a new list (version + 1) whose `apk[]` points at it and
+update `KITHWALL_MIRROR_LIST`.
 
 **Typical total:** ≈ **€10–15/month** (3 domains + one VPS, Cloudflare Free, Worker free tier) — under
 €20 with Workers Paid.
