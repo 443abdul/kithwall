@@ -1,23 +1,28 @@
 'use client';
 // Actions for one message (long-press on phones, right-click or the ⋯ button elsewhere): react, reply,
 // copy, edit (mine: re-sealed, shown as "edited", no history kept), unsend (mine: wiped for everyone, files
-// too, live on the other screens) and report (others': the decrypted message and its own content key go
-// to moderators, nothing else from the chat). No time limits: people control their own words.
+// too, live on the other screens) and report (others'). A report includes the message only while the reporter
+// leaves "Include the message" on: then the decrypted message, its own content key and its franking evidence
+// (lib/chat/franking.ts, so Kithwall can confirm who sent it) go to moderators, nothing else from the chat.
+// No time limits: people control their own words.
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useT, type MessageKey } from '@/i18n';
 import { deleteMessage, editMessage, MAX_MESSAGE_CHARS, messageContentKey, type ChatPayload, type ConversationSummary } from '@/lib/messages';
 import { REACTIONS, setReaction, type ReactionEmoji } from '@/lib/chat/reactions';
 import { reportItem, type ReportReason } from '@/lib/report';
+import { frankEvidence, withoutFk } from '@/lib/chat/franking';
 import type { MessageRow } from '@/lib/types';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { List, ListItem } from '@/components/ui/ListItem';
 import { Textarea } from '@/components/ui/Field';
 import { Callout } from '@/components/ui/Callout';
+import { Switch } from '@/components/ui/Switch';
 import { useToast } from '@/components/ui/Toast';
 import { cx } from '@/components/ui/cx';
 import { attachmentObjects } from './send';
+import { useNameOf } from './look';
 
 const REASONS: ReportReason[] = ['spam', 'harassment', 'hate', 'violence', 'nudity', 'child_safety', 'self_harm', 'impersonation', 'illegal', 'other'];
 
@@ -37,7 +42,11 @@ export function MessageActions({ c, line, mine, myReaction, onReply, onClose }: 
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [details, setDetails] = useState('');
+  const [include, setInclude] = useState(true);
+  const nameOf = useNameOf();
   const p = line.payload;
+  // Evidence exists only when this device checked the message's commitment (readMessage) and it matched.
+  const evidence = p ? frankEvidence(line.row, p) : null;
 
   async function react(e: ReactionEmoji) {
     onClose();
@@ -79,12 +88,15 @@ export function MessageActions({ c, line, mine, myReaction, onReply, onClose }: 
   }
 
   async function report() {
-    if (!reason || !p) return;
+    if (!reason) return;
     setBusy(true);
     try {
       await reportItem({
         kind: 'message', id: line.id, reason, details: details.trim() || undefined,
-        disclosure: { plaintext: p, contentKey: messageContentKey(c, line.row), keyKind: 'content' },
+        // With evidence, the committed body already holds the message: it isn't sent twice.
+        disclosure: p && include
+          ? { plaintext: evidence ? null : withoutFk(p), contentKey: messageContentKey(c, line.row), keyKind: 'content', frank: evidence }
+          : undefined,
       });
       onClose();
       toast({ message: t('messages.report.sent') });
@@ -123,7 +135,13 @@ export function MessageActions({ c, line, mine, myReaction, onReply, onClose }: 
         footer={<><Button variant="ghost" onClick={() => setStep('menu')} disabled={busy}>{t('common.back')}</Button>
           <Button variant="danger" busy={busy} disabled={!reason} onClick={() => void report()}>{t('messages.report.send')}</Button></>}>
         <div className="k-stack">
-          <Callout>{t('messages.report.disclosure')}</Callout>
+          {p ? (
+            <Switch checked={include} onChange={setInclude} label={t('messages.report.include')}
+              description={include ? t('messages.report.disclosure') : t('messages.report.withoutMessage')} />
+          ) : null}
+          {!p ? <Callout>{t('messages.report.cantInclude')}</Callout>
+            : include ? <Callout tone={evidence ? 'success' : 'warning'}>{evidence ? t('messages.report.proof', { name: nameOf(line.row.sender_id) }) : t('messages.report.noProof')}</Callout>
+            : null}
           <div role="radiogroup" aria-label={t('messages.report.reason')} className="k-chat-reasons">
             {REASONS.map((r) => (
               <label key={r} className={cx('k-chat-reason', reason === r && 'is-on')}>
@@ -154,7 +172,7 @@ export function MessageActions({ c, line, mine, myReaction, onReply, onClose }: 
           {p?.text ? <li><ListItem icon="copy" title={t('messages.actions.copy')} onClick={() => void copy()} chevron={false} /></li> : null}
           {mine && p && !p.event ? <li><ListItem icon="edit" title={t('edit.message')} onClick={() => { setDraft(p.text ?? ''); setStep('edit'); }} chevron={false} /></li> : null}
           {mine ? <li><ListItem icon="close" title={t('messages.actions.unsend')} subtitle={t('messages.actions.unsendSub')} onClick={() => setStep('unsend')} chevron={false} /></li> : null}
-          {!mine && p ? <li><ListItem icon="alert" title={t('messages.report.title')} onClick={() => setStep('report')} chevron={false} /></li> : null}
+          {!mine && !p?.event ? <li><ListItem icon="alert" title={t('messages.report.title')} onClick={() => setStep('report')} chevron={false} /></li> : null}
         </List>
       </div>
     </Dialog>

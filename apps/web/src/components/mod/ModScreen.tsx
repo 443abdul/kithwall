@@ -1,5 +1,6 @@
 'use client';
-// Moderation & admin (/mod), staff only. Reports queue with verified disclosures (./verify.ts), decisions
+// Moderation & admin (/mod), staff only. Reports queue with verified disclosures (./verify.ts; chat messages
+// can carry sender proof that the database checked, reports.frank), decisions
 // recorded in moderation_actions / reports (RPC mod_remove_content); admins also appoint moderators and
 // change operator settings (sign-ups, the Public audience, the trusted-friend waiting period).
 // The database enforces every permission (staff_roles + RLS); this screen only hides what can't work.
@@ -25,13 +26,16 @@ import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { useToast } from '@/components/ui/Toast';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
-import { payloadText, verifyReport, type ReportRow, type Verification } from './verify';
+import { payloadText, reporterCopy, verifyReport, type ReportRow, type Verification } from './verify';
 
 type Role = 'admin' | 'moderator';
 type Status = 'open' | 'actioned' | 'dismissed';
 type Action = 'remove' | 'warn' | 'suspend' | 'ban' | 'restore' | 'dismiss';
 
 const REASONS = ['spam', 'harassment', 'hate', 'violence', 'nudity', 'child_safety', 'self_harm', 'impersonation', 'illegal', 'other'];
+const FRANK_LABEL = {
+  verified: 'mod.frank.state.verified', failed: 'mod.frank.state.failed', none: 'mod.frank.state.none', not_included: 'mod.frank.state.notIncluded',
+} as const satisfies Record<string, MessageKey>;
 const KINDS = ['post', 'comment', 'photo', 'message', 'profile', 'group', 'event'];
 
 function useLabels() {
@@ -172,7 +176,9 @@ function ReportDetail({ r, role, onChanged, onBack }: { r: ReportRow; role: Role
     } catch (x) { setErr((x as Error).message); setConfirm(null); } finally { setBusy(false); }
   }
 
-  const disclosedText = payloadText(r.disclosed?.plaintext);
+  const copy = reporterCopy(r);
+  const disclosedText = payloadText(copy);
+  const frank = r.target_kind === 'message' ? (r.frank?.state ?? 'none') : null;
   const label = (a: Action) => (a === 'suspend' ? t('mod.action.suspendFor', { count: Number(days) }) : t(`mod.action.${a}` as MessageKey));
   const removable = ['post', 'comment', 'photo', 'message'].includes(r.target_kind) && r.status !== 'dismissed';
   return (
@@ -188,6 +194,7 @@ function ReportDetail({ r, role, onChanged, onBack }: { r: ReportRow; role: Role
           <dd><span className="k-row"><PersonAvatar id={r.target_owner_id} size={28} /> {L.who(r.target_owner_id)}</span></dd>
           <dt>{t('mod.reporter')}</dt>
           <dd>{L.who(r.reporter_id)} · {when(r.created_at)}</dd>
+          {frank ? <><dt>{t('mod.frank.title')}</dt><dd><Badge tone={frank === 'verified' ? 'success' : frank === 'failed' ? 'danger' : 'neutral'}>{t(FRANK_LABEL[frank])}</Badge></dd></> : null}
           {r.details ? <><dt>{t('mod.reporterSays')}</dt><dd className="k-mod-pre" dir="auto">{r.details}</dd></> : null}
           {r.decision_note ? <><dt>{t('mod.decision')}</dt><dd dir="auto">{r.decision_note}{r.resolved_at ? ` · ${when(r.resolved_at)}` : ''}</dd></> : null}
         </dl>
@@ -195,14 +202,19 @@ function ReportDetail({ r, role, onChanged, onBack }: { r: ReportRow; role: Role
 
       <Card className="k-stack">
         <h2 className="k-card-title">{t('mod.disclosed')}</h2>
-        {v === null ? <Skeleton text /> : v.state === 'verified' ? (
+        {frank === 'failed' ? <Callout tone="danger">{t('mod.frank.failed')}</Callout>
+          : frank === 'not_included' ? <Callout>{t('mod.frank.notIncluded')}</Callout> : null}
+        {v === null ? <Skeleton text /> : v.state === 'franked' ? (
+          <Callout tone="success">{t('mod.frank.verified', { who: L.who(v.sender || null), date: v.at ? when(v.at) : '' })}</Callout>
+        ) : v.state === 'verified' ? (
           <Callout tone={v.matches ? 'success' : 'warning'}>{v.matches ? t('mod.verified') : t('mod.verifiedDiffers')}</Callout>
-        ) : <Callout tone="danger">{t('mod.notVerified')} {v.why}</Callout>}
-        {v?.state === 'verified' ? <div className="k-mod-pre" dir="auto">{payloadText(v.content) || JSON.stringify(v.content, null, 2)}</div> : null}
-        {(v?.state !== 'verified' || !v.matches) && (disclosedText || r.disclosed?.plaintext) ? (
+        ) : frank === 'not_included' ? null : <Callout tone="danger">{t('mod.notVerified')} {v.why}</Callout>}
+        {frank === 'none' && r.disclosed ? <p className="k-small k-muted">{t('mod.frank.none')}</p> : null}
+        {v?.state === 'verified' || v?.state === 'franked' ? <div className="k-mod-pre" dir="auto">{payloadText(v.content) || JSON.stringify(v.content, null, 2)}</div> : null}
+        {v?.state !== 'franked' && (v?.state !== 'verified' || !v.matches) && (disclosedText || copy) ? (
           <>
             <p className="k-small k-muted">{v?.state === 'verified' ? t('mod.reporterCopy') : t('mod.reporterCopyUnverified')}</p>
-            <div className="k-mod-pre" dir="auto">{disclosedText || JSON.stringify(r.disclosed?.plaintext, null, 2)}</div>
+            <div className="k-mod-pre" dir="auto">{disclosedText || JSON.stringify(copy, null, 2)}</div>
           </>
         ) : null}
         <p className="k-small k-muted">{t('mod.mediaNote')}</p>
@@ -345,6 +357,8 @@ function Admin() {
           <Switch checked={settings.signups_enabled !== false} onChange={(v) => void setSetting('signups_enabled', v)} label={t('mod.signups')} />
           <Switch checked={settings.public_audience_enabled === true} onChange={(v) => void setSetting('public_audience_enabled', v)}
             label={t('mod.public')} description={t('mod.publicNote')} />
+          <Switch checked={settings.franking_required === true} onChange={(v) => void setSetting('franking_required', v)}
+            label={t('mod.franking')} description={t('mod.frankingNote')} />
           <form className="k-row-wrap k-mod-wait" onSubmit={(e) => { e.preventDefault(); void setSetting('recovery_wait_hours', Number(wait)); }}>
             <TextField label={t('mod.wait')} hint={t('mod.waitNote')} type="number" min={0} max={168} step={1} value={wait}
               onChange={(e) => setWait(e.target.value)} dir="ltr" />

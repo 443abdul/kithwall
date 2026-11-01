@@ -38,7 +38,8 @@ Ranked by impact for effort. Shipped: 1 (signed member additions, `lib/keys/auth
 2 (media from non-connections in chats stays inert until tapped), 3 (hybrid X25519 + ML-KEM-768 key
 wrapping, `packages/crypto/src/pq.ts`, seal v2), 6 (Padme padding of every encrypted payload), part of 8
 (Settings → About shows whether the installed app carries Kithwall's signing certificate) and part of 9
-(chat messages written offline send themselves when the connection returns). Already in place before this
+(chat messages written offline send themselves when the connection returns), and since 2026-11-02 the message
+franking part of 10 (`03-franking.md`). Already in place before this
 round: 4 (calls use RTCRtpScriptTransform when available), 5 (passkey PRF unlock), the strict nonce CSP, and
 key-change warnings with a vouched key-change chain (7, short of a public Merkle log). Still open: the
 public key-transparency log, a second non-Cloudflare CDN and bridges (needs owner accounts), and the
@@ -63,6 +64,11 @@ legal review of PECA/SMPRA (10).
    offline queue for posts and messages during shutdowns.
 10. **Compliance without breaking E2EE**: message franking for reports, a transparency report, and legal
     advice on Pakistan's PECA 2025 social media authority (SMPRA) before any registration decision.
+    *Message franking shipped 2026-11-02* (D7, `03-franking.md`, migration `20261102000600_message_franking.sql`):
+    every message and edit commits to its content with a per-message key sealed inside it, the database tags
+    the commitment with the sender, chat and time under a key only it holds, recipients check it on arrival,
+    and reports that include the message are verified by the database and shown to moderators as verified or
+    "couldn't be verified", also after an edit, unsend or expiry. The legal review is still open.
 
 ## Not recommended
 

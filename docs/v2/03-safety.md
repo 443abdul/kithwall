@@ -205,3 +205,15 @@ push subscriptions (with "stop") and the passkeys (managed in Settings → Secur
   screenshot notice.
 - Hidden contacts (brief §4) are not built; only hidden chats.
 - Daily check-ins repeat at the same UTC offset (a DST change shifts them by an hour).
+
+## 11. Verified reports of chat messages (message franking)
+
+Added 2026-11-02; design and threat model in `03-franking.md`. Reporting a chat message can include the
+message with cryptographic proof of who sent it: every message and edit carries a fresh franking key inside
+its ciphertext and a commitment next to it, which the database tags with the sender, chat and time. The
+report dialog has an "Include the message" switch (on by default) that says what is shared and whether the
+message carries proof; with it off, moderators see only the reason, the note and who sent the message. The
+database verifies included evidence when the report is filed and records the verdict (`reports.frank`), so a
+report stays verifiable after the message was edited, unsent or has disappeared, and a reporter can't
+fabricate one. Safety check-in alerts (§5) are franked when sealed and tagged when released. A message whose
+commitment doesn't match renders as "This message couldn't be verified."
