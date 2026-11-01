@@ -10,7 +10,7 @@ import { identity, me, onLock } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
 import { people } from './people';
 import type { CommentPayload, CommentRow, PostKind, PostPayload, PostRow } from './types';
-import { isOfflineError } from './net/offline';
+import { isOfflineError, knownOffline, OfflineError } from './net/offline';
 
 export type Audience =
   | { kind: 'friends' }                 // my friends (or the wall owner's friends when posting on their wall)
@@ -53,6 +53,7 @@ async function resolveAudience(args: CreatePostArgs): Promise<{ audienceId: stri
     audienceId = row.id;
   } else audienceId = keyring.friendsAudience!.id;
   try {
+    if (knownOffline()) throw new OfflineError();
     const { key, epoch } = await keyring.current(audienceId);
     return { audienceId, epoch, key };
   } catch (e) {
@@ -72,6 +73,7 @@ export async function createPost(args: CreatePostArgs): Promise<PostRow> {
 
 /** Insert a post sealed earlier. A repeat of one already stored (same id) returns the stored row. */
 export async function insertSealedPost(sealed: SealedPost): Promise<PostRow> {
+  if (knownOffline()) throw new OfflineError(); // opened offline: straight to the outbox
   const res = await sb().from('posts').insert(sealed).select().single();
   if (res.error?.code === '23505') return must(await sb().from('posts').select('*').eq('id', sealed.id).single()) as PostRow;
   return must(res) as PostRow;

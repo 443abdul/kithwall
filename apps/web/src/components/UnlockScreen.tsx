@@ -25,7 +25,7 @@ export function UnlockScreen() {
 
 function UnlockInner() {
   const t = useT();
-  const { userId, profile } = useSession();
+  const { userId, profile, error: sessionError } = useSession();
   const person = usePerson(userId);
   const avatar = useFileUrl(person?.info?.avatar?.thumb);
   const [secret, setSecret] = useState('');
@@ -74,6 +74,8 @@ function UnlockInner() {
             <h1>{t('unlock.title')}</h1>
             <p className="k-muted">{name ? t('unlock.bodyNamed', { name }) : t('unlock.body')}</p>
             {err ? <Callout tone="danger">{err}</Callout> : null}
+            {/* Opened without a connection, and this device kept nothing to open the account with (lib/keys/offline). */}
+            {!err && sessionError === 'offline_unavailable' ? <Callout tone="warning">{t('offline.unavailable')}</Callout> : null}
             {opts.passkey ? (
               <Button variant="primary" size="lg" block icon="fingerprint" busy={busy === 'passkey'} disabled={!!busy} onClick={() => void withPasskey()}>
                 {t('unlock.passkey')}

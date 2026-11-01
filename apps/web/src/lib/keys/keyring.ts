@@ -44,6 +44,9 @@ const k = (aud: string, epoch: number) => `${aud}:${epoch}`;
  */
 export interface KeyConflict { audienceId: string; epoch: number; sealedBy: string; at: string; reason: 'conflict' | 'identity' }
 
+/** Adopted keys ("<audience>:<epoch>" → b64u key) and my default audiences, for opening offline. */
+export interface KeyringSnapshot { keys: [string, string][]; friends: AudienceRow; self: AudienceRow }
+
 const EMPTY_ROSTER: Roster = { admins: new Set(), members: new Set() };
 
 class Keyring {
@@ -127,6 +130,31 @@ class Keyring {
       void this.deliverPending().catch(() => undefined);
       if (this.waiting.size) void this.ingest([...this.waiting.values()]).then((n) => { if (n) this.bump(); });
     }, 60_000);
+    this.bump();
+  }
+
+  /** The adopted keys and my default audiences, for the offline snapshot (lib/keys/offline). Null until ready. */
+  snapshot(): KeyringSnapshot | null {
+    if (!this.ready || !this.friendsAudience || !this.selfAudience) return null;
+    return { keys: [...this.keys].map(([id, key]) => [id, b64u.encode(key)]), friends: this.friendsAudience, self: this.selfAudience };
+  }
+
+  /**
+   * No connection (docs/v2/08-censorship.md §5): start from the keys this device had adopted the last time it
+   * was online (lib/keys/offline, decrypted with my AMK). Nothing is fetched, judged, delivered or minted:
+   * held keys read and seal (posts wait in the Kit Drop outbox), and start() replaces this once the
+   * connection is back. The pin resolver is installed as usual, so a person fetched meanwhile fails closed.
+   */
+  async startOffline(userId: string, u: Unlocked, snap: KeyringSnapshot) {
+    this.userId = userId; this.u = u; this.keys.clear(); this.waiting.clear();
+    people.setKeyLookup((aud, epoch) => this.get(aud, epoch));
+    await people.setTrustResolver(resolveSigners);
+    for (const [id, key] of snap.keys) {
+      try { this.keys.set(id, b64u.decode(key)); } catch { /* skip a damaged entry */ }
+    }
+    this.friendsAudience = snap.friends;
+    this.selfAudience = snap.self;
+    this.setReady(true);
     this.bump();
   }
 

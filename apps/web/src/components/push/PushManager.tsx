@@ -1,6 +1,6 @@
 'use client';
 // Mounted once from Providers. Renders nothing.
-//  - Signed in: registers the push-only service worker and re-syncs this device's subscription if
+//  - Signed in: registers the service worker (push; its offline shell is OfflineRuntime's) and re-syncs this device's subscription if
 //    the person turned push on here before (never prompts).
 //  - Signed out ON PURPOSE (session.signOut, not a session that merely failed to load or refresh on a bad
 //    network): unsubscribes this device so a shared device stops getting the last person's pushes. Dropping

@@ -12,4 +12,5 @@
     <string name="kw_call_group">Incoming group call</string>
     <string name="kw_call_answer">Answer</string>
     <string name="kw_call_decline">Decline</string>
+    <string name="kw_kitdrop_not">That isn’t a Kit Drop file</string>
 </resources>

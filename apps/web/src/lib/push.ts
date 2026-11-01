@@ -7,6 +7,7 @@ import { sb, must } from './supabase';
 import { authedPost } from './auth/api';
 import { isNative, nativePlatform } from './native';
 import { isStandalone } from './install';
+import { serviceWorkerUrl } from './net/shell';
 
 // Inside the Kithwall app, push goes through the native provider instead of the service worker
 // (lib/native/push.ts, docs/v2/05-native.md §5). Loaded only there.
@@ -14,7 +15,6 @@ const nativePush = () => import('./native/push');
 let nativePermission: NotificationPermission = 'default';
 
 export const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? '';
-const SW_URL = '/sw.js';
 const ENABLED_KEY = (uid: string) => `kw.push.enabled.${uid}`;
 const PROMPT_KEY = 'kw.push.prompt.dismissedAt';
 
@@ -67,11 +67,13 @@ export function deviceLabel(): string {
 // Service worker
 let regPromise: Promise<ServiceWorkerRegistration> | null = null;
 
-/** Register /sw.js (no caching, push only). Safe to call repeatedly. */
+/**
+ * Register /sw.js for this build (push, and the offline app shell: lib/net/shell.ts). Safe to call repeatedly.
+ * In the app pushes are native; its service worker only keeps the offline shell.
+ */
 export function registerServiceWorker(): Promise<ServiceWorkerRegistration> | null {
-  if (isNative()) return null;   // the app delivers pushes natively; no service worker in the WebView
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
-  regPromise ??= navigator.serviceWorker.register(SW_URL, { scope: '/', updateViaCache: 'none' })
+  regPromise ??= navigator.serviceWorker.register(serviceWorkerUrl(), { scope: '/', updateViaCache: 'none' })
     .then(async (reg) => { await navigator.serviceWorker.ready; return reg; })
     .catch((e) => { regPromise = null; throw e; });
   return regPromise;

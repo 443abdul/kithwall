@@ -3,7 +3,8 @@
 // audience picker (connections / a circle / only me). Everything is built into a payload and encrypted on
 // this device (lib/content createPost); photos and videos are re-encoded / encrypted before upload, with
 // progress shown while they go up. Phase 3: an optional disappearing timer and a publish time (scheduled
-// posts wait, sealed and visible only to their author, until then).
+// posts wait, sealed and visible only to their author, until then). With no connection a post (and its
+// photos, already encrypted) waits in the Kit Drop outbox (lib/social/kitdrop); a video can't wait.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
@@ -22,7 +23,7 @@ import { getGroup, groupAudience, listGroups, myMemberships, readGroup } from '@
 import { useKeyringReady, useKeyringVersion } from '@/lib/hooks';
 import { KeyWaitingError } from '@/lib/keys/keyring';
 import { useSession } from '@/lib/keys/session';
-import { deleteMedia, MAX_PHOTO_BYTES, photoPaths, uploadPhoto } from '@/lib/media';
+import { deleteMedia, MAX_PHOTO_BYTES, sealPhoto, uploadSealed, type SealedFile } from '@/lib/media';
 import { sb, must } from '@/lib/supabase';
 import { useMe } from '@/components/shell/AppShell';
 import type { PostKind, PostPayload } from '@/lib/types';
@@ -234,6 +235,9 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
     setBusy(true);
     const id = crypto.randomUUID();
     const uploaded: string[] = [];
+    // Photos are encrypted on this device first and uploaded after sealing, so that with no connection the
+    // post and its encrypted photos can wait in the Kit Drop outbox together.
+    const photoFiles: SealedFile[] = [];
     try {
       const target = await resolve(audience);
       const payload: PostPayload = {};
@@ -246,9 +250,9 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
         kind = 'photo';
         payload.photos = [];
         for (let i = 0; i < photos.length; i++) {
-          setProgress({ label: t('feed.uploadingPhotos', { n: i + 1, total: photos.length }), pct: Math.round((i / photos.length) * 100) });
-          const files = await uploadPhoto(photos[i]!.file);
-          uploaded.push(...photoPaths(files));
+          setProgress({ label: t('feed.encrypting') });
+          const { files, sealed } = await sealPhoto(photos[i]!.file);
+          photoFiles.push(...sealed);
           payload.photos.push({ id: crypto.randomUUID(), albumId: '', files });
         }
       } else if (video) {
@@ -281,16 +285,28 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
       // Sealed once; sent now, or (no connection) kept as is in the outbox.
       const sealed = await sealPost(postArgs);
       let queued = false;
-      try { await insertSealedPost(sealed); }
-      catch (x) {
-        // No connection (a shutdown, no signal): keep it sealed in the outbox; it goes out by itself later
-        // and can be passed on in a Kit Drop file meanwhile. Not possible once files had to be uploaded.
-        if (!isOfflineError(x) || uploaded.length) throw x;
-        await queuePost(sealed);
+      const sentFiles = new Set<string>();
+      try {
+        for (let i = 0; i < photoFiles.length; i++) {
+          const n = Math.floor(i / 3) + 1;
+          setProgress({ label: t('feed.uploadingPhotos', { n, total: photos.length }), pct: Math.round((i / photoFiles.length) * 100) });
+          await uploadSealed(photoFiles[i]!.ref.path, photoFiles[i]!.cipher);
+          sentFiles.add(photoFiles[i]!.ref.path);
+          uploaded.push(photoFiles[i]!.ref.path);
+        }
+        // Never before every photo is stored.
+        await insertSealedPost(sealed);
+      } catch (x) {
+        // No connection (a shutdown, no signal): keep the post and its encrypted photos in the outbox; they go
+        // out by themselves later and can be passed on in a Kit Drop file meanwhile. Not for a video or a link
+        // image, which had to be uploaded before sealing.
+        const otherUploads = uploaded.some((p) => !sentFiles.has(p));
+        if (!isOfflineError(x) || otherUploads) throw x;
+        await queuePost(sealed, photoFiles.map((p) => ({ path: p.ref.path, cipher: new Blob([p.cipher as BlobPart]) })), [...sentFiles]);
         queued = true;
       }
       if (queued) {
-        setText(''); setPoll(null); setCapsule(null); skip.current.clear();
+        setText(''); clearPhotos(); setPoll(null); setCapsule(null); skip.current.clear();
         void saveDraft(draftKey, '').catch(() => undefined);
         toast({ message: t('kitdrop.queued'), action: { label: t('kitdrop.title'), onClick: () => router.push('/you/kitdrop') } });
         return;
@@ -308,7 +324,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
       onPosted?.();
     } catch (x) {
       if (uploaded.length) await deleteMedia(uploaded).catch(() => undefined);
-      setErr(x instanceof KeyWaitingError ? t('feed.keyWaiting') : t('feed.failed'));
+      setErr(x instanceof KeyWaitingError ? t('feed.keyWaiting') : video && isOfflineError(x) ? t('kitdrop.videoOffline') : t('feed.failed'));
     } finally {
       setBusy(false); setProgress(null);
     }

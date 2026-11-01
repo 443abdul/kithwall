@@ -29,11 +29,15 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  *  - "Block screenshots and hide app preview": FLAG_SECURE + no recents screenshot. Off by default; the
  *    person turns it on in Safety centre → App lock (docs/v2/05-native.md §6).
  *  - Screenshot notice (Android 14+): a local event only; nobody else is told.
+ *  - Kit Drop (docs/v2/08-censorship.md §5): whether the offline shell is kept (for the bundled offline
+ *    page), and reading a Kit Drop file handed to the app from outside (KwKitDrop).
  */
 @CapacitorPlugin(name = "KithwallShell")
 public class KithwallShellPlugin extends Plugin {
     static final String PREFS = "kw_shell";
     static final String SECURE = "secure_screen";
+    /** The origin whose service worker keeps the offline shell (none: no "Open Kit Drop" on the offline page). */
+    static final String OFFLINE_SHELL = "offline_shell";
 
     // Activity.ScreenCaptureCallback (API 34); typed as Object so older Androids never resolve the class.
     private Object captureCallback;
@@ -120,9 +124,12 @@ public class KithwallShellPlugin extends Plugin {
                     w.clearFormData();
                     w.clearHistory();
                 }
-                // Copies of picked attachments (KwChromeClient) and Android 9 download copies (KwDownloads).
+                // Copies of picked attachments (KwChromeClient), Android 9 download copies (KwDownloads) and Kit
+                // Drop files handed to the app (KwKitDrop); the offline shell is gone with the web storage.
                 deleteTree(new java.io.File(getContext().getCacheDir(), "picked"));
                 deleteTree(new java.io.File(getContext().getCacheDir(), "downloads"));
+                KwKitDrop.clear(getContext());
+                getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(OFFLINE_SHELL).apply();
                 call.resolve();
             } catch (Exception e) {
                 call.reject("could not clear web data", e);
@@ -135,6 +142,63 @@ public class KithwallShellPlugin extends Plugin {
         if (kids != null) for (java.io.File k : kids) deleteTree(k);
         //noinspection ResultOfMethodCallIgnored
         f.delete();
+    }
+
+    // ---- Kit Drop without the internet (docs/v2/08-censorship.md §5) ----------------------------------------
+
+    /** Does this origin's service worker keep the offline shell (reported by the page, lib/net/shell.ts)? */
+    static boolean offlineShellReady(Context c, String origin) {
+        String o = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(OFFLINE_SHELL, null);
+        return o != null && origin != null && o.equals(origin.replaceAll("/+$", ""));
+    }
+
+    @PluginMethod
+    public void setOfflineShell(PluginCall call) {
+        boolean ready = Boolean.TRUE.equals(call.getBoolean("ready", false));
+        String origin = getBridge().getServerUrl();
+        SharedPreferences.Editor e = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
+        if (ready && origin != null) e.putString(OFFLINE_SHELL, origin.replaceAll("/+$", "")); else e.remove(OFFLINE_SHELL);
+        e.apply();
+        call.resolve();
+    }
+
+    private static final java.util.concurrent.ExecutorService kitdropIo = java.util.concurrent.Executors.newSingleThreadExecutor();
+
+    /** The Kit Drop file handed to the app (KwKitDrop), once copied: {id, name, size}, or {} if there is none. */
+    @PluginMethod
+    public void kitdropPending(PluginCall call) {
+        kitdropIo.execute(() -> {
+            KwKitDrop.Pending p = KwKitDrop.ready(20_000);
+            JSObject r = new JSObject();
+            if (p != null) {
+                r.put("id", p.id);
+                r.put("name", p.name);
+                r.put("size", p.size);
+            }
+            call.resolve(r);
+        });
+    }
+
+    @PluginMethod
+    public void kitdropRead(PluginCall call) {
+        String id = call.getString("id");
+        Long offset = call.getLong("offset", 0L);
+        kitdropIo.execute(() -> {
+            try {
+                JSObject r = new JSObject();
+                r.put("data", KwKitDrop.read(id == null ? "" : id, offset == null ? 0 : offset));
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject("could not read", "failed");
+            }
+        });
+    }
+
+    @PluginMethod
+    public void kitdropDone(PluginCall call) {
+        String id = call.getString("id");
+        if (id != null) KwKitDrop.done(id);
+        call.resolve();
     }
 
     @PluginMethod

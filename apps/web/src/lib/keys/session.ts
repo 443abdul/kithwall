@@ -13,6 +13,9 @@ import { keyring } from './keyring';
 import { deviceStore } from './device';
 import { clientRpId, evaluatePrf } from '../auth/passkey-client';
 import { authedPost } from '../auth/api';
+import { people } from '../people';
+import { isOfflineError, OfflineError, setKnownOffline, storedAuthUser } from '../net/offline';
+import { offlineStore, trackOfflineSnapshot } from './offline';
 
 export type SessionStatus =
   | 'loading'     // checking for an existing session
@@ -26,7 +29,13 @@ export interface SessionState {
   userId: string | null;
   email: string | null;
   profile: ProfileRow | null;
+  /** 'offline_unavailable': opened without a connection, and this device has nothing to open offline with. */
   error: string | null;
+  /**
+   * Opened without a connection (Kit Drop, docs/v2/08-censorship.md §5): unlocked from what this device
+   * kept (lib/keys/offline). Posts wait in the outbox; it switches to the normal start once the server answers.
+   */
+  offline?: boolean;
 }
 
 let state: SessionState = { status: 'loading', userId: null, email: null, profile: null, error: null };
@@ -79,7 +88,8 @@ export function unlockedKeys(): Unlocked {
 }
 
 async function loadProfile(userId: string): Promise<ProfileRow | null> {
-  const { data } = await sb().from('profiles').select('*').eq('id', userId).maybeSingle();
+  const { data, error } = await sb().from('profiles').select('*').eq('id', userId).maybeSingle();
+  if (error && isOfflineError(error)) throw new OfflineError();
   return (data as ProfileRow | null) ?? null;
 }
 
@@ -87,12 +97,113 @@ async function becomeReady(userId: string, email: string | null, u: Unlocked, re
   unlocked = u;
 
   if (remember) await deviceStore.save(userId, u.amk).catch(() => undefined);
-  const profile = await loadProfile(userId);
+  let profile: ProfileRow | null;
+  try { profile = state.offline ? null : await loadProfile(userId); }
+  catch (e) { if (!isOfflineError(e)) throw e; profile = null; markOffline(true); }
+  if (state.offline) { await becomeReadyOffline(userId, email, u); return; }
   if (!profile) { set({ status: 'setup', userId, email, error: null }); return; }
-  set({ status: 'ready', userId, email, profile, error: null });
+  stopTracking();
+  set({ status: 'ready', userId, email, profile, error: null, offline: false });
   await keyring.stop(); // restart cleanly (password change / recovery re-enter here while running)
   await keyring.start(userId, u);
+  // What it takes to open this account again without a connection (lib/keys/offline).
+  offlineStore.allowWrites(userId);
+  void offlineStore.saveProfile(userId, profile);
+  void fetchBundle(userId).catch(() => undefined); // keeps the current bundle
+  stopTracking = trackOfflineSnapshot(userId, () => unlocked?.amk ?? null);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Without a connection (Kit Drop, docs/v2/08-censorship.md §5). The account is opened from what this device
+// kept the last time it was online (lib/keys/offline): the key bundle (unlocked with the remembered AMK, the
+// app PIN or the passphrase, exactly as online) and the snapshot of adopted keys and trusted people. Nothing
+// new is trusted while offline. Once the server answers again, the normal start runs with the same keys.
+let stopTracking: () => void = () => undefined;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+function markOffline(v: boolean) {
+  setKnownOffline(v);
+  if (state.offline !== v) set({ offline: v });
+  if (v) watchConnection(); else stopWatching();
+}
+
+async function becomeReadyOffline(userId: string, email: string | null, u: Unlocked) {
+  const [snap, profile] = await Promise.all([offlineStore.snapshot(userId, u.amk), offlineStore.profile(userId)]);
+  if (!snap || !profile) {
+    u.amk.fill(0);
+    unlocked = null;
+    set({ status: 'locked', userId, email, error: 'offline_unavailable', offline: true });
+    return;
+  }
+  stopTracking();
+  stopTracking = () => undefined;
+  set({ status: 'ready', userId, email, profile, error: null, offline: true });
+  await keyring.stop();
+  await keyring.startOffline(userId, u, snap.keyring);
+  people.restore(snap.people);
+}
+
+/** Open the account from this device alone. False if it has nothing to open it with. */
+async function initOffline(userId: string, email: string | null): Promise<boolean> {
+  const bundle = await offlineStore.bundle(userId);
+  if (!bundle) return false;
+  markOffline(true);
+  const amkBytes = await deviceStore.load(userId).catch(() => null);
+  if (amkBytes) {
+    try { await becomeReady(userId, email, unlockFromAmk(userId, bundle, amkBytes), false); return true; }
+    catch { /* fall through to locked: the PIN or passphrase may still open it */ }
+  }
+  set({ status: 'locked', userId, email, error: null, offline: true });
+  return true;
+}
+
+function stopWatching() {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (typeof window !== 'undefined') window.removeEventListener('online', onOnline);
+}
+const onOnline = () => { void reconnect(); };
+
+function watchConnection() {
+  if (typeof window === 'undefined') return;
+  window.addEventListener('online', onOnline);
+  if (!reconnectTimer) reconnectTimer = setTimeout(() => { reconnectTimer = null; void reconnect(); }, 30_000);
+}
+
+let reconnecting: Promise<void> | null = null;
+/** Opened offline: is the server back? Then switch to the normal start (with the keys already unlocked). */
+function reconnect(): Promise<void> {
+  reconnecting ??= (async () => {
+    if (!state.offline) return;
+    const probe = await sb().from('profiles').select('id').limit(1);
+    if (probe.error && isOfflineError(probe.error)) { if (state.offline && !reconnectTimer) watchConnection(); return; }
+    const { data } = await sb().auth.getSession();
+    const u = unlocked;
+    const userId = state.userId;
+    markOffline(false);
+    if (u && userId && data.session?.user.id === userId) {
+      try { await becomeReady(userId, state.email, u, false); return; } catch { /* the normal start below */ }
+    }
+    await initSession();
+  })().catch(() => { if (state.offline) watchConnection(); }).finally(() => { reconnecting = null; });
+  return reconnecting;
+}
+
+/** The key bundle from the server, or (no connection) the copy this device kept. */
+async function bundleFor(userId: string): Promise<KeyBundle | null> {
+  if (state.offline) return (await offlineStore.bundle(userId)) ?? null;
+  try { return await fetchBundle(userId); }
+  catch (e) {
+    const kept = isOfflineError(e) ? await offlineStore.bundle(userId) : undefined;
+    if (!kept) throw e;
+    markOffline(true);
+    return kept;
+  }
+}
+
+/** Is this page the offline entry point (public/sw.js serves it when the network can't be reached)? */
+const offlineFirst = () => typeof location !== 'undefined' && (location.pathname === '/offline' || navigator.onLine === false);
+const authStorageKey = () => (sb().auth as unknown as { storageKey?: string }).storageKey;
 
 /** Restore on page load. */
 // Concurrent calls (e.g. React StrictMode running the effect twice) share one run, so the keyring
@@ -104,12 +215,25 @@ export function initSession(): Promise<void> {
 }
 
 async function doInitSession(): Promise<void> {
-  const { data } = await sb().auth.getSession();
+  // The offline entry point (or a browser that knows it's offline): open from this device straight away
+  // instead of first waiting for requests that can't succeed.
+  if (offlineFirst()) {
+    const stored = storedAuthUser(authStorageKey());
+    if (stored && await initOffline(stored.id, stored.email)) return;
+  }
+  const { data, error } = await sb().auth.getSession();
   const s = data.session;
-  if (!s) { set({ status: 'signed_out' }); return; }
+  if (!s) {
+    // No connection and an expired access token: supabase-js couldn't refresh it, but the session is still there.
+    const stored = error && isOfflineError(error) ? storedAuthUser(authStorageKey()) : null;
+    if (stored && await initOffline(stored.id, stored.email)) return;
+    set({ status: 'signed_out' }); return;
+  }
   const userId = s.user.id;
   const email = s.user.email ?? null;
-  const bundle = await fetchBundle(userId);
+  let bundle: KeyBundle | null;
+  try { bundle = await fetchBundle(userId); }
+  catch (e) { if (isOfflineError(e) && await initOffline(userId, email)) return; throw e; }
   if (!bundle) { set({ status: 'setup', userId, email }); return; }
   const amkBytes = await deviceStore.load(userId).catch(() => null);
   if (amkBytes) {
@@ -158,6 +282,8 @@ export function noteSignedIn(userId: string, email: string | null, status: Sessi
 /** Which ways can the current (locked) account be unlocked on this device? */
 export async function unlockOptions(): Promise<{ passkey: boolean; password: boolean }> {
   if (!state.userId) return { passkey: false, password: false };
+  // Offline: the passphrase works with the bundle kept here; a passkey needs its wrap from the server.
+  if (state.offline) return { passkey: false, password: typeof (await offlineStore.bundle(state.userId))?.amkByPassword === 'string' };
   const [bundle, pk] = await Promise.all([
     fetchBundle(state.userId),
     sb().from('passkeys').select('id', { count: 'exact', head: true }),
@@ -197,7 +323,9 @@ export async function confirmRecoverySaved(): Promise<void> {
 async function fetchBundle(userId: string): Promise<KeyBundle | null> {
   const { data, error } = await sb().from('key_bundles').select('bundle').eq('user_id', userId).maybeSingle();
   if (error) throw new Error(error.message);
-  return (data?.bundle as KeyBundle | undefined) ?? null;
+  const bundle = (data?.bundle as KeyBundle | undefined) ?? null;
+  if (bundle) void offlineStore.saveBundle(userId, bundle); // to unlock without a connection (lib/keys/offline)
+  return bundle;
 }
 
 // Re-open the identity keys with an AMK restored from this device.
@@ -227,7 +355,7 @@ export async function signIn(email: string, password: string, remember: boolean,
 export async function unlock(password: string, remember: boolean): Promise<void> {
   if (!state.userId || !state.email) throw new Error('Not signed in');
   const { passwordKEK } = await deriveFromPassword(state.email, password);
-  const bundle = await fetchBundle(state.userId);
+  const bundle = await bundleFor(state.userId);
   if (!bundle) throw new Error('No keys found for this account');
   const u = unlockWithPassword(state.userId, bundle, passwordKEK);
   await becomeReady(state.userId, state.email, u, remember);
@@ -289,13 +417,14 @@ function emitLock(reason: 'lock' | 'sign_out') {
 export async function unlockWithDeviceAmk(amkBytes: Uint8Array): Promise<void> {
   const userId = state.userId;
   if (!userId) throw new Error('Not signed in');
-  const bundle = await fetchBundle(userId);
+  const bundle = await bundleFor(userId);
   if (!bundle) throw new Error('No keys found for this account');
   const u = unlockFromAmk(userId, bundle, amkBytes);
   await becomeReady(userId, state.email, u, false);
 }
 
 export async function lock(): Promise<void> {
+  stopTracking();
   await keyring.stop();
   if (unlocked) unlocked.amk.fill(0);
   unlocked = null;
@@ -306,14 +435,18 @@ export async function lock(): Promise<void> {
 }
 
 export async function signOut(): Promise<void> {
+  stopTracking();
   await keyring.stop();
   if (unlocked) unlocked.amk.fill(0);
   unlocked = null;
   pendingAmk = null;
   await deviceStore.clear();
+  // Nothing of this account stays for opening it offline (lib/keys/offline).
+  await offlineStore.clear();
   emitLock('sign_out');
   await sb().auth.signOut({ scope: 'local' });
-  set({ status: 'signed_out', userId: null, email: null, profile: null });
+  markOffline(false);
+  set({ status: 'signed_out', userId: null, email: null, profile: null, error: null });
 }
 
 export async function refreshProfile() {

@@ -8,6 +8,7 @@ import { netUrl } from './net/runtime';
 import { me } from './keys/session';
 import type { FileRef, PhotoFiles } from './types';
 import { dataSaverActive, recordMediaBytes } from './net/dataSaver';
+import { knownOffline, OfflineError } from './net/offline';
 
 const BUCKET = 'media';
 export const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
@@ -27,16 +28,37 @@ async function encode(bitmap: ImageBitmap, maxSide: number, quality = 0.86): Pro
   return { bytes: new Uint8Array(await blob.arrayBuffer()), w, h };
 }
 
-/** Upload an encrypted blob into my folder and register it (unlinked until the owning row exists). */
-export async function uploadEncrypted(bytes: Uint8Array, mime: string, link: MediaLink = {}): Promise<FileRef> {
+/** A file encrypted on this device for a path in my folder, not uploaded yet (e.g. a post written offline). */
+export interface SealedFile { ref: FileRef; cipher: Uint8Array }
+
+/** Encrypt bytes for a new storage path in my folder. No network: the upload can happen later (uploadSealed). */
+export function sealFile(bytes: Uint8Array, mime: string): SealedFile {
   const path = `${me()}/${crypto.randomUUID()}`;
   const { key, ciphertext } = encryptFile(bytes, path);
-  const up = await sb().storage.from(BUCKET).upload(path, new Blob([ciphertext as BlobPart], { type: 'application/octet-stream' }), {
-    contentType: 'application/octet-stream', upsert: false,
-  });
-  if (up.error) throw new Error(up.error.message);
-  must(await sb().from('media_objects').insert({ path, owner_id: me(), bytes: ciphertext.byteLength, ...linkCols(link) }));
-  return { path, key: b64u.encode(key), mime, bytes: bytes.byteLength, sha: fileDigest(ciphertext) };
+  return { ref: { path, key: b64u.encode(key), mime, bytes: bytes.byteLength, sha: fileDigest(ciphertext) }, cipher: ciphertext };
+}
+
+/**
+ * Upload ciphertext sealed earlier to its path and register it (unlinked until the owning row exists). Safe
+ * to repeat after an interrupted attempt: an object or row already stored under this path counts as done.
+ */
+export async function uploadSealed(path: string, cipher: Blob | Uint8Array, link: MediaLink = {}): Promise<void> {
+  if (knownOffline()) throw new OfflineError(); // opened offline: the caller keeps it for later
+  const body = new Blob([cipher as BlobPart], { type: 'application/octet-stream' });
+  const up = await sb().storage.from(BUCKET).upload(path, body, { contentType: 'application/octet-stream', upsert: false });
+  if (up.error && !alreadyStored(up.error)) throw new Error(up.error.message);
+  const reg = await sb().from('media_objects').insert({ path, owner_id: me(), bytes: body.size, ...linkCols(link) });
+  if (reg.error && reg.error.code !== '23505') must(reg);
+}
+
+const alreadyStored = (e: { message?: string; statusCode?: string | number }) =>
+  String(e.statusCode ?? '') === '409' || /already exists|duplicate/i.test(e.message ?? '');
+
+/** Upload an encrypted blob into my folder and register it (unlinked until the owning row exists). */
+export async function uploadEncrypted(bytes: Uint8Array, mime: string, link: MediaLink = {}): Promise<FileRef> {
+  const { ref, cipher } = sealFile(bytes, mime);
+  await uploadSealed(ref.path, cipher, link);
+  return ref;
 }
 
 export interface MediaLink { postId?: string; photoId?: string; messageId?: string; profileAvatar?: boolean }
@@ -50,21 +72,34 @@ export async function linkMedia(paths: string[], link: MediaLink) {
   must(await sb().from('media_objects').update(linkCols(link)).in('path', paths));
 }
 
-/** Re-encode an image file into the three 2010 sizes, encrypt and upload each. */
-export async function uploadPhoto(file: File | Blob, link: MediaLink = {}): Promise<PhotoFiles> {
+/**
+ * Re-encode an image file into the three 2010 sizes and encrypt each, without uploading anything (works
+ * offline: lib/social/kitdrop keeps the ciphertext in the outbox until there is a connection).
+ */
+export async function sealPhoto(file: File | Blob): Promise<{ files: PhotoFiles; sealed: SealedFile[] }> {
   if (file.size > MAX_PHOTO_BYTES) throw new Error('Photos must be 20 MB or smaller.');
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   try {
-    const out = {} as PhotoFiles;
+    const files = {} as PhotoFiles;
+    const sealed: SealedFile[] = [];
     const saver = dataSaverActive();
     for (const [name, side] of Object.entries(saver ? SAVER_SIZES : SIZES) as [keyof PhotoFiles, number][]) {
       const { bytes, w, h } = await encode(bitmap, side, saver ? 0.78 : 0.86);
-      out[name] = { ...(await uploadEncrypted(bytes, 'image/jpeg', link)), w, h };
+      const f = sealFile(bytes, 'image/jpeg');
+      files[name] = { ...f.ref, w, h };
+      sealed.push(f);
     }
-    return out;
+    return { files, sealed };
   } finally {
     bitmap.close();
   }
+}
+
+/** Re-encode an image file into the three 2010 sizes, encrypt and upload each. */
+export async function uploadPhoto(file: File | Blob, link: MediaLink = {}): Promise<PhotoFiles> {
+  const { files, sealed } = await sealPhoto(file);
+  for (const f of sealed) await uploadSealed(f.ref.path, f.cipher, link);
+  return files;
 }
 
 export const photoPaths = (p: PhotoFiles) => [p.big.path, p.med.path, p.thumb.path];
@@ -73,6 +108,33 @@ export async function deleteMedia(paths: string[]) {
   if (!paths.length) return;
   await sb().storage.from(BUCKET).remove(paths);
   await sb().from('media_objects').delete().in('path', paths);
+}
+
+// ---------------------------------------------------------------------------------------
+// Ciphertext held on this device (Kit Drop, lib/social/kitdrop): photos of posts waiting in the offline
+// outbox and photos carried in Kit Drop files, shown from here without the internet. Still decrypted with
+// the key from the post itself, so a held copy that doesn't match it is dropped and the stored one fetched.
+const held = new Map<string, Blob>();
+
+/** Keep ciphertext for these storage paths to show them offline (replaces an earlier copy). */
+export function holdCiphertext(items: readonly { path: string; cipher: Blob }[]): void {
+  for (const m of items) held.set(m.path, m.cipher);
+}
+/** Stop holding these paths (the post went out, the Kit Drop was removed). */
+export function releaseCiphertext(paths: readonly string[]): void {
+  for (const p of paths) held.delete(p);
+}
+export const isHeld = (path: string | undefined): boolean => !!path && held.has(path);
+
+/** The stored ciphertext of a single-part file: the copy held on this device, else downloaded. */
+export async function fileCiphertext(ref: FileRef): Promise<Blob> {
+  const h = held.get(ref.path);
+  if (h) return h;
+  if (knownOffline()) throw new OfflineError();
+  const res = await sb().storage.from(BUCKET).download(ref.path);
+  if (res.error || !res.data) throw new Error(res.error?.message ?? 'download failed');
+  recordMediaBytes(res.data.size);
+  return res.data;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -88,12 +150,23 @@ export function fileUrl(ref: FileRef): Promise<string> {
   const hit = urls.get(ref.path);
   if (hit) { urls.delete(ref.path); urls.set(ref.path, hit); return hit; }
   const p = (async () => {
+    const key = b64u.decode(ref.key);
+    const local = held.get(ref.path);
+    if (local) {
+      try {
+        const cipher = new Uint8Array(await local.arrayBuffer());
+        if (ref.sha !== undefined && fileDigest(cipher) !== ref.sha) throw new Error('digest');
+        return URL.createObjectURL(new Blob([decryptFile(cipher, key, ref.path) as BlobPart], { type: ref.mime }));
+      }
+      catch { held.delete(ref.path); /* not this file's ciphertext: use the stored one */ }
+    }
+    if (knownOffline()) throw new OfflineError();
     const res = await sb().storage.from(BUCKET).download(ref.path);
     if (res.error || !res.data) throw new Error(res.error?.message ?? 'download failed');
     const cipher = new Uint8Array(await res.data.arrayBuffer());
     recordMediaBytes(cipher.byteLength);
     if (ref.sha !== undefined && fileDigest(cipher) !== ref.sha) throw new Error('This file couldn’t be verified.');
-    const plain = decryptFile(cipher, b64u.decode(ref.key), ref.path);
+    const plain = decryptFile(cipher, key, ref.path);
     return URL.createObjectURL(new Blob([plain as BlobPart], { type: ref.mime }));
   })();
   p.catch(() => urls.delete(ref.path));

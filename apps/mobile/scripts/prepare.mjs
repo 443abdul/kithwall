@@ -1,6 +1,7 @@
 // Writes the only web content bundled in the app: the offline / error page (www/offline.html, also
 // www/index.html because `cap sync` requires one). It has no access to native plugins and loads
-// nothing remote; "Try again" goes back to the configured origin.
+// nothing remote; "Try again" goes back to the configured origin, and "Open Kit Drop" (only when the app says
+// the origin's service worker keeps the offline shell) opens <origin>/offline, which works without a connection.
 // Usage: node scripts/prepare.mjs   (KITHWALL_ENV=staging for the staging origin)
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -30,6 +31,8 @@ const page = `<!doctype html>
   p { margin: 0; color: var(--muted); max-width: 32em; }
   a.button { margin-top: 12px; padding: 12px 24px; border-radius: 999px; background: var(--accent); color: var(--on-accent);
     text-decoration: none; font-weight: 600; }
+  a.button.secondary { margin-top: 0; background: transparent; color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -38,13 +41,22 @@ const page = `<!doctype html>
   <p>Check that you’re online, then try again. Nothing was lost: your messages stay end-to-end encrypted on the server until you’re back.</p>
   <p>If this keeps happening, update “Android System WebView” (Android) or iOS, then reopen Kithwall.</p>
   <a class="button" id="retry" href="${origin}/">Try again</a>
+  <p id="kd-note" hidden>Kit Drop works without a connection: posts you write wait there, encrypted, and you can pass posts on as a file.</p>
+  <p id="kd-file" hidden>The Kit Drop file you opened is waiting there.</p>
+  <a class="button secondary" id="kitdrop" hidden>Open Kit Drop</a>
 </main>
 <script>__SCRIPT__</script>
 </body>
 </html>
 `;
-// The only script: retry automatically when the device comes back online.
-const script = `addEventListener('online',function(){location.replace(${JSON.stringify(origin + '/')})});`;
+// The only script: retry automatically when the device comes back online; and when the app says this origin's
+// service worker keeps the offline shell (?shell=<origin>, KwWebViewClient; docs/v2/08-censorship.md §5),
+// offer Kit Drop there (`file=1`: a Kit Drop file handed to the app is waiting).
+const script = `addEventListener('online',function(){location.replace(${JSON.stringify(origin + '/')})});`
+  + `(function(){var q=new URLSearchParams(location.search),o=q.get('shell');`
+  + `if(!o||!(o===${JSON.stringify(origin)}||/^https:\\/\\/[a-z0-9.-]+(:\\d+)?$/i.test(o)))return;`
+  + `var a=document.getElementById('kitdrop');a.href=o+'/offline';a.hidden=false;document.getElementById('kd-note').hidden=false;`
+  + `if(q.get('file')==='1')document.getElementById('kd-file').hidden=false;})();`;
 const { createHash } = await import('node:crypto');
 const hash = createHash('sha256').update(script).digest('base64');
 const html = page.replace('__SCRIPT__', script).replace('__HASH__', hash);

@@ -211,15 +211,95 @@ Now (`lib/net/health.ts`, pure, `health.test.ts`):
 
 When the internet (or international links) are cut, **no** internet service works — Kithwall, Signal or a
 VPN. Honest UX (implemented in `/help/blocked`): nothing already sent is lost (it waits, encrypted, on the
-server); agree on another way to reach people beforehand. Proposed, not built:
+server); agree on another way to reach people beforehand. What Kithwall does without a connection is
+**Kit Drop** (You → Kit Drop, `lib/social/kitdrop.ts`, `components/posts/KitDrop.tsx`):
 
-* an **offline app shell**: the service worker currently caches nothing by design (`public/sw.js`). A
-  shell cache limited to `/_next/static/*` + an offline route (never user data) would let the app open and
-  show what's in memory/IndexedDB. Needs a careful privacy review.
-* a **queued outbox**: drafts sealed with the user's keys in IndexedDB, clearly labelled "will send when
-  you're back online", sent on reconnect.
+* **Outbox.** A post written offline is sealed exactly as if it were sent (end-to-end encrypted, signed) and
+  kept in IndexedDB (`kw-kitdrop`); it goes out by itself when the connection is back. Its **photos** are
+  re-encoded and encrypted exactly like a normal upload (`lib/media.ts sealPhoto`, the same three sizes,
+  each file key inside the sealed payload) and wait next to it as ciphertext. On flush the photos are
+  uploaded first (resumable: each stored path is recorded), the post is inserted only once all of them
+  are stored, then they are linked to it. **Videos can't wait** (too big to keep and to pass on); the
+  composer says so.
+* **Kit Drop files** (`.kwd`, `application/vnd.kithwall.kitdrop+json`, format in
+  `lib/social/kitdropFormat.ts`): my waiting posts plus recent posts this device has, as the server stores
+  them (ciphertext), and since **v2** their photos: the medium size (720 px; the thumbnail is too small to
+  look at), as the stored ciphertext, base64, up to **6 MB** of photos per file (file cap 16 MB). The
+  sender's Ed25519 signature covers the posts and the list of `(path, SHA-256)` of every photo, so changing,
+  adding or removing a photo breaks it. A reader decrypts each photo with the file key inside the post it
+  belongs to (only people who can read the post can see its photos); photos not in the folder of one of
+  the file's authors are ignored. v1 files (no photos) still open. Videos are left out and labelled.
+* **Opening one from outside.** Android: share sheet (`ACTION_SEND`) and "Open with" from Files /
+  Downloads / Quick Share (`ACTION_VIEW`) for the dedicated MIME type, plus `application/octet-stream` and
+  `application/json` (apps type a `.kwd` by its unknown extension) with a content check
+  (`KwKitDrop.java`, docs/v2/05-native.md). Installed web app (Chromium desktop): manifest
+  `file_handlers` → `/you/kitdrop` (`launchQueue`). Not `share_target`: it delivers files as a POST to a
+  URL, and if the service worker isn't running at that moment the file would go to the server.
 * Mesh (Briar-style Bluetooth/Wi-Fi Direct) and SMS fallbacks are out of scope; national-intranet-only
   shutdowns (Iran's NIN) can only be served from servers inside that country, which we won't run.
+
+### 5.1 Offline app shell (privacy review, 2026-11-01)
+
+Goal: Kithwall opens with no internet if it was opened on this device before, and shows the Kit Drop page
+(outbox, making and opening Kit Drop files). Built in `public/sw.js`, `lib/net/shell.ts`,
+`components/net/OfflineRuntime.tsx`, `src/app/offline` + `components/net/OfflineShell.tsx`,
+`lib/keys/offline.ts`.
+
+**What is cached (Cache Storage, `kw-shell-<build>`)** — only after a signed-in, online page asks for it:
+
+| Cached | Why it is not personal |
+|---|---|
+| `/offline` (the entry point) | A page that renders nothing about anyone on the server (every Kithwall page is client-rendered from encrypted data). Fetched by the service worker with `credentials: 'omit'`, so it is the same document anyone gets. |
+| `/_next/static/*` referenced by it, and those the app loads while the shell is kept | Content-hashed build files, public on the CDN. |
+| `/theme.js`, `/manifest.webmanifest`, icons | Public static files (network first, cache only as a fallback). |
+
+**Never cached:** API routes, `/sb/*` and Supabase requests (cross-origin, never intercepted), RSC payloads,
+any other page's HTML (navigations always go to the network and their responses are never stored), media,
+anything with cookies. A page load that fails (no network at all) is answered with a redirect to
+`/offline?from=<path>`; a slow but working connection is never replaced by the shell.
+
+**CSP and the nonce.** The strict CSP needs a fresh nonce per response, and a cached page with a fixed nonce
+would turn it into a constant. Next.js can't render a nonce-less page here (the root layout reads the nonce,
+inline flight scripts need it; hash-based CSP via experimental SRI doesn't cover inline scripts). So the
+service worker stores the `/offline` document together with its CSP header and, **on every load**, mints a
+new random nonce and replaces the old one in both the header and the document (the old value is a
+48-character random string, so the replacement can only hit what the server emitted). Each served copy has
+its own unpredictable nonce, as from `src/proxy.ts`. This is safe because the document is constant,
+first-party and contains nothing anyone else wrote; the service worker itself is a same-origin script under
+the same trust as the server.
+
+**What the account opens with (IndexedDB `kw-offline`, `lib/keys/offline.ts`).** Unlocking and reading need
+the key bundle, audience keys and contacts' trusted identity keys, which normally come from the server. The
+app keeps: my key bundle (the server's copy: private keys wrapped under passphrase / recovery key / AMK) and
+my own profile row in the clear (both are what the server already gives this signed-in device), and a
+snapshot of the adopted audience keys, my default audiences and the trusted people rows (identity keys as
+pinned / vouched, plus their sealed profile info) **encrypted under my cache key** (HKDF of the AMK), written
+a few seconds after keys or people change while online. Offline the account opens with the remembered AMK,
+the app PIN or the passphrase (not a passkey: its wrap lives on the server), exactly like online; nothing new
+is trusted (people not in the snapshot stay "loading"; the pin resolver stays installed and fails closed),
+nothing is minted or delivered. When the server answers again the normal start runs with the same keys and
+the outbox is sent. Exposure: the snapshot opens only with the AMK, which is no more than the device already
+gives (with "keep me signed in" the AMK sits on the device anyway; without it, the passphrase is needed).
+Someone able to write the device's storage could roll the snapshot back to an older one: acceptable, they
+already control the device.
+
+**Versioning and deletion.** The service worker is registered as `/sw.js?v=<build>` (`NEXT_PUBLIC_BUILD_ID`);
+a new build fetches its own shell on install if one was kept, old builds' caches are deleted on activation.
+**Sign-out** deletes every `kw-shell-*` cache and the whole `kw-offline` database; the **panic wipe** deletes
+all caches, all IndexedDB databases (named ones explicitly for Firefox: `kw-kitdrop`, `kw-offline`) and the
+service worker registration, and in the app also the Kit Drop copies in the cache and the "shell kept" flag.
+
+**Android app.** The app loads the website, and its service worker keeps the shell in the WebView too
+(`/sw.js?…&app=1`). There it never answers navigations: a failed page load still reaches the app, so the
+bundled offline page and mirror failover (KwNet) work as before. When the page has reported that the shell is
+kept (`KithwallShell.setOfflineShell`), that offline page offers **Open Kit Drop** → `<origin>/offline`, served
+from the cache. The service worker's own requests are held back for Tor exactly like the page's
+(`ServiceWorkerClient`, `KwWebViewClient.held()`).
+
+**Not done / limits.** No timeout on navigations: on a connection that accepts packets but never answers, the
+browser waits until it gives up itself (opening `/offline` directly — the Kit Drop shortcut, the app's offline
+page — always works from the cache). The shell needs one online visit per build before it works offline.
+`share_target` deliberately left out (see above).
 
 ## 6. App distribution when stores and sites are blocked
 

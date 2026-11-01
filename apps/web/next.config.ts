@@ -15,6 +15,13 @@ const securityHeaders = [
   },
 ];
 
+/** One id per build (kept in the environment, so build workers that load this file again agree). */
+function buildId(): string {
+  process.env.KW_BUILD_ID ||= process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA
+    || process.env.NEXT_PUBLIC_COMMIT_SHA || `local-${Date.now().toString(36)}`;
+  return process.env.KW_BUILD_ID;
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Lets several dev servers run from one checkout: NEXT_DIST_DIR=.next-a next dev -p 3001
@@ -28,6 +35,9 @@ const nextConfig: NextConfig = {
   // and the links point at the repository).
   env: {
     NEXT_PUBLIC_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_COMMIT_SHA || '',
+    // Names this build's offline app shell cache (public/sw.js is registered as /sw.js?v=<this>; a new build
+    // fetches its own shell and deletes the previous one). docs/v2/08-censorship.md §5.
+    NEXT_PUBLIC_BUILD_ID: buildId(),
   },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];

@@ -188,7 +188,7 @@ Admins should turn on two-step verification.
 - Check response headers on `/`: CSP with a per-request nonce + `strict-dynamic` (Trusted Types is deferred, spec §12), HSTS,
   `Referrer-Policy: no-referrer`, COOP `same-origin`.
 - Check `/manifest.webmanifest`, `/icons/icon-192.png` and `/sw.js` load (installable PWA; the service worker
-  only handles push and caches nothing). Chrome DevTools → Application → Manifest should show no errors.
+  handles push and keeps only the static offline shell, docs/v2/08-censorship.md §5.1). Chrome DevTools → Application → Manifest should show no errors.
 - Check `select * from cron.job_run_details order by start_time desc limit 5;` after an hour.
 
 ## 5. Operational notes

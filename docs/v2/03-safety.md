@@ -80,8 +80,10 @@ at the "reveal hidden chats" prompt counts as a wrong PIN.
 `wipeThisDevice()` (`lib/safety/wipe.ts`), each step time-boxed so it finishes offline:
 unsubscribe push and delete this device's subscription row → local sign-out (Supabase revokes this
 session's refresh token) → zero the AMK → delete `kithwall-device` (remembered AMK, PIN record,
-counter), `kithwall-sw` and every other IndexedDB database of the origin → Cache Storage → unregister the
-service worker → clear localStorage and sessionStorage. The account and its content on the server are
+counter), `kithwall-sw`, `kw-kitdrop` (Kit Drop outbox and received files), `kw-offline` (what opens the
+account offline, docs/v2/08-censorship.md §5.1) and every other IndexedDB database of the origin → Cache
+Storage (including the offline shell) → unregister the service worker → clear localStorage and
+sessionStorage. The account and its content on the server are
 untouched; come back with a passkey, the passphrase or the recovery key.
 
 **Quick exit** (opt-in, `kw.safety.exit`): a shield button in the corner, a triple tap on the logo, or
