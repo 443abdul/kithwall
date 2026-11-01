@@ -1,4 +1,4 @@
-// Legacy contact: sealing the farewell note (docs/v2/03-safety.md §11). Pure: every key is passed in, so this
+// Legacy contact: sealing the farewell note (docs/v2/03-safety.md §12). Pure: every key is passed in, so this
 // file is unit-tested without a session.
 //
 // The note is sealed twice with the signed sealed box (packages/crypto seal.ts; hybrid X25519 + ML-KEM-768

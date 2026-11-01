@@ -1,5 +1,5 @@
 'use client';
-// Legacy contact (docs/v2/03-safety.md §11, migration 20261102000200_legacy_contact.sql).
+// Legacy contact (docs/v2/03-safety.md §12, migration 20261102000200_legacy_contact.sql).
 //
 // One trusted connection receives a farewell note if I stop opening Kithwall for 3, 6 or 12 months. The note
 // is sealed here, on my device (lib/legacy/note.ts), to their identity key; the server keeps ciphertext and

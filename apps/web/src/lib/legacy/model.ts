@@ -1,4 +1,4 @@
-// Legacy contact (docs/v2/03-safety.md §11): pure helpers shared by the settings screens, the note sealing
+// Legacy contact (docs/v2/03-safety.md §12): pure helpers shared by the settings screens, the note sealing
 // and the tests. Dates are UTC calendar days ("YYYY-MM-DD"), like the database's current_date.
 
 export const LEGACY_MONTHS = [3, 6, 12] as const;

@@ -1,4 +1,4 @@
--- Legacy contact (docs/v2/03-safety.md §11, roadmap 2026-11 item C2).
+-- Legacy contact (docs/v2/03-safety.md §12, roadmap 2026-11 item C2).
 --
 -- A person picks one of their connections as their legacy contact, an inactivity period (3, 6 or 12 months)
 -- and, optionally, a farewell note. The note is sealed on their device to the contact's identity key with the
