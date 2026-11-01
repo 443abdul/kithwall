@@ -68,6 +68,9 @@ export function activityHref(g: Pick<ActivityGroup, 'type' | 'objectKind' | 'obj
     case 'event_invite': return '/events';
     case 'key_waiting': return '/home';
     case 'security_notice': return '/you/settings/security';
+    // Legacy contact (lib/legacy): the owner's own setup, or the people who chose me.
+    case 'legacy_reminder': case 'legacy_declined': case 'legacy_cleared': return '/you/settings/security#legacy';
+    case 'legacy_contact': case 'legacy_released': case 'legacy_active': return '/you/settings/security#legacy-for';
   }
   return actorHandle && /^[a-z0-9.]{1,30}$/.test(actorHandle) ? `/u/${actorHandle}` : null;
 }
@@ -86,6 +89,9 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
     case 'key_waiting': return 'lock';
     case 'post_published': return 'clock';
     case 'security_notice': return 'key';
+    case 'legacy_contact': case 'legacy_released': case 'legacy_active': return 'heart';
+    case 'legacy_reminder': return 'clock';
+    case 'legacy_declined': case 'legacy_cleared': return 'users';
     default: return 'activity';
   }
 }
@@ -95,4 +101,5 @@ export const ACTIVITY_TYPES = [
   'friend_request', 'friend_accept', 'wall_post', 'comment', 'like', 'tag', 'group_invite', 'group_request',
   'event_invite', 'mention', 'share', 'relationship', 'recovery_request', 'recovery_trustee',
   'key_waiting', 'post_published', 'security_notice',
+  'legacy_contact', 'legacy_declined', 'legacy_cleared', 'legacy_reminder', 'legacy_released', 'legacy_active',
 ] as const;

@@ -1,5 +1,5 @@
 'use client';
-// Settings → Security (Kithwall 2): passkeys, recovery key, trusted friends, authenticator app,
+// Settings → Security (Kithwall 2): passkeys, recovery key, trusted friends, legacy contact, authenticator app,
 // where you're signed in, this device, lock and sign out. Logic reused from the v1 data layer
 // (lib/auth/account, lib/recovery, lib/keys/session, Supabase MFA); the screens are new.
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
@@ -27,6 +27,7 @@ import { PersonAvatar } from '@/components/messages/look';
 import { PeoplePicker } from '@/components/messages/PeoplePicker';
 import { SettingsPage, Section } from './shared';
 import { RecoveryPhrase } from './RecoveryPhrase';
+import { LegacyForSection, LegacySection } from './LegacySettings';
 
 function errText(t: (k: MessageKey) => string, e: unknown): string {
   if (e instanceof AccountError) return t(`errors.${e.code}` as MessageKey);
@@ -503,6 +504,8 @@ export function SecuritySettings() {
       <RecoverySection />
       <TrustedSection />
       <TrusteeSection />
+      <LegacySection />
+      <LegacyForSection />
       <MfaSection />
       <SessionsSection />
       <DeviceSection />

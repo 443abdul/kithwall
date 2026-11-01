@@ -44,6 +44,8 @@ const WHAT: Record<string, string> = {
   relationship: 'listed you in a relationship', recovery_request: 'may be recovering their account. Only help if they contacted you directly',
   recovery_trustee: 'chose you as a trusted friend for account recovery',
   key_waiting: 'is waiting for your device to share your posts with them',
+  legacy_contact: 'chose you as their legacy contact', legacy_declined: 'stepped back as your legacy contact',
+  legacy_cleared: 'is no longer your legacy contact', legacy_released: 'left a note for you',
   post_published: '',   // own words below: "Your scheduled post is now shared"
 };
 
@@ -55,6 +57,7 @@ const CATEGORY: Record<string, PushCategory> = {
   relationship: 'activity',
   group_invite: 'invites', group_request: 'invites', event_invite: 'invites',
   recovery_request: 'security', recovery_trustee: 'security', key_waiting: 'security',
+  legacy_contact: 'security', legacy_declined: 'security', legacy_cleared: 'security', legacy_released: 'security',
   post_published: 'activity',
 };
 
@@ -94,6 +97,8 @@ export function notifUrl(p: Pick<Plan, 'type' | 'object_kind' | 'object_id'>): s
     }
   }
   if (p.object_kind === 'recovery_request' || p.type === 'recovery_request' || p.type === 'recovery_trustee') return '/you/settings/security#trusted';
+  if (p.type === 'legacy_reminder' || p.type === 'legacy_declined' || p.type === 'legacy_cleared') return '/you/settings/security#legacy';
+  if (p.type?.startsWith('legacy_')) return '/you/settings/security#legacy-for';
   if (p.object_kind === 'photo') return '/albums';
   if (p.type === 'friend_request') return '/activity?tab=requests';
   return '/activity';
@@ -127,6 +132,14 @@ export function describe(p: Plan): { category: PushCategory; payload: Omit<PushP
       payload: { v: 1, title: 'Kithwall', kind: 'notification', body: 'A new way to sign in was added to your account', tag: `n:security_notice:${p.created_at}`, url: '/you/settings/security' },
     };
   }
+  if (p.type === 'legacy_reminder') {
+    // To the owner, from the daily legacy job (migration 20261102000200): opening the app is all it takes.
+    return {
+      category: 'security', urgency: 'normal',
+      payload: { v: 1, title: 'Kithwall', kind: 'notification', body: 'Open Kithwall to keep your legacy contact on hold', tag: 'n:legacy_reminder', url: notifUrl(p) },
+    };
+  }
+  // legacy_active ("they are active again") is told quietly: in Activity only, no push.
   const what = p.type ? WHAT[p.type] : undefined;
   const category = p.type ? CATEGORY[p.type] : undefined;
   if (!what || !category) return null;

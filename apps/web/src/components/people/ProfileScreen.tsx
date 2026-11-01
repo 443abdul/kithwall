@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useT } from '@/i18n';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button, ButtonLink } from '@/components/ui/Button';
+import { Callout } from '@/components/ui/Callout';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -68,6 +69,12 @@ function Profile({ id }: { id: string }) {
     <Page title={p.name} back={self ? { href: '/you', label: t('common.back') } : undefined}>
       {!self ? <KeyChangeBanner userId={id} name={p.name} handle={p.username} /> : null}
       {!self ? <RequestSafety userId={id} /> : null}
+      {p.memorialised_at ? (
+        // Chosen by their legacy contact after a long absence (lib/legacy); undone if they come back.
+        <Callout tone="accent" icon="heart">
+          <b>{t('legacy.profile.remembering', { name: p.name })}</b> {t('legacy.profile.rememberingBody', { name: p.name })}
+        </Callout>
+      ) : null}
       <Card className="k-profile-head">
         <Avatar name={p.name} src={avatar} size={96} />
         <div className="k-profile-head-text">

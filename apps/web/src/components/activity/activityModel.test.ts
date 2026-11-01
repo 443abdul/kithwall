@@ -47,3 +47,17 @@ describe('scheduled posts (phase 3)', () => {
     expect(activityHref({ type: 'post_published', objectKind: 'post', objectId: P })).toBe(`/post/${P}`);
   });
 });
+
+describe('legacy contact', () => {
+  it('knows every legacy notice and leads to the right part of Settings → Security', () => {
+    for (const t of ['legacy_contact', 'legacy_declined', 'legacy_cleared', 'legacy_reminder', 'legacy_released', 'legacy_active']) {
+      expect(ACTIVITY_TYPES).toContain(t);
+    }
+    expect(activityHref({ type: 'legacy_reminder', objectKind: 'profile', objectId: P })).toBe('/you/settings/security#legacy');
+    expect(activityHref({ type: 'legacy_declined', objectKind: 'profile', objectId: P })).toBe('/you/settings/security#legacy');
+    expect(activityHref({ type: 'legacy_released', objectKind: 'profile', objectId: P })).toBe('/you/settings/security#legacy-for');
+    expect(activityHref({ type: 'legacy_contact', objectKind: 'profile', objectId: P })).toBe('/you/settings/security#legacy-for');
+    expect(activityIcon('legacy_released')).toBe('heart');
+    expect(activityIcon('legacy_reminder')).toBe('clock');
+  });
+});

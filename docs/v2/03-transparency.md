@@ -120,7 +120,9 @@ to the exact commit that is running (`lib/source.ts`, commit inlined at build ti
 builds `kithwall-<handle>-<date>.zip`: `index.html` (readable, no network), `README.txt`, `data/*.json`
 (profile — the synthetic sign-in address is never exported as an email — connections and blocks, posts,
 notes, comments, reactions (post likes and decrypted chat reactions), albums, photos, stories, circles,
-events with my RSVP, messages with reactions and notices, the decrypted vault as settings, and
+events with my RSVP, messages with reactions and notices, the decrypted vault as settings, `legacy.json` (my
+legacy contact and period, my farewell note opened from my own sealed copy, who chose me and any note released
+to me; `03-safety.md` §12), and
 `what-kithwall-knows.json` = the live report) and `media/` (album photos, photos and videos attached to my
 posts, my live stories, images in chats). Files over 25 MB and chunked videos stay out (counted, "save them
 from Kithwall"). Progress names each step. Safety check-ins are not exported yet (safety work stream).

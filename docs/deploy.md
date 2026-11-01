@@ -115,9 +115,15 @@ are replaced by a pointer to the website (App Store rules for donation links).
 
 ### Cron
 
-`apps/web/vercel.json` has two daily crons (daily works on every Vercel plan; set `CRON_SECRET` in Vercel):
-`/api/cron/stories` and `/api/cron/ephemeral`. Account deletion is immediate (`/api/account/delete`, proof-of-key),
-so no cron is involved.
+`apps/web/vercel.json` has three daily crons (daily works on every Vercel plan; set `CRON_SECRET` in Vercel):
+`/api/cron/stories`, `/api/cron/ephemeral` and `/api/cron/legacy`. Account deletion is immediate (`/api/account/delete`,
+proof-of-key), so no cron is involved.
+
+Legacy contacts (`20261102000200_legacy_contact`, `docs/v2/03-safety.md` §12): `GET /api/cron/legacy` runs
+`legacy_tick()`, which sends the owners' reminders (about 30 and 7 days before; in-app + push through the
+notifications trigger) and releases notes whose inactivity period is over, at least 7 days after the last reminder.
+The route emails each reminder to owners with a verified notice address when `SMTP_URL`/`MAIL_FROM` are set. If the
+cron stops, nothing is released early: notes are only ever released late.
 
 Stories (24 h) expire in the database: expired stories are hidden at once and a `pg_cron` job
 (`kithwall-story-maintenance`, every 10 minutes) deletes the rows. Their encrypted photos stay in the
