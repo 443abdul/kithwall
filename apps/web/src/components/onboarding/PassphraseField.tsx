@@ -1,7 +1,7 @@
 'use client';
-import { useMemo, useState, type InputHTMLAttributes } from 'react';
+import { useEffect, useMemo, useState, type InputHTMLAttributes } from 'react';
 import { useT, type MessageKey } from '@/i18n';
-import { MIN_PASSWORD_LENGTH, passwordStrength } from '@/lib/auth/password';
+import { loadPasswordDictionaries, MIN_PASSWORD_LENGTH, passwordDictionariesLoaded, passwordStrength, strongPassword } from '@/lib/auth/password';
 import { TextField } from '@/components/ui/Field';
 import { IconButton } from '@/components/ui/Button';
 
@@ -23,7 +23,11 @@ export interface PassphraseFieldProps extends Omit<InputHTMLAttributes<HTMLInput
 export function PassphraseField({ label, value, onValue, meter, userInputs, error, hint, ...rest }: PassphraseFieldProps) {
   const t = useT();
   const [shown, setShown] = useState(false);
-  const s = useMemo(() => (meter && value ? passwordStrength(value, userInputs) : null), [meter, value, userInputs]);
+  const [dicts, setDicts] = useState(passwordDictionariesLoaded);
+  useEffect(() => {
+    if (meter && !dicts) void loadPasswordDictionaries().then(() => setDicts(true), () => undefined);
+  }, [meter, dicts]);
+  const s = useMemo(() => (meter && value && dicts ? passwordStrength(value, userInputs) : null), [meter, value, userInputs, dicts]);
   const meterHint = s
     ? (value.length < MIN_PASSWORD_LENGTH ? t('passphrase.tooShort', { min: MIN_PASSWORD_LENGTH })
       : !s.ok ? t('passphrase.addWords') : t('passphrase.good'))
@@ -55,6 +59,6 @@ export function PassphraseField({ label, value, onValue, meter, userInputs, erro
   );
 }
 
-export function passphraseOk(value: string, userInputs: string[] = []): boolean {
-  return passwordStrength(value, userInputs).ok;
+export async function passphraseOk(value: string, userInputs: string[] = []): Promise<boolean> {
+  return (await strongPassword(value, userInputs)).ok;
 }

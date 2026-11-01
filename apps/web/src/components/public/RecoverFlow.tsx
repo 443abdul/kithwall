@@ -375,10 +375,10 @@ function SecureStep({ headingId, headingRef, handle, onDone }: StepProps & { han
       setErr(accountErrorMessage(t, x));
     } finally { setBusy(null); }
   }
-  function onPhrase(e: FormEvent) {
+  async function onPhrase(e: FormEvent) {
     e.preventDefault();
     if (phrase !== phrase2) { setErr(t('passphrase.mismatch')); return; }
-    if (!passphraseOk(phrase, [handle])) { setErr(t('errors.weak_passphrase')); return; }
+    if (!(await passphraseOk(phrase, [handle]))) { setErr(t('errors.weak_passphrase')); return; }
     void run('phrase', () => setNewPassphrase(phrase));
   }
 
@@ -392,7 +392,7 @@ function SecureStep({ headingId, headingRef, handle, onDone }: StepProps & { han
         </div>
       ) : null}
       {canPasskey ? <div className="k-divider"><span>{t('recover.secureOr')}</span></div> : null}
-      <form className="k-stack" onSubmit={onPhrase} noValidate>
+      <form className="k-stack" onSubmit={(e) => void onPhrase(e)} noValidate>
         <PassphraseField label={t('recover.newPhrase')} value={phrase} onValue={setPhrase} meter userInputs={[handle]} autoComplete="new-password" />
         <PassphraseField label={t('join.phraseConfirm')} value={phrase2} onValue={setPhrase2} autoComplete="new-password" />
         {err ? <Callout tone="danger">{err}</Callout> : null}

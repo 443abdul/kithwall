@@ -185,7 +185,7 @@ export function ApkPanel() {
       <p className="k-small">{t('net.apk.body')}</p>
       <ul className="k-net-links" role="list">
         {links.map((u) => <li key={u}><a href={u} rel="noopener noreferrer" dir="ltr">{host(u)}</a></li>)}
-        <li><a href={`${REPO_URL}/releases`} rel="noopener noreferrer">{t('net.apk.github')}</a></li>
+        <li><a href={`${REPO_URL}/releases/latest`} rel="noopener noreferrer">{t('net.apk.github')}</a></li>
       </ul>
       {cert ? (
         <div className="k-stack">

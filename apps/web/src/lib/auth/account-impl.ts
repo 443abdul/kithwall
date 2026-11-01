@@ -19,7 +19,7 @@ import {
 import { AccountError, type AccountApi, type Capabilities } from './account';
 import { logIn, mfaRequired } from './login';
 import { addPasskeyProof } from '../keys/proof';
-import { passwordStrength } from './password';
+import { strongPassword } from './password';
 import { api, createPasskey, getPasskey, prfSupport, webauthnAvailable } from './passkey-client';
 import {
   deviceLabel, handleShapeProblem, normalizeHandle,
@@ -116,7 +116,7 @@ export const accountApi: AccountApi = {
     if (!displayName) throw new AccountError('unknown', 'Please enter your name.');
     const mode = input.passphrase ? 'passphrase' : 'passkey';
     if (input.passphrase !== undefined) {
-      const s = passwordStrength(input.passphrase, [handle, displayName]);
+      const s = await strongPassword(input.passphrase, [handle, displayName]);
       if (!s.ok) throw new AccountError('weak_passphrase', s.hint ?? 'Please choose a stronger passphrase.');
     } else if (!webauthnAvailable()) {
       throw new AccountError('passkey_unsupported');

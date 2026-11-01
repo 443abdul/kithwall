@@ -144,10 +144,10 @@ export function JoinFlow() {
     if (step2Ok) go(3);
   }
 
-  function onPhrase(e: FormEvent) {
+  async function onPhrase(e: FormEvent) {
     e.preventDefault();
     if (phrase !== phrase2) { setErr(t('passphrase.mismatch')); return; }
-    if (!passphraseOk(phrase, [h, name])) { setErr(t('errors.weak_passphrase')); return; }
+    if (!(await passphraseOk(phrase, [h, name]))) { setErr(t('errors.weak_passphrase')); return; }
     void create(true);
   }
 
@@ -246,7 +246,7 @@ export function JoinFlow() {
             <div className="k-passkey-art" aria-hidden><Icon name="key" /></div>
             <h1 id={headingId} ref={headingRef} tabIndex={-1}>{t('join.phraseTitle')}</h1>
             <p className="k-muted">{caps && (!caps.passkey || caps.prf === false) ? t('join.phraseWhyDevice') : t('join.phraseWhy')}</p>
-            <form className="k-stack" onSubmit={onPhrase} noValidate>
+            <form className="k-stack" onSubmit={(e) => void onPhrase(e)} noValidate>
               <PassphraseField
                 label={t('join.phraseLabel')}
                 value={phrase}
