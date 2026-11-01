@@ -145,7 +145,7 @@ select is((select count(*)::int from public.messages where id = 'e2000000-0000-0
 select is((select count(*)::int from public.media_objects where message_id = 'e2000000-0000-0000-0000-000000000001'), 0, 'with its media rows');
 select is((select count(*)::int from kw.media_trash where path = '00000000-0000-0000-0000-0000000e0b20/e3000000-0000-0000-0000-000000000001'), 1,
   'the storage path waits in the trash for the web cron');
-select is((select count(*)::int from public.trashed_media(10) t where t = '00000000-0000-0000-0000-0000000e0b20/e3000000-0000-0000-0000-000000000001'), 1,
+select is((select count(*)::int from public.trashed_media(1000) t where t = '00000000-0000-0000-0000-0000000e0b20/e3000000-0000-0000-0000-000000000001'), 1,
   'trashed_media() lists it');
 select is(public.forget_trashed_media(array['00000000-0000-0000-0000-0000000e0b20/e3000000-0000-0000-0000-000000000001']), 1,
   'forget_trashed_media() clears it after the objects are removed');
