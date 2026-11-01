@@ -80,6 +80,8 @@ export interface PushPayload {
   kind: 'message' | 'notification' | 'test' | 'call';
   conversation?: string;
   badge?: number;
+  /** Calls: when the call started (ms), so the app's ringing notification ends with the ring itself. */
+  ts?: number;
 }
 
 /** Where a notification push opens (Kithwall 2 routes; mirrors components/activity/activityModel.ts). */
@@ -144,7 +146,9 @@ export const CALL_TTL_SECONDS = 45;
 
 /**
  * Phase 4 calls: "Dan is calling" (who + what only; voice or video is not said). Opens the chat with
- * ?call=<id>, which asks the caller's device whether it is still ringing (docs/v2/04-calls.md §6).
+ * ?call=<id>, which asks the caller's device whether it is still ringing (docs/v2/04-calls.md §6). `ts`
+ * is the call notice's own time (already known to the server): the Android app stops ringing when the
+ * caller's 45 s are up, not 45 s after a late delivery.
  */
 export function describeCall(p: Plan, callId: string): { category: PushCategory; payload: Omit<PushPayload, 'badge'>; urgency: 'high' } | null {
   if (!p.conversation_id || !UUID_RE.test(callId)) return null;
@@ -155,6 +159,7 @@ export function describeCall(p: Plan, callId: string): { category: PushCategory;
       v: 1, title: 'Kithwall', kind: 'call', conversation: p.conversation_id,
       body: p.group ? `${who} is calling a group conversation` : `${who} is calling`,
       tag: `call:${p.conversation_id}`, url: `/messages/${p.conversation_id}?call=${callId}`,
+      ...(Number.isFinite(Date.parse(p.created_at)) ? { ts: Date.parse(p.created_at) } : {}),
     },
   };
 }

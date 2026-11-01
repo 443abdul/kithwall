@@ -15,6 +15,28 @@ export async function nativeCallActive(opts: { speaker: boolean; video: boolean 
   try { await (await nativePlugin('KithwallShell')).setCallAudio({ active: true, speaker: opts.speaker, video: opts.video }); } catch { /* older app build */ }
 }
 
+/**
+ * This device stopped ringing for a call in this conversation (answered here or elsewhere, declined,
+ * cancelled, timed out): take down the incoming-call notification and screen the push may have shown
+ * (KithwallPush.cancelCall, newer app builds). Safe to call when there is none.
+ */
+export async function nativeCallRingEnded(convId: string): Promise<void> {
+  if (!isNative() || nativePlatform() !== 'android') return;
+  try {
+    const p = await nativePlugin('KithwallPush');
+    if (typeof p.cancelCall === 'function') await p.cancelCall({ conv: convId });
+  } catch { /* older app build */ }
+}
+
+/** "Decline" on the native incoming-call notification while the page is running (in the background). */
+export async function onNativeCallAction(fn: (a: { action: 'decline'; conv: string; call: string }) => void): Promise<() => void> {
+  if (!isNative() || nativePlatform() !== 'android') return () => undefined;
+  const h = await (await nativePlugin('KithwallPush')).addListener('call', (e) => {
+    if (e?.action === 'decline' && typeof e.conv === 'string' && typeof e.call === 'string') fn({ action: 'decline', conv: e.conv, call: e.call });
+  });
+  return () => { void h.remove(); };
+}
+
 /** The call ended (or failed): normal audio, the screen may turn off again. Safe to call more than once. */
 export async function nativeCallEnded(): Promise<void> {
   if (!isNative() || nativePlatform() !== 'android') return;

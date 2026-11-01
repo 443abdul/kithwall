@@ -18,6 +18,27 @@
   .kw .k-chat-head .k-eph-headbtn { display: none; }
 }
 
+/* Late join (docs/v2/04-calls.md §14): "Call in progress · Join" in the chat header and the conversation list. */
+.kw .k-call-join {
+  display: inline-flex; align-items: center; gap: var(--space-2); flex: none; min-block-size: 36px;
+  padding: 0 var(--space-3); border: 0; border-radius: var(--radius-pill); cursor: pointer;
+  background: var(--accent); color: var(--accent-contrast); font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium);
+}
+.kw .k-call-join:hover { filter: brightness(1.06); }
+.kw .k-call-join:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+.kw .k-call-join:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.kw .k-call-join-what { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 22ch; }
+.kw .k-call-join-dot { inline-size: 8px; block-size: 8px; flex: none; border-radius: 50%; background: currentColor; animation: k-call-blink 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .kw .k-call-join-dot { animation: none; } }
+@container (max-width: 34rem) {
+  .kw .k-call-join-what { display: none; }
+}
+/* The list row is a link; the Join button sits beside it (never inside it) at the row's end. */
+.kw .k-chat-row-live { position: relative; }
+.kw .k-chat-row-live > .k-chat-row { padding-inline-end: calc(var(--space-3) + 88px); }
+.kw .k-call-join.is-row { position: absolute; inset-inline-end: var(--space-2); inset-block-start: 50%; transform: translateY(-50%); min-block-size: 32px; }
+.kw .k-chat-row-call { color: var(--accent-text); font-weight: var(--weight-medium); }
+
 /* ------------------------------------------------------------------ controls */
 .kw .k-call-ctl {
   display: inline-grid; place-items: center; inline-size: 52px; block-size: 52px; flex: none;
@@ -131,6 +152,7 @@
 
 /* Low bandwidth (docs/v2/04-calls.md §11): who has the weak connection, "switch to voice only?", paused video. */
 .kw .k-call-weak { font-size: var(--text-xs); color: var(--warning); }
+.kw .k-call-event { font-size: var(--text-xs); color: var(--text-muted); }
 .kw .k-call-tile-avatar { gap: var(--space-2); text-align: center; }
 .kw .k-call-tile-note { font-size: var(--text-xs); color: var(--text-muted); max-inline-size: 22ch; }
 .kw .k-call-banner {

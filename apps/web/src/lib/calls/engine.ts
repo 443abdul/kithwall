@@ -18,6 +18,11 @@
 //  - Bad networks (docs §11): a quality controller per peer (quality.ts) reads getStats every 2 s and
 //    sets the video tier / Opus bitrate / RED; Opus is negotiated with FEC + DTX (sdp.ts); ICE restarts
 //    with back-off on disconnects and network changes; handshake messages are retried idempotently.
+//  - Late join (docs §14): while a group call lasts, one participant tells the members who aren't in it
+//    (sealed `live` on their ring topics, live.ts); "Join" then enters the call like answering a ring.
+//  - Devices: the microphone, camera and speaker can be changed mid-call (replaceTrack, so frame
+//    encryption and the quality controller carry on), are remembered on this device (devices.ts), and a
+//    device that's unplugged or plugged back in is followed by itself.
 import { b64u, randomBytes } from '@kithwall/crypto';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSyncExternalStore } from 'react';
@@ -37,8 +42,9 @@ import { callSafetyCode, sdpFingerprint, type SafetyCode } from './safety';
 import { endTone, startTone, stopTone } from './tones';
 import { getIceConfig, prefetchIceConfig, type IceConfig } from './turn';
 import { capVideoBandwidth, firstAudioCodec, isMobileUa, orderAudioCodecs, orderVideoCodecs, tuneOpus, videoStartBitrate } from './sdp';
-import { getCallDevices, mediaErr, micAllowed, micConstraints, type MediaErr } from './devices';
-import { nativeCallActive, nativeCallEnded } from '../native/calls';
+import { deviceAfterChange, getCallDevices, mediaErr, micAllowed, micConstraints, setCallDevices, type MediaErr } from './devices';
+import { clearAllLiveCalls, clearLiveCall, getLiveCall, isAnnouncer, LIVE_MS, liveTargets, setLiveCall } from './live';
+import { nativeCallActive, nativeCallEnded, nativeCallRingEnded } from '../native/calls';
 import { dataSaverActive } from '../net/dataSaver';
 import {
   deltaLoss,
@@ -76,6 +82,14 @@ const ENDED_ERROR_MS = 20_000;
 const CAND_BATCH_MS = 150;
 /** Where the other side's video encoder starts on a normal link (x-google-start-bitrate, kbps). */
 const VIDEO_START_KBPS = 800;
+/** Late join: nobody in the call answered our `join` within this long, so it has ended. */
+const LATE_JOIN_MS = 12_000;
+/** Conversations behind `live` hints are re-read at most this often (a hint arrives every LIVE_MS). */
+const CONV_CACHE_MS = 120_000;
+/** "Dan joined the call" stays up this long. */
+const EVENT_SHOW_MS = 5_000;
+/** Opened from a notification's Answer: accept the call's ring within this long. */
+const AUTO_ANSWER_MS = 30_000;
 
 export type { MediaErr };
 /** The caller's progress before anyone is connected: Calling… → Ringing… → Connecting… */
@@ -104,6 +118,9 @@ export interface PeerView {
 
 /** Whose connection is weak: mine, a named person's, or "somewhere on the link" (can't tell). */
 export type Weak = { who: 'me' } | { who: 'peer'; userId: string } | { who: 'link' } | null;
+
+/** Someone joined or left a call that was already going on (shown briefly to the others). */
+export interface CallEvent { kind: 'joined' | 'left'; userId: string; at: number }
 
 export interface CallSnapshot {
   m: MachineState;
@@ -141,6 +158,15 @@ export interface CallSnapshot {
   mediaError: MediaErr | null;
   /** The camera couldn't be used for a video call, so it carries on as a voice call. */
   camError: MediaErr | null;
+  /** The microphone / camera in use right now (device ids, for the device picker; '' = unknown). */
+  micId: string;
+  camId: string;
+  /** The Android app: loudspeaker or earpiece. */
+  route: 'speaker' | 'earpiece';
+  /** I joined a call that was already going on (late join), rather than being rung. */
+  late: boolean;
+  /** "Dan joined the call" / "Dan left the call". */
+  event: CallEvent | null;
 }
 
 interface Applied { audio: string; video: string }
@@ -209,7 +235,7 @@ const EMPTY: CallSnapshot = {
   m: IDLE, callId: null, convId: null, conv: null, isCaller: false, caller: null, video: false, masked: false,
   connectedAt: null, local: null, mic: true, cam: false, facing: 'user', peers: [], minimized: false,
   frameMode: null, frameStats: null, relay: 'on', sinkId: '', saver: false, voiceOnly: false, weak: null, suggestVoice: false,
-  progress: null, mediaError: null, camError: null,
+  progress: null, mediaError: null, camError: null, micId: '', camId: '', route: 'speaker', late: false, event: null,
 };
 
 const DEV_ID = typeof window === 'undefined' ? 'server' : b64u.encode(randomBytes(9));
@@ -321,6 +347,16 @@ class CallEngine {
   private mediaReady: Promise<boolean> | null = null;
   /** Bumped when a call ends, so a capture that finishes afterwards is released at once. */
   private mediaGen = 0;
+  /** Late join: what I last announced (`live`) and its keep-alive timer; who joined while the call was on. */
+  private liveSent = '';
+  private liveTimer: ReturnType<typeof setInterval> | null = null;
+  private newcomers = new Set<string>();
+  /** Conversations of recent `live` hints (re-read at most every CONV_CACHE_MS). */
+  private convCache = new Map<string, { ctx: ConvCtx; at: number }>();
+  /** Opened from a notification's Answer: accept this call as soon as it rings here. */
+  private autoAnswer: { callId: string; until: number } | null = null;
+  /** Device switches (picker, unplugged device, devicechange) one at a time. */
+  private devQueue: Promise<void> = Promise.resolve();
   /** ICE restarts this call (debug/tests). */
   restarts = 0;
   readonly myEp = () => endpointOf(this.userId ?? '', DEV_ID);
@@ -348,6 +384,9 @@ class CallEngine {
     if (m.phase === 'active' && !this.snap.connectedAt) patch.connectedAt = Date.now();
     this.set(patch);
     if (m.phase === 'active') stopTone();
+    // Not ringing here any more: take down the app's incoming-call notification too.
+    if (before.phase === 'incoming' && m.phase !== 'incoming' && this.snap.convId) void nativeCallRingEnded(this.snap.convId);
+    if (m.phase === 'active' && before.phase !== 'active') this.startAnnouncing();
     if (m.phase === 'ended' && before.phase !== 'ended') this.finish();
   }
 
@@ -373,9 +412,14 @@ class CallEngine {
     window.addEventListener('online', online);
     window.addEventListener('offline', offline);
     conn?.addEventListener?.('change', change);
+    // A headset or webcam plugged in or pulled out mid-call (debounced: one plug fires several events).
+    let devTimer: ReturnType<typeof setTimeout> | null = null;
+    const devices = () => { if (devTimer) clearTimeout(devTimer); devTimer = setTimeout(() => { devTimer = null; this.onDevicesChanged(); }, 400); };
+    navigator.mediaDevices?.addEventListener?.('devicechange', devices);
     this.cleanup.push(() => window.removeEventListener('pagehide', hide), offLock,
       () => window.removeEventListener('online', online), () => window.removeEventListener('offline', offline),
-      () => conn?.removeEventListener?.('change', change));
+      () => conn?.removeEventListener?.('change', change),
+      () => { navigator.mediaDevices?.removeEventListener?.('devicechange', devices); if (devTimer) clearTimeout(devTimer); });
     if (debugOn()) {
       (window as unknown as { __kwCall?: unknown }).__kwCall = {
         engine: this,
@@ -393,6 +437,9 @@ class CallEngine {
     this.cleanup.forEach((f) => f());
     this.cleanup = [];
     this.userId = null;
+    this.convCache.clear();
+    this.autoAnswer = null;
+    clearAllLiveCalls();
   }
 
   get running() { return !!this.userId; }
@@ -403,6 +450,17 @@ class CallEngine {
     if (!summary) return null;
     await people.ensure(summary.members);
     return { id: summary.id, audienceId: summary.audience_id, members: summary.members, summary };
+  }
+
+  /** A conversation for a `live` hint: the current call's, else a recent read, else read it now. */
+  private async convFor(convId: string): Promise<{ ctx: ConvCtx; cached: boolean } | null> {
+    if (this.conv?.id === convId) return { ctx: this.conv, cached: false };
+    const c = this.convCache.get(convId);
+    if (c && Date.now() - c.at < CONV_CACHE_MS) return { ctx: c.ctx, cached: true };
+    const ctx = await this.loadConv(convId);
+    if (!ctx) return null;
+    this.convCache.set(convId, { ctx, at: Date.now() });
+    return { ctx, cached: false };
   }
 
   private memberKeys(conv: ConvCtx) {
@@ -478,12 +536,16 @@ class CallEngine {
   }
 
   // ------------------------------------------------------------------------------------ media
-  /** Capture size: 720p only where it can be used; phones, data saver and slow links capture 360p (less CPU). */
-  private videoConstraints(facing: 'user' | 'environment' | { exact: 'user' | 'environment' }): MediaTrackConstraints {
+  /**
+   * Camera constraints. `which`: a particular camera (the picker, switching cameras); by default the one
+   * remembered on this device (devices.ts: a device id on computers, front or back on phones), else the
+   * front camera. Size: 720p only where it can be used; phones, data saver and slow links capture 360p
+   * (less CPU).
+   */
+  private videoConstraints(which?: MediaTrackConstraints): MediaTrackConstraints {
     const small = this.snap.saver || slowLink() || (typeof navigator !== 'undefined' && isMobileUa(navigator.userAgent));
-    // The camera chosen in "Test camera and microphone", for the first capture of a call.
-    const cam = facing === 'user' ? getCallDevices().cam : undefined;
-    const which: MediaTrackConstraints = cam ? { deviceId: { ideal: cam } } : { facingMode: facing };
+    const d = getCallDevices();
+    which ??= d.cam ? { deviceId: { ideal: d.cam } } : { facingMode: d.facing ?? 'user' };
     return small
       ? { ...which, width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24, max: 30 } }
       : { ...which, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
@@ -496,10 +558,10 @@ class CallEngine {
    */
   private async getMedia(video: boolean): Promise<boolean> {
     const gen = this.mediaGen;
-    const gum = (c: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(c);
+    const gum = (c: MediaStreamConstraints) => this.gum(c);
     let stream: MediaStream;
     try {
-      stream = await gum({ audio: micConstraints(), video: video ? this.videoConstraints('user') : false });
+      stream = await gum({ audio: micConstraints(), video: video ? this.videoConstraints() : false });
     } catch (e) {
       if (!video) { this.set({ mediaError: mediaErr(e) }); return false; }
       try {
@@ -514,8 +576,42 @@ class CallEngine {
     }
     this.local = stream;
     stream.getTracks().forEach((t) => this.watchTrack(t));
-    this.set({ local: stream, mic: true, cam: stream.getVideoTracks().length > 0, facing: 'user' });
+    this.set({ mic: true, cam: stream.getVideoTracks().length > 0 });
+    this.localChanged();
     return true;
+  }
+
+  /** Which way a camera track faces (for the mirrored self-view): what it reports, else what was asked for. */
+  private facingOf(t: MediaStreamTrack | null): 'user' | 'environment' {
+    const f = t?.getSettings().facingMode;
+    if (f === 'user' || f === 'environment') return f;
+    const d = getCallDevices();
+    return d.cam ? 'user' : d.facing ?? 'user';
+  }
+
+  /** The local tracks changed: tell the screens (stream, device ids for the picker, mirror). */
+  private localChanged(patch: Partial<CallSnapshot> = {}) {
+    const v = this.videoTrack();
+    this.set({
+      local: this.local, micId: this.audioTrack()?.getSettings().deviceId ?? '', camId: v?.getSettings().deviceId ?? '',
+      ...(v ? { facing: this.facingOf(v) } : {}), ...patch,
+    });
+  }
+
+  /**
+   * getUserMedia that holds on to the remembered microphone / camera (devices.ts). Browsers treat an
+   * `ideal` device id as a weak hint (Chrome picks "default" over it), so ask for it exactly first, and
+   * fall back to the plain constraints (the default device) when it's gone.
+   */
+  private async gum(c: MediaStreamConstraints): Promise<MediaStream> {
+    const d = getCallDevices();
+    const strict = (x: MediaStreamConstraints['audio'], id: string | undefined): MediaStreamConstraints['audio'] => {
+      const want = x && typeof x === 'object' ? (x.deviceId as ConstrainDOMStringParameters | undefined)?.ideal : undefined;
+      return id && want === id ? { ...(x as MediaTrackConstraints), deviceId: { exact: id } } : x;
+    };
+    const exact = { audio: strict(c.audio, d.mic), video: strict(c.video, d.cam) };
+    if (exact.audio === c.audio && exact.video === c.video) return navigator.mediaDevices.getUserMedia(c);
+    try { return await navigator.mediaDevices.getUserMedia(exact); } catch { return navigator.mediaDevices.getUserMedia(c); }
   }
 
   /** Media for offers/answers: wait for the capture started by place()/accept(). */
@@ -528,44 +624,47 @@ class CallEngine {
   private watchTrack(t: MediaStreamTrack) {
     t.addEventListener('ended', () => {
       if (!this.local?.getTracks().includes(t) || !isLive(this.snap.m.phase)) return;
-      void this.recoverTrack(t);
+      this.devOp(() => this.recoverTrack(t));
     });
   }
 
+  /** Run device changes one after another (a picker choice, an unplugged device and a devicechange can race). */
+  private devOp(op: () => Promise<unknown>): Promise<void> {
+    this.devQueue = this.devQueue.then(op, op).then(() => undefined, () => undefined);
+    return this.devQueue;
+  }
+
   private async recoverTrack(old: MediaStreamTrack) {
-    if (!this.local) return;
+    if (!this.local?.getTracks().includes(old)) return;
     this.local.removeTrack(old);
     if (old.kind === 'audio') {
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
+        const s = await this.gum({ audio: micConstraints() });
         const track = s.getAudioTracks()[0]!;
         if (!this.local || !isLive(this.snap.m.phase)) { track.stop(); return; }
         track.enabled = this.snap.mic;
         this.local.addTrack(track);
         this.watchTrack(track);
-        await Promise.all([...this.peers.values()].map(async (p) => {
-          const tr = p.pc.getTransceivers().find((x) => x.receiver.track.kind === 'audio');
-          if (tr) await tr.sender.replaceTrack(track).catch(() => undefined);
-        }));
-        this.set({ local: this.local });
+        await this.replaceAudio(track);
+        this.localChanged();
       } catch {
         this.set({ mic: false });
         void this.send(this.stateBody(), undefined, false, 1);
       }
       return;
     }
-    // The camera: try again, else carry on without video.
+    // The camera: try again (the remembered one, else the default), else carry on without video.
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: this.videoConstraints(this.snap.facing) });
+      const s = await this.gum({ video: this.videoConstraints() });
       const track = s.getVideoTracks()[0]!;
       if (!this.local || !isLive(this.snap.m.phase)) { track.stop(); return; }
       this.local.addTrack(track);
       this.watchTrack(track);
       await this.replaceVideo(track);
-      this.set({ local: this.local });
+      this.localChanged();
     } catch {
       await this.replaceVideo(null);
-      this.set({ cam: false, local: this.local });
+      this.localChanged({ cam: false });
       void this.send(this.stateBody(), undefined, false, 1);
     }
   }
@@ -606,6 +705,12 @@ class CallEngine {
     return { k: 'join', fe: !!this.frames, video, ...(trickleOn() ? { tr: true } : {}) };
   }
 
+  /** Audio output for a new call: the speaker remembered on this device (devices.ts). */
+  private outputs(): Pick<CallSnapshot, 'sinkId' | 'route'> {
+    const d = getCallDevices();
+    return { sinkId: this.snap.sinkId || d.out || '', route: d.route ?? 'speaker' };
+  }
+
   /** Data saver for a new call: the setting, or the browser's Save-Data ("Lite mode"). */
   private initialSaver() { return getCallPrefs().saver || !!netInfo()?.saveData || dataSaverActive(); }
 
@@ -619,8 +724,8 @@ class CallEngine {
     if (!invited.length || summary.members.length > MAX_CALL_PEOPLE) return;
     // The call screen ("Calling…") is up from here, before anything slow happens.
     this.dispatch({ t: 'place', invited });
-    this.set({ conv: summary, convId: summary.id, video, isCaller: true, caller: this.userId, masked: false, minimized: false, connectedAt: null, saver: this.initialSaver(), progress: 'calling', mediaError: null, camError: null, sinkId: this.snap.sinkId || getCallDevices().out || '' });
-    void nativeCallActive({ speaker: true, video });
+    this.set({ conv: summary, convId: summary.id, video, isCaller: true, caller: this.userId, masked: false, minimized: false, connectedAt: null, saver: this.initialSaver(), progress: 'calling', mediaError: null, camError: null, late: false, ...this.outputs() });
+    void nativeCallActive({ speaker: this.snap.route === 'speaker', video });
     const wantVideo = video && !getCallPrefs().camOff;
     const media = (this.mediaReady = this.getMedia(wantVideo));
     // A permission prompt will be on screen: let the person answer it before anyone's phone rings.
@@ -687,19 +792,33 @@ class CallEngine {
     const w = payload as { c?: unknown } | null;
     if (!this.userId || !w || typeof w.c !== 'string' || !UUID_RE.test(w.c)) return;
     if (getAppLock().decoy || getSession().status !== 'ready') return;
-    const conv = this.conv?.id === w.c ? this.conv : await this.loadConv(w.c);
-    if (!conv) return;
-    const opened = openSignal(payload, { conv: { id: conv.id, audienceId: conv.audienceId }, keyFor: (e) => keyring.get(conv.audienceId, e), members: this.memberKeys(conv) });
-    let res = opened;
+    const got = await this.convFor(w.c).catch(() => null);
+    if (!got) return;
+    let conv = got.ctx;
+    const open = (c: ConvCtx) => openSignal(payload, { conv: { id: c.id, audienceId: c.audienceId }, keyFor: (e) => keyring.get(c.audienceId, e), members: this.memberKeys(c) });
+    let res = open(conv);
     if (!res.ok && res.reason === 'no-key') {
       await keyring.load().catch(() => undefined);
-      res = openSignal(payload, { conv: { id: conv.id, audienceId: conv.audienceId }, keyFor: (e) => keyring.get(conv.audienceId, e), members: this.memberKeys(conv) });
+      res = open(conv);
     }
-    if (!res.ok || res.signal.body.k !== 'ring' || res.author === this.userId) return;
+    // A ring is checked against the conversation as it is now: a cached copy (kept for `live` hints) could
+    // still list someone who has just been removed.
+    if (res.ok && res.signal.body.k === 'ring' && got.cached) {
+      const fresh = await this.loadConv(w.c).catch(() => null);
+      if (!fresh) return;
+      conv = fresh;
+      this.convCache.set(conv.id, { ctx: conv, at: Date.now() });
+      res = open(conv);
+    }
+    if (!res.ok || res.author === this.userId) return;
+    const kind = res.signal.body.k;
+    if (kind !== 'ring' && kind !== 'live') return;
     if (!this.seen.add((payload as { i: string }).i)) return;
+    if (kind === 'live') { this.onLive(conv.id, res.signal); return; }
     const s = res.signal;
     const body = s.body as Extract<SignalBody, { k: 'ring' }>;
-    if (this.ended.has(s.call)) return;
+    const auto = !!this.autoAnswer && this.autoAnswer.callId === s.call && Date.now() < this.autoAnswer.until;
+    if (this.ended.has(s.call) && !auto) return;
     const phase = this.snap.m.phase;
     if (this.snap.callId === s.call && phase !== 'idle' && phase !== 'ended') return; // a repeat ring
     if (phase !== 'idle' && phase !== 'ended') {
@@ -721,9 +840,11 @@ class CallEngine {
     this.set({
       callId: s.call, convId: conv.id, conv: conv.summary, video: body.video, isCaller: false, caller: res.author,
       masked: isHiddenChat(conv.id) && !isRevealed(), minimized: false, connectedAt: null, saver: this.initialSaver(),
-      progress: null, mediaError: null, camError: null, sinkId: this.snap.sinkId || getCallDevices().out || '',
+      progress: null, mediaError: null, camError: null, late: false, ...this.outputs(),
     });
     if (this.probeTimer) { clearTimeout(this.probeTimer); this.probeTimer = null; }
+    // The person already tapped Answer on the app's notification: no second tap.
+    if (auto) { this.autoAnswer = null; void this.accept(); return; }
     startTone('incoming');
     // While it rings: get TURN credentials ready (so accepting doesn't wait for them) and tell the
     // caller this device is ringing ("Ringing…").
@@ -735,10 +856,20 @@ class CallEngine {
     this.timers.push(setTimeout(() => { if (this.snap.m.phase === 'incoming') this.dispatch({ t: 'timeout' }); }, RING_MS));
   }
 
-  /** Opened from a push ("Dan is calling"): ask whether the call is still ringing. */
-  async probe(convId: string, callId: string) {
-    if (!this.userId || this.snap.m.phase !== 'idle' && this.snap.m.phase !== 'ended') return;
-    if (this.ended.has(callId) || !UUID_RE.test(convId) || !UUID_RE.test(callId)) return;
+  /**
+   * Opened from a push ("Dan is calling"): ask whether the call is still going; someone in it rings this
+   * device again. `answer`: the person tapped Answer on the app's notification, so accept that ring
+   * without a second tap (and join at once when the call is already known to be going on).
+   */
+  async probe(convId: string, callId: string, answer = false) {
+    if (!this.userId || !UUID_RE.test(convId) || !UUID_RE.test(callId)) return;
+    if (answer) {
+      if (this.snap.callId === callId && this.snap.m.phase === 'incoming') { void this.accept(); return; }
+      this.autoAnswer = { callId, until: Date.now() + AUTO_ANSWER_MS };
+    }
+    if (this.snap.m.phase !== 'idle' && this.snap.m.phase !== 'ended') return;
+    if (answer && getLiveCall(convId)?.callId === callId) { void this.joinLive(convId); return; }
+    if (this.ended.has(callId) && !answer) return;
     const conv = await this.loadConv(convId).catch(() => null);
     if (!conv) return;
     const key = await conversationKey(conv.summary).catch(() => null);
@@ -756,18 +887,83 @@ class CallEngine {
     if (this.phaseNow() !== 'incoming' || !this.conv) return;
     stopTone();
     this.dispatch({ t: 'accept' });
+    await this.enter(true);
+  }
+
+  /**
+   * Late join (docs §14): enter a group call that is already going on in this conversation, from a `live`
+   * hint (live.ts). The same as answering its ring: the same sealed `join`, the same key (the call's frame
+   * key travelled in the hint) and the same mesh set-up, so every participant connects to me. Nothing new
+   * reaches the server: no RPC, only the call channel the participants are already on.
+   */
+  async joinLive(convId: string) {
+    const hint = getLiveCall(convId);
+    if (!this.userId || !hint || hint.n >= MAX_CALL_PEOPLE) return;
+    if (this.snap.m.phase !== 'idle' && this.snap.m.phase !== 'ended') return;
+    if (getAppLock().decoy) return;
+    let key: Uint8Array;
+    try { key = b64u.decode(hint.key); } catch { return; }
+    // Read the conversation afresh: who may take part is checked against today's members.
+    const conv = await this.loadConv(convId).catch(() => null);
+    if (!conv || conv.members.length > MAX_CALL_PEOPLE || !conv.members.includes(this.userId)) return;
+    if (this.phaseNow() !== 'idle' && this.phaseNow() !== 'ended') return;
+    this.resetNow();
+    this.conv = conv;
+    this.convKey = await conversationKey(conv.summary).catch(() => null);
+    if (!this.convKey || (this.phaseNow() !== 'idle' && this.phaseNow() !== 'ended')) return;
+    this.callKey = key;
+    this.autoAnswer = null;
+    this.ended.delete(hint.callId);
+    this.dispatch({ t: 'join', invited: conv.members.filter((m) => m !== this.userId) });
+    this.set({
+      callId: hint.callId, convId: conv.id, conv: conv.summary, video: hint.video, isCaller: false, caller: null,
+      masked: false, minimized: false, connectedAt: null, saver: this.initialSaver(), late: true, ...this.outputs(),
+    });
+    clearLiveCall(conv.id, hint.callId);
+    const callId = hint.callId;
+    // Nobody answered our join (the last person left just before): say so instead of "Couldn't connect".
+    this.timers.push(setTimeout(() => {
+      if (this.snap.callId !== callId || this.snap.m.phase !== 'connecting') return;
+      if ([...this.roster.keys()].some((ep) => parseEndpoint(ep)?.userId !== this.userId)) return;
+      void this.send({ k: 'leave' }, undefined, true);
+      this.dispatch({ t: 'failed', reason: 'over' });
+    }, LATE_JOIN_MS));
+    await this.enter(false);
+  }
+
+  /**
+   * Decline from the app's notification while this page runs in the background. If this device is
+   * ringing for that call, that's an ordinary decline; otherwise (the ring reached the notification
+   * only) the same sealed decline is sent on the call channel, so the caller hears it.
+   */
+  async declineFromPush(convId: string, callId: string) {
+    if (!this.userId || !UUID_RE.test(convId) || !UUID_RE.test(callId)) return;
+    if (this.snap.callId === callId) { if (this.snap.m.phase === 'incoming') this.decline(); return; }
+    if (this.ended.has(callId)) return;
+    this.ended.add(callId);
+    const conv = await this.loadConv(convId).catch(() => null);
+    const key = conv ? await conversationKey(conv.summary).catch(() => null) : null;
+    if (!conv || !key) return;
+    const wire = this.seal(conv, key, { call: callId, from: this.myEp(), ts: Date.now(), body: { k: 'decline' } });
+    await restBroadcast(`call:${conv.id}`, wire, true).catch(() => undefined);
+  }
+
+  /** After accepting a ring or choosing Join: media, relay, frame keys, the call channel, then `join`. */
+  private async enter(answered: boolean) {
     this.set({ progress: 'connecting', mediaError: null, camError: null });
-    void nativeCallActive({ speaker: true, video: this.snap.video });
+    if (this.conv && this.snap.callId) clearLiveCall(this.conv.id, this.snap.callId); // I'm in it now
+    void nativeCallActive({ speaker: this.snap.route === 'speaker', video: this.snap.video });
     const wantVideo = this.snap.video && !getCallPrefs().camOff;
     const media = (this.mediaReady = this.getMedia(wantVideo));
     const ice = await this.loadIce(); // fetched while it rang
     if (this.phaseNow() !== 'connecting' || !this.conv) return;
-    if (!this.applyIce(ice)) { void this.send({ k: 'decline' }, undefined, true); this.dispatch({ t: 'failed', reason: 'relay' }); return; }
+    if (!this.applyIce(ice)) { void this.send({ k: answered ? 'decline' : 'leave' }, undefined, true); this.dispatch({ t: 'failed', reason: 'relay' }); return; }
     this.setupFrames();
     await this.joinCallChannel(this.conv.id);
     // Say we're here at once: offers are answered as soon as the microphone is ready (haveMedia).
     await this.send(this.joinBody(wantVideo), undefined, false, 3);
-    void sb().rpc('call_answered', { msg: this.snap.callId }).then(() => undefined, () => undefined);
+    // Answering marks the thread's call line "answered"; a late join needs nothing (it was answered already).
+    if (answered) void sb().rpc('call_answered', { msg: this.snap.callId }).then(() => undefined, () => undefined);
     this.timers.push(setTimeout(() => { if (this.snap.m.phase === 'connecting') this.dispatch({ t: 'timeout' }); }, slowLink() ? CONNECT_SLOW_MS : CONNECT_MS));
     // If our join (or their reply) was dropped, say it again until someone connects.
     const callId = this.snap.callId;
@@ -830,6 +1026,10 @@ class CallEngine {
           return;
         }
         if (!this.inCall()) return;
+        // The mesh is capped (each person is another connection and encoder on every device).
+        if (!this.peers.has(s.from) && this.peers.size >= MAX_CALL_PEOPLE - 1) return;
+        // Someone joining a call that's already going on (late join): "Dan joined" once connected.
+        if (this.snap.m.phase === 'active' && !this.peers.has(s.from)) this.newcomers.add(s.from);
         // Reply and (if I'm the offerer) start the offer at the same time: the offer doesn't need the
         // reply to have arrived, so waiting for its delivery only added a round trip.
         await Promise.all([
@@ -902,10 +1102,14 @@ class CallEngine {
       case 'cancel':
         if (from.userId === this.snap.caller) this.dispatch({ t: 'cancelled' });
         return;
-      case 'probe':
-        // Someone opened the app from a push: ring them again if this call is still going.
-        if (this.snap.isCaller && this.inCall() && from.userId !== this.userId && !this.peers.has(s.from)) await this.ringAll([from.userId], this.snap.video);
+      case 'probe': {
+        // Someone opened the app from a push: ring them again if this call is still going. While it rings
+        // only the caller is in it; once it's going on, the participant who announces it (late join) does.
+        if (from.userId === this.userId || !this.inCall() || [...this.peers.values()].some((p) => p.userId === from.userId)) return;
+        const ringer = this.snap.m.phase === 'active' ? this.announcer() : this.snap.isCaller;
+        if (ringer) await this.ringAll([from.userId], this.snap.video);
         return;
+      }
       case 'ring':
         return;
     }
@@ -1150,6 +1354,8 @@ class CallEngine {
       peer.state = 'connected';
       this.bumpPeers();
       this.dispatch({ t: 'peer-connected', count: this.connectedCount() });
+      if (this.newcomers.delete(peer.ep)) this.note('joined', peer.userId);
+      this.announce();
       if (!peer.safety) void this.computeSafety(peer);
       this.startStats();
       void this.send(this.stateBody({ vp: peer.sentVp }), peer.ep, false, 2);
@@ -1206,6 +1412,67 @@ class CallEngine {
 
   private connectedCount() { return [...this.peers.values()].filter((p) => p.state === 'connected').length; }
 
+  // ------------------------------------------------------------------------------------ late join
+  /** People in the call (distinct accounts), me included: peers that are connected or reconnecting. */
+  private participants(): Set<string> {
+    const users = new Set<string>(this.userId ? [this.userId] : []);
+    for (const p of this.peers.values()) if (p.state !== 'connecting') users.add(p.userId);
+    return users;
+  }
+
+  /** Am I the participant who tells the others about this call (live.ts isAnnouncer)? */
+  private announcer(): boolean {
+    return isAnnouncer(this.myEp(), [...this.peers.values()].filter((p) => p.state !== 'connecting').map((p) => p.ep));
+  }
+
+  /** The call is going on: announce it now and every LIVE_MS while it lasts. */
+  private startAnnouncing() {
+    this.announce();
+    if (!this.liveTimer) this.liveTimer = setInterval(() => this.announce(true), LIVE_MS);
+  }
+
+  /**
+   * Tell the conversation's members who aren't in the call that it's going on (sealed `live` on their
+   * ring topics, the same path and envelope as a ring). Only the announcer sends; only on a change unless
+   * `again` (the keep-alive). Realtime sees one more small blob on a ring topic of someone who shares the
+   * conversation, as it does for every ring, and nothing about who is in the call.
+   */
+  private announce(again = false) {
+    if (this.snap.m.phase !== 'active' || !this.conv || !this.convKey || !this.callKey || !this.snap.callId) return;
+    if (!this.announcer()) { this.liveSent = ''; return; }
+    const users = this.participants();
+    const targets = liveTargets(this.conv.members, users);
+    const sig = `${users.size}|${targets.join(',')}`;
+    if (!targets.length || (!again && sig === this.liveSent)) return;
+    this.liveSent = sig;
+    void this.sendLive(targets, users.size);
+  }
+
+  private async sendLive(targets: string[], n: number, keepalive = false) {
+    const conv = this.conv;
+    const key = this.convKey;
+    if (!conv || !key || !this.callKey || !this.snap.callId) return;
+    const body: SignalBody = { k: 'live', n, video: this.snap.video, key: b64u.encode(this.callKey) };
+    await Promise.all(targets.map((u) =>
+      restBroadcast(`ring:${u}`, this.seal(conv, key, this.signal(body), true), keepalive).catch(() => undefined)));
+  }
+
+  /** A `live` hint arrived on my ring topic: offer "Call in progress · Join" (or take it down). */
+  private onLive(convId: string, s: Signal) {
+    const b = s.body as Extract<SignalBody, { k: 'live' }>;
+    // I'm in that call (or joining it): nothing to offer.
+    if (this.snap.callId === s.call && isLive(this.snap.m.phase)) return;
+    if (b.n === 0) { clearLiveCall(convId, s.call); return; }
+    setLiveCall({ convId, callId: s.call, n: b.n, video: b.video, key: b.key });
+  }
+
+  /** Someone joined or left while the call was going on: say so for a few seconds. */
+  private note(kind: CallEvent['kind'], userId: string) {
+    const event: CallEvent = { kind, userId, at: Date.now() };
+    this.set({ event });
+    this.timers.push(setTimeout(() => { if (this.snap.event === event) this.set({ event: null }); }, EVENT_SHOW_MS));
+  }
+
   private clearPeerTimers(p: Peer) {
     if (p.lostTimer) clearTimeout(p.lostTimer);
     if (p.restartTimer) clearTimeout(p.restartTimer);
@@ -1219,12 +1486,17 @@ class CallEngine {
     if (!p) return;
     this.peers.delete(ep);
     this.earlyCands.delete(ep);
+    this.newcomers.delete(ep);
     this.clearPeerTimers(p);
     try { p.pc.close(); } catch { /* already closed */ }
     p.stream.getTracks().forEach((t) => t.stop());
     this.reconfigureAll();
     this.bumpPeers();
     this.dispatch({ t: 'peer-left', count: this.peers.size });
+    if (this.snap.m.phase === 'active' && p.state !== 'connecting' && this.peers.size > 0) {
+      if (![...this.peers.values()].some((x) => x.userId === p.userId)) this.note('left', p.userId);
+      this.announce();
+    }
   }
 
   private async computeSafety(peer: Peer) {
@@ -1463,34 +1735,180 @@ class CallEngine {
       cur.stop();
       this.local.removeTrack(cur);
       await this.replaceVideo(null);
-      this.set({ cam: false, local: this.local });
+      this.localChanged({ cam: false });
     } else {
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: this.videoConstraints(this.snap.facing) });
+        const s = await this.gum({ video: this.videoConstraints() });
         const track = s.getVideoTracks()[0]!;
+        if (!this.local || !isLive(this.snap.m.phase)) { track.stop(); return; }
         this.local.addTrack(track);
+        this.watchTrack(track);
         await this.replaceVideo(track);
         // Turning the camera back on ends voice-only: I'd like to see them again too.
-        this.set({ cam: true, local: this.local, voiceOnly: false });
+        this.localChanged({ cam: true, voiceOnly: false });
         this.reconfigureAll();
       } catch { return; }
     }
     void this.send(this.stateBody(), undefined, false, 1);
   }
 
-  async switchCamera() {
+  /**
+   * The switch-camera button: the other side's camera on phones (front ↔ back), the next camera on
+   * computers (they don't report a direction). Remembered on this device.
+   */
+  switchCamera(): Promise<void> {
+    return this.devOp(async () => {
+      const cur = this.videoTrack();
+      if (!this.local || !cur) return;
+      const facing = this.facingOf(cur) === 'user' ? 'environment' : 'user';
+      if (await this.swapVideo({ facingMode: { exact: facing } })) { setCallDevices({ facing, cam: undefined }); return; }
+      const cams = (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter((d) => d.kind === 'videoinput' && d.deviceId);
+      if (cams.length < 2) return;
+      const i = cams.findIndex((d) => d.deviceId === cur.getSettings().deviceId);
+      const next = cams[(i + 1) % cams.length]!.deviceId;
+      if (await this.swapVideo({ deviceId: { exact: next } })) setCallDevices({ cam: next });
+    });
+  }
+
+  // ------------------------------------------------------------------------------------ devices
+  /**
+   * Use this microphone ('' = the system default) for the rest of the call and remember it on this device.
+   * The new track replaces the old one on every connection (replaceTrack): no renegotiation, and frame
+   * encryption (a transform on the sender) and the bitrate set by the quality controller (sender
+   * parameters) carry on untouched. False if the device couldn't be opened (the old one is kept).
+   */
+  setMic(id: string, remember = true): Promise<boolean> {
+    if (remember) setCallDevices({ mic: id || undefined });
+    let ok = false;
+    return this.devOp(async () => {
+      const cur = this.audioTrack();
+      if (!this.local || !isLive(this.snap.m.phase)) { ok = true; return; }
+      if (cur && cur.readyState === 'live' && id && cur.getSettings().deviceId === id) { ok = true; return; }
+      const audio: MediaTrackConstraints = { ...micConstraints(), deviceId: id ? { exact: id } : undefined };
+      let track = await this.capture({ audio }).catch(() => null);
+      // Some phones can't open a second microphone while one is in use: let go of it and try again.
+      if (!track && cur) {
+        cur.stop();
+        track = await this.capture({ audio }).catch(() => null) ?? await this.capture({ audio: micConstraints() }).catch(() => null);
+      }
+      if (!track) {
+        // Not even the default would open: carry on muted, as when a microphone disappears (recoverTrack).
+        if (cur?.readyState === 'ended') {
+          this.local.removeTrack(cur);
+          this.localChanged({ mic: false });
+          void this.send(this.stateBody(), undefined, false, 1);
+        }
+        return;
+      }
+      if (!this.swapTrack(cur, track)) return;
+      await this.replaceAudio(track);
+      cur?.stop();
+      ok = true;
+      this.localChanged();
+    }).then(() => ok);
+  }
+
+  /**
+   * Use this camera for the rest of the call and remember it: a device id ('' = default) on computers,
+   * front or back on phones. With the camera off, it's used when the camera is turned on.
+   */
+  setCamera(choice: { id: string } | { facing: 'user' | 'environment' }): Promise<boolean> {
+    if ('id' in choice) setCallDevices({ cam: choice.id || undefined });
+    else setCallDevices({ facing: choice.facing, cam: undefined });
+    let ok = true;
+    return this.devOp(async () => {
+      const cur = this.videoTrack();
+      if (!this.local || !cur || !isLive(this.snap.m.phase)) return;
+      if ('id' in choice && choice.id && cur.getSettings().deviceId === choice.id) return;
+      if ('facing' in choice && this.facingOf(cur) === choice.facing) return;
+      ok = await this.swapVideo('id' in choice
+        ? (choice.id ? { deviceId: { exact: choice.id } } : { facingMode: 'user' })
+        : { facingMode: { exact: choice.facing } });
+    }).then(() => ok);
+  }
+
+  /**
+   * Replace the camera track with one from `which`. Phones often can't open a second camera while one is
+   * open, so on failure the current one is released and the new one tried again; if that fails too, the
+   * previous camera comes back (or the call carries on without video). True when `which` is in use.
+   */
+  private async swapVideo(which: MediaTrackConstraints): Promise<boolean> {
     const cur = this.videoTrack();
-    if (!this.local || !cur) return;
-    const facing = this.snap.facing === 'user' ? 'environment' : 'user';
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: this.videoConstraints({ exact: facing }) });
-      const track = s.getVideoTracks()[0]!;
+    if (!this.local || !cur) return false;
+    let track = await this.capture({ video: this.videoConstraints(which) }).catch(() => null);
+    let ok = !!track;
+    if (!track) {
       cur.stop();
+      track = await this.capture({ video: this.videoConstraints(which) }).catch(() => null);
+      ok = !!track;
+      track ??= await this.capture({ video: this.videoConstraints({ deviceId: { ideal: cur.getSettings().deviceId } }) }).catch(() => null);
+    }
+    if (!track) {
       this.local.removeTrack(cur);
-      this.local.addTrack(track);
-      await this.replaceVideo(track);
-      this.set({ facing, local: this.local });
-    } catch { /* only one camera */ }
+      await this.replaceVideo(null);
+      this.localChanged({ cam: false });
+      void this.send(this.stateBody(), undefined, false, 1);
+      return false;
+    }
+    if (!this.swapTrack(cur, track)) return false;
+    await this.replaceVideo(track);
+    cur.stop();
+    this.localChanged();
+    return ok;
+  }
+
+  /** One track from getUserMedia (anything else it returned is stopped). */
+  private async capture(c: MediaStreamConstraints): Promise<MediaStreamTrack> {
+    const s = await navigator.mediaDevices.getUserMedia(c);
+    const track = (c.audio ? s.getAudioTracks() : s.getVideoTracks())[0];
+    s.getTracks().forEach((t) => { if (t !== track) t.stop(); });
+    if (!track) throw new Error('no track');
+    return track;
+  }
+
+  /**
+   * Put `track` in the local stream in place of `old`; the caller then replaces it on the senders and
+   * stops `old` (in that order, so there's no gap). False, and `track` released, if the call ended meanwhile.
+   */
+  private swapTrack(old: MediaStreamTrack | null, track: MediaStreamTrack): boolean {
+    if (!this.local || !isLive(this.snap.m.phase)) { track.stop(); return false; }
+    if (track.kind === 'audio') track.enabled = this.snap.mic;
+    if (old) this.local.removeTrack(old);
+    this.local.addTrack(track);
+    this.watchTrack(track);
+    return true;
+  }
+
+  private async replaceAudio(track: MediaStreamTrack | null) {
+    await Promise.all([...this.peers.values()].map(async (p) => {
+      const t = p.pc.getTransceivers().find((x) => x.receiver.track.kind === 'audio');
+      if (t) await t.sender.replaceTrack(track).catch(() => undefined);
+    }));
+  }
+
+  /**
+   * The device list changed: follow the remembered microphone / camera / speaker when it (re)appears,
+   * and fall back to the default when the one in use disappeared without its track ending (browsers
+   * differ; an ended track is recovered by watchTrack).
+   */
+  private onDevicesChanged() {
+    if (!this.local || !isLive(this.snap.m.phase)) return;
+    void navigator.mediaDevices.enumerateDevices().then(async (list) => {
+      const d = getCallDevices();
+      const ids = (kind: MediaDeviceKind) => list.filter((x) => x.kind === kind).map((x) => x.deviceId);
+      const a = this.audioTrack();
+      if (a?.readyState === 'live') {
+        const next = deviceAfterChange(a.getSettings().deviceId, d.mic, ids('audioinput'));
+        if (next !== null) await this.setMic(next, false);
+      }
+      const v = this.videoTrack();
+      if (v?.readyState === 'live' && !d.facing) {
+        const next = deviceAfterChange(v.getSettings().deviceId, d.cam, ids('videoinput'));
+        if (next !== null) await this.devOp(() => this.swapVideo(next ? { deviceId: { exact: next } } : { facingMode: 'user' }));
+      }
+      const out = deviceAfterChange(this.snap.sinkId || undefined, d.out, ids('audiooutput'));
+      if (out !== null) this.set({ sinkId: out });
+    }, () => undefined);
   }
 
   private async replaceVideo(track: MediaStreamTrack | null) {
@@ -1521,12 +1939,33 @@ class CallEngine {
   dismissSuggestion() { this.suggestDismissed = true; this.set({ suggestVoice: false }); }
 
   setMinimized(v: boolean) { this.set({ minimized: v }); }
-  setSink(id: string) { this.set({ sinkId: id }); }
+
+  /** The speaker for call audio ('' = default; where the browser can choose, setSinkId). Remembered. */
+  setSink(id: string) {
+    setCallDevices({ out: id || undefined });
+    this.set({ sinkId: id });
+  }
+
+  /** The Android app: loudspeaker or earpiece (a headset always wins). Remembered. */
+  setRoute(route: 'speaker' | 'earpiece') {
+    setCallDevices({ route });
+    this.set({ route });
+    if (isLive(this.snap.m.phase)) void nativeCallActive({ speaker: route === 'speaker', video: this.snap.cam });
+  }
 
   // ------------------------------------------------------------------------------------ teardown
   /** The call ended (any reason): release everything, show "Call ended" briefly, then go idle. */
   private finish() {
     const wasConnected = this.snap.m.everConnected;
+    // The last one out of a group call: tell the members at once that it's over (otherwise the "Join"
+    // offer would linger until the hint expires).
+    if (wasConnected && this.peers.size === 0 && this.conv && this.conv.members.length > 2 && this.userId) {
+      void this.sendLive(liveTargets(this.conv.members, [this.userId]), 0, true);
+    }
+    if (this.liveTimer) clearInterval(this.liveTimer);
+    this.liveTimer = null;
+    this.liveSent = '';
+    this.newcomers.clear();
     void nativeCallEnded();
     stopTone();
     if (wasConnected || this.snap.m.reason !== 'elsewhere') endTone();
@@ -1570,7 +2009,7 @@ class CallEngine {
     this.conv = null;
     this.convKey = null;
     this.restarts = 0;
-    this.snap = { ...EMPTY, relay: this.snap.relay, sinkId: this.snap.sinkId };
+    this.snap = { ...EMPTY, relay: this.snap.relay, sinkId: this.snap.sinkId, route: this.snap.route };
     this.listeners.forEach((l) => l());
   }
 

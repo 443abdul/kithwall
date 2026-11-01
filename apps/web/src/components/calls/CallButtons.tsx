@@ -2,7 +2,8 @@
 // Voice and video call buttons for a chat header (1:1, group and circle chats up to 8 people). In a narrow
 // header (phones, the split view) the two buttons collapse into one "Call" menu so the chat title keeps
 // its room; which one shows is decided by a container query on .k-chat-head (styles/v2/calls.css).
-// Opening a chat with these buttons warms the TURN credentials (docs/v2/04-calls.md §12).
+// Opening a chat with these buttons warms the TURN credentials (docs/v2/04-calls.md §12). While a group
+// call is going on in this chat and I'm not in it, "Call in progress · Join" takes their place (§14).
 import { useEffect } from 'react';
 import { useT } from '@/i18n';
 import { prefetchIceConfig } from '@/lib/calls/turn';
@@ -12,16 +13,19 @@ import { isLive } from '@/lib/calls/machine';
 import { useSession } from '@/lib/keys/session';
 import { Menu } from '@/components/posts/Menu';
 import { CallIcon } from './CallIcon';
+import { LiveCallJoin, useJoinable } from './LiveCall';
 
 export function CallButtons({ conversation: c }: { conversation: ConversationSummary }) {
   const t = useT();
   const s = useCall();
   const { userId } = useSession();
+  const joinable = useJoinable(c.id);
   const others = c.members.filter((m) => m !== userId).length;
   // A chat you can call from is open: get the call relay's credentials ready now, so tapping Call doesn't
   // wait for them (lib/calls/turn.ts; cached for most of an hour).
   useEffect(() => { if (others) prefetchIceConfig(); }, [others]);
   if (!others) return null;
+  if (joinable) return <LiveCallJoin convId={c.id} variant="head" />;
   const tooMany = c.members.length > MAX_CALL_PEOPLE;
   const busy = isLive(s.m.phase) || s.m.phase === 'incoming';
   const disabled = tooMany || busy;

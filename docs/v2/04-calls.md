@@ -1,6 +1,7 @@
 # Kithwall 2: end-to-end encrypted voice and video calls
 
-Status: implemented (phase 4) · 2026-10-21 · speed and reliability pass 2026-10-23 (§12) · brief §4 "Calls", §10 "a calls signalling channel over Realtime,
+Status: implemented (phase 4) · 2026-10-21 · speed and reliability pass 2026-10-23 (§12) · late join, in-call device picker and
+lock-screen ringing in the Android app 2026-11-01 (§14) · brief §4 "Calls", §10 "a calls signalling channel over Realtime,
 with Cloudflare TURN credentials minted per call"
 
 Voice and video calls in one-to-one chats, group chats and circle chats of up to 8 people. Calls are
@@ -30,7 +31,9 @@ relays encrypted packets.
 | Safety code | `lib/calls/safety.ts` |
 | Ring tones (WebAudio, no files) | `lib/calls/tones.ts` |
 | Call preferences: relay, data saver, camera off (vault, namespace `calls`) | `lib/calls/prefs.ts`, Settings → Privacy → Calls |
-| Device choice, media errors; "Test camera and microphone" (§7, §12) | `lib/calls/devices.ts`, `components/calls/CallCheck.tsx` |
+| Device choice, media errors; "Test camera and microphone" (§7, §12); in-call device picker (§14.2) | `lib/calls/devices.ts`, `components/calls/CallCheck.tsx`, `components/calls/CallDevices.tsx` |
+| Late join: live-call hints, "Call in progress · Join" (§14.1) | `lib/calls/live.ts`, `components/calls/LiveCall.tsx` (chat header via `CallButtons`, list via `messages/ChatList.tsx`), tests `lib/calls/latejoin.test.ts` |
+| Android incoming-call screen over the lock screen (§14.3) | `apps/mobile/android/.../IncomingCallActivity.java`, `Notifier.java`, `CallActionReceiver.java`, `KithwallPushPlugin.java` (`cancelCall`, `call` event), `lib/native/calls.ts` |
 | Low bandwidth (§11): quality controller, Opus/codec tuning (pure) | `lib/calls/quality.ts`, `lib/calls/sdp.ts`, tests `lib/calls/lowbw.test.ts` |
 | UI | `components/calls/CallButtons.tsx` (chat header), `CallRoot.tsx` (mounted in `app/layout.tsx`; loads `CallRuntime.tsx` once unlocked), `CallScreens.tsx`, `CallIcon.tsx`, `styles/v2/calls.css` |
 | Thread notice | `lib/messages.ts` `readNotice` (event `{kind:'call'}`), `components/messages/content.tsx` `eventLine` |
@@ -90,7 +93,8 @@ setting's description.
   than 90 s, or already seen (signal-id dedupe).
 - **Kinds**: `ring` (with the per-call frame key), `ringing` (the callee's device is ringing: the caller
   shows "Ringing…"), `cancel`, `join`, `here`, `probe`, `decline`, `busy`, `offer`, `answer`, `cand`
-  (trickle ICE), `state` (mic/camera, plus optional `net`/`vp`/`rx`, §11), `restart` (§11), `leave`.
+  (trickle ICE), `state` (mic/camera, plus optional `net`/`vp`/`rx`, §11), `restart` (§11), `leave`, and
+  `live` (late join, §14.1: on ring topics only).
   Older clients ignore the optional fields and drop `restart` as malformed, so versions interoperate.
 - **Mesh**: each device is an endpoint `<user id>:<random per-tab id>`. On `join` everyone replies `here`.
   The lexically smaller endpoint makes the offer, so there's never glare. **Trickle ICE** (2026-10-23, §12):
@@ -185,7 +189,8 @@ lasts 45 s, connecting 30 s (45 s on 2G/3G). A group call carries on while anyon
   plus a self-view picture-in-picture that you tap to move to the other corner. Groups: a grid including
   yourself. Controls: mute, camera on/off, switch camera (with two cameras), audio output (where
   `setSinkId` exists and there are several outputs), data saver (§11), hang up. A "switch to voice only?"
-  banner appears on a weak connection (§11).
+  banner appears on a weak connection (§11). Since §14 the speaker button became "Microphone, camera and
+  speaker" (the device picker, §14.2).
 - Errors say what happened and what to do (§12): microphone refused (how to allow it in site settings),
   missing, or used by another app; relay unreachable; couldn't connect. "Try again" (caller) and "Test
   camera and microphone" (no-media) buttons. A video call whose camera fails carries on as a voice call
@@ -491,10 +496,12 @@ client (vanilla ICE; trickle ↔ vanilla interop checked in both directions); `k
   whether the keys are set (Hobby keeps 1 hour of logs).
 - Speed (§12) was measured on one machine over a LAN; real phones on mobile data are slower in absolute
   terms (one round trip per message), but the removed waits (3 s ICE, sequential setup, the TURN fetch)
-  are the same everywhere. No in-call microphone picker yet (only in "Test camera and microphone").
-- Native (phase 5): CallKit / ConnectionService ringing and native push for calls. On the web, a phone
-  with the screen off rings only through the push notification.
-- Late join: someone who missed the 45 s ring can't join an ongoing group call yet (call back instead).
+  are the same everywhere.
+- Native: iOS still rings as a time-sensitive alert (no CallKit, `05-native.md` §10). On the web, a phone
+  with the screen off rings only through the push notification. Android: §14.3 (what's still missing is
+  listed there).
+- Late join (§14.1): a member who comes online mid-call learns about it within one keep-alive (≤ 25 s);
+  opening the chat doesn't ask (that would mean joining the call topic just to look).
 - Mesh limits bandwidth at 8 people with video; a future SFU would need insertable-streams frame
   encryption to stay E2EE (the frame layer is already in place).
 - The conversation list preview of a call notice is the generic system line (owned by messages).
@@ -505,3 +512,135 @@ client (vanilla ICE; trickle ↔ vanilla interop checked in both directions); `k
   would save 8 bytes but needs a versioned frame format. RED and ptime changes need a renegotiation (≤ one
   per 10 s). Not yet tried on Safari/Firefox (they ignore what they don't support: `networkPriority`,
   RED, `degradationPreference`).
+
+## 14. Late join, device picker, ringing on a locked Android phone (2026-11-01)
+
+### 14.1 Late join for group calls
+
+Someone in a group or circle chat who missed or declined the ring can join the call while it lasts.
+
+- **Who knows a call is going on.** While a call is `active`, one participant, the *announcer* (the one
+  whose endpoint sorts first among everyone connected, `live.ts isAnnouncer`, so each participant can
+  tell alone and the next takes over when it leaves), sends a sealed `live {n, video, key}` to the ring
+  topic of every conversation member who isn't in the call (`liveTargets`): when someone joins or
+  leaves, and every 25 s (`LIVE_MS`). `n` is the number of people in the call. `key` is the call's frame
+  key, which these same people already got in the ring. The last person to leave a group call sends
+  `n = 0` (keepalive REST, so it also goes out from `pagehide`); a hint that isn't refreshed expires after
+  65 s, so a call whose last participant vanished disappears by itself.
+- **What people see.** The chat header shows "Call in progress · N people · Join" in place of the call
+  buttons (just "Join" in a narrow header); the conversation list shows "Call in progress · N people"
+  as the preview, with a Join button next to the row (never inside the link). Join is disabled, with the
+  reason, while you're in another call or when the call has 8 people. While you're in the call, there's
+  nothing to join; after you leave, the offer comes back with the next announcement.
+- **Joining** (`calls.joinLive`) re-reads the conversation (you must still be a member, ≤ 8 people),
+  takes the key from the hint and runs exactly what answering a ring runs (`enter()`): microphone/camera,
+  relay credentials, frame encryption, the call channel and a sealed `join`. Every participant replies
+  `here` and the lower endpoint makes each offer, so the newcomer connects to everyone (mesh, DTLS
+  fingerprints in signed SDP, frame encryption both ways). The state machine has a `join` event (idle →
+  connecting). If nobody answers the `join` within 12 s, the call had ended: "The call has already ended"
+  (reason `over`). Participants refuse a `join` beyond the mesh limit.
+- **Existing participants see who joined**: "Cat joined the call" / "Cat left the call" under the status
+  for 5 s, announced to screen readers (also while minimised).
+- **Opened from a call push** (`?call=`): the announcer now answers the `probe` by ringing again (before,
+  only the caller did, so a group call whose caller had left couldn't be rejoined from the push).
+- **Metadata.** No RPC, no new table, nothing stored. `call_answered` is not called for a late join (the
+  call was answered already). Realtime sees more small sealed blobs on ring topics of people who share
+  the conversation during a call, the same path and size class as rings; it already sees who is on the
+  `call:` topic and for how long. The payload is `{v, i, e, c, env}` like a ring (unit-tested: no author,
+  call id, key, kind or count on the wire). The key in a hint stays in memory, never in storage.
+
+### 14.2 In-call device picker
+
+"Microphone, camera and speaker" in the call controls (`CallDevices.tsx`): the microphone list, the
+camera (Front / Back on phones, the device list on computers), and the speaker where `setSinkId` exists
+(desktop Chrome/Edge/Firefox); in the Android app, Loudspeaker / Phone earpiece (`KithwallShell.setCallAudio`,
+a headset always wins). A choice switches at once and is remembered on this device (`devices.ts`, shared
+with "Test camera and microphone"; device ids never leave the device).
+
+- Switching uses `RTCRtpSender.replaceTrack` on every connection: no renegotiation; frame encryption is a
+  transform on the sender and the quality controller's limits are sender parameters, so both carry on
+  untouched (video re-applies its tier for the new capture size). Phones that can't open a second
+  camera or microphone while one is in use: the old one is released and the new one tried again; if that
+  fails, the previous device comes back (or the call carries on without video / muted, as before).
+- Devices coming and going (`devicechange`, debounced): the remembered device is used again when it
+  reappears (headset plugged back in), and a device that disappeared without its track ending falls back
+  to the default; a track that ends is recovered as before (§7). One device operation runs at a time.
+- The switch-camera button now flips front/back on phones and cycles cameras on computers (which report no
+  direction), and is remembered too.
+
+### 14.3 Ringing when an Android phone is locked
+
+**How call pushes reach the app (investigated).** The server sends the same `PushPayload` the service
+worker gets ("Dan is calling", `kind: 'call'`, tag `call:<chat>`, link `/messages/<chat>?call=<id>`),
+sealed with RFC 8291 to the app's own P-256 key; FCM carries `{kw: <ciphertext>}` (high priority, 45 s
+TTL), UnifiedPush the same as Web Push. The app decrypts it natively (`PushStore.decryptOwn` /
+the connector) and `Notifier` recognises a call by `kind`. So the phone recognises an incoming call
+without the server or the push provider learning anything new; the provider already saw a high-priority
+45 s push. Hidden chats still get only the generic "new activity" notice (no ringing), as before.
+
+**What it does now**
+
+- `Notifier.showCall`: a `CallStyle.forIncomingCall` notification on the `calls` channel whose ringtone
+  repeats (`FLAG_INSISTENT`) until the call stops ringing. Its full-screen intent is
+  `IncomingCallActivity`, a bare native screen over the lock screen (`showWhenLocked`, `turnScreenOn`, its
+  own task, excluded from recents, no WebView, the app's screenshot blocking applied). On Android 14+
+  without the full-screen permission (`canUseFullScreenIntent()` false) it's a high-priority heads-up
+  notification with Decline and Answer actions.
+- **Masked on the lock screen**: while the phone is locked with a PIN/pattern/password, both the
+  notification (its public version) and the screen say only "Incoming call" / "Incoming group call",
+  never who; the name appears once unlocked, as for every other lock-screen copy.
+- **Answer** unlocks first (`requestDismissKeyguard`; the app itself never shows over the lock screen) and
+  opens `/messages/<chat>?call=<id>&answer=1`. The page probes, the caller (or the announcer of a group
+  call already going on) rings this device again, and the engine accepts that ring at once
+  (`autoAnswer`, 30 s) or joins a call it already has a live hint for: straight into the call, no second
+  tap. Before, the full-screen intent opened the app itself, which on a locked phone was started behind
+  the keyguard and cancelled the notification on arrival, so the ringing stopped at once.
+- **Decline** stops ringing. When the page is running (in the background, unlocked), the decline is
+  forwarded to it (`KithwallPush` `call` event) and it sends the sealed decline, so the caller hears it
+  (`declineFromPush`).
+- **Stops ringing** when this device's engine stops ringing for that call (answered here or on my other
+  device, declined, cancelled by the caller, timed out: the engine calls `KithwallPush.cancelCall`),
+  when Answer or Decline is tapped, and when the caller's 45 s are up: the push now carries `ts` (the
+  call notice's own time, already known to the server) and the notification times out at
+  `ts + 45 s` (with slack for clock differences) instead of 45 s after a possibly late delivery. A repeat
+  push for the same call doesn't ring twice.
+
+**What it can't do without telling the server more, and what would be needed**
+
+- With the app **not running** (no page, no keys in memory), Decline can only stop ringing on this phone:
+  the native side holds no conversation or identity keys, so it can't send the sealed decline; the
+  caller's ring times out ("No answer"). Needed: keeping signalling keys natively (a much larger key
+  surface) or a server-side "declined" RPC (new metadata). Not done.
+- With the app not running, a **caller's cancel** or the call being **answered on my other device** can't
+  reach the phone (both travel only as sealed Realtime broadcasts); the notification then rings until the
+  caller's 45 s are up. An "answered elsewhere" push would be possible without new metadata (the server
+  already learns `ans` from `call_answered`), but needs a second push trigger and `push_plan` kind
+  scoped to the answering user; a cancel push would tell the server when calls are cancelled. Not done.
+- Play Console: *App content → Full-screen intent* must be declared ("calling app"; the permission was
+  already in the manifest, `05-native.md` §9).
+
+### 14.4 Verification (2026-11-01)
+
+- vitest `lib/calls/latejoin.test.ts` (sealed `live` round trip with nothing readable on the wire,
+  count/key validation, members only; machine `join` / `over`; one announcer and hand-over; targets; hint
+  expiry and refresh; following devices), plus the existing calls tests.
+- Browser (Playwright, system Chrome, fake mic/camera, dev server, local Supabase; three fresh passphrase
+  accounts in one group chat, one context each, Cat at 390 px): Ann video-calls, Ben answers, Cat
+  declines → Cat's list shows "Call in progress · 2 people" with Join, the header shows Join instead of
+  the call buttons → Cat joins: every device has two connected peer connections with audio and video
+  from both others, frame encryption (RTCRtpScriptTransform) on all three with 0 failures, Ann sees "Cat
+  Latejoin joined the call" → Ann switches microphone mid-call: the audio sender track is replaced on
+  both connections, the transform and the 32 kbps limit are unchanged, Ben keeps receiving and decrypting
+  (0 failures), the choice is stored; a microphone track that ends is recovered on both connections and
+  comes back on the remembered device → Cat leaves: the call goes on, Ben sees "… left the call", Cat is
+  offered Join again → Ann hangs up, Ben is alone and the call ends; Cat's Join disappears 0.1–0.2 s later
+  (`n = 0`) → every ring-topic broadcast is `{v, i, e, c, env}`; no kinds, SDP or fingerprints in any
+  captured Realtime REST payload. Opening `/messages/<chat>?call=<id>&answer=1` on a device that wasn't
+  ringing (the notification's Answer, app cold) gets it into the call without tapping Accept, and the
+  parameters are removed from the address bar.
+- Android: `compilePlayDebugJavaWithJavac` and `compileFossDebugJavaWithJavac` (JDK 21) pass. Not run
+  on a device or emulator: the full-screen screen over a real lock screen, the ringtone, Answer through
+  `requestDismissKeyguard`, Decline forwarding and the Android 14 fallback still need a phone (with FCM
+  or a UnifiedPush distributor).
+- Not verified: the device picker with several real microphones/cameras/speakers (the fake devices give
+  one camera; the picker hides lists with a single entry), front/back switching on a phone, Safari/Firefox.

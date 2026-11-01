@@ -13,6 +13,8 @@ const P = {
   minimize: <><path d="M4 14h6v6M20 10h-6V4" /><path d="M10 14 4 20M14 10l6-6" /></>,
   expand: <><path d="M14 4h6v6M10 20H4v-6" /><path d="M20 4l-6 6M4 20l6-6" /></>,
   shield: <><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z" /><path d="M9 12l2 2 4-4" /></>,
+  /** Devices (microphone, camera, speaker): two sliders. */
+  devices: <><path d="M4 7.5h8.5M17.5 7.5H20M4 16.5h2.5M11.5 16.5H20" /><circle cx="15" cy="7.5" r="2.5" /><circle cx="9" cy="16.5" r="2.5" /></>,
   /** Data saver: a gauge turned down. */
   saver: <><path d="M3.5 16.5a8.5 8.5 0 0 1 17 0" /><path d="M12 16.5 8.2 11.6" /><circle cx="12" cy="16.5" r="1.3" /><path d="M5.5 20h13" /></>,
 } satisfies Record<string, ReactElement>;

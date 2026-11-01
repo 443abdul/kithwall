@@ -14,6 +14,7 @@ import { cx } from '@/components/ui/cx';
 import { ConversationAvatar, PersonAvatar, useConversationTitle, useNameOf } from '@/components/messages/look';
 import { CallIcon, type CallIconName } from './CallIcon';
 import { CallCheck } from './CallCheck';
+import { CallDevices } from './CallDevices';
 
 // ------------------------------------------------------------------------------------------ helpers
 
@@ -61,8 +62,9 @@ function PeerAudio({ stream, sinkId }: { stream: MediaStream; sinkId: string }) 
     void a.play().catch(() => undefined);
   }, [stream]);
   useEffect(() => {
-    const a = ref.current as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null;
-    if (a?.setSinkId && sinkId) void a.setSinkId(sinkId).catch(() => undefined);
+    // '' is the system default: set it too, so a speaker that was pulled out (or a choice reset) takes effect.
+    const a = ref.current as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void>; sinkId?: string }) | null;
+    if (a?.setSinkId && (sinkId || a.sinkId)) void a.setSinkId(sinkId).catch(() => undefined);
   }, [sinkId]);
   return <audio ref={ref} autoPlay className="k-call-audio" />;
 }
@@ -101,6 +103,7 @@ function endKey(s: CallSnapshot): MessageKey {
     case 'failed': return 'calls.ended.failed';
     case 'no-media': return 'calls.ended.noMedia';
     case 'relay': return 'calls.ended.relay';
+    case 'over': return 'calls.ended.over';
     default: return 'calls.ended.ended';
   }
 }
@@ -121,6 +124,13 @@ function useStatus(s: CallSnapshot, peer: PeerView | null): string {
   if (s.m.phase === 'connecting') return t('calls.status.connecting');
   if (peer && peer.state === 'reconnecting') return t('calls.status.reconnecting');
   return duration;
+}
+
+/** "Dan joined the call" / "Dan left the call" (someone joining or leaving a call that's going on). */
+function useEventText(): (e: NonNullable<CallSnapshot['event']>) => string {
+  const t = useT();
+  const nameOf = useNameOf();
+  return (e) => t(e.kind === 'joined' ? 'calls.people.joined' : 'calls.people.left', { name: nameOf(e.userId) });
 }
 
 // ------------------------------------------------------------------------------------------ incoming
@@ -211,19 +221,6 @@ function SelfView({ s, grid }: { s: CallSnapshot; grid?: boolean }) {
   );
 }
 
-function useOutputs(): MediaDeviceInfo[] {
-  const [outs, setOuts] = useState<MediaDeviceInfo[]>([]);
-  useEffect(() => {
-    const supported = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
-    if (!supported || !navigator.mediaDevices?.enumerateDevices) return;
-    const load = () => void navigator.mediaDevices.enumerateDevices().then((d) => setOuts(d.filter((x) => x.kind === 'audiooutput' && x.deviceId !== 'communications')), () => undefined);
-    load();
-    navigator.mediaDevices.addEventListener?.('devicechange', load);
-    return () => navigator.mediaDevices.removeEventListener?.('devicechange', load);
-  }, []);
-  return outs;
-}
-
 function useHasTwoCameras(on: boolean): boolean {
   const [two, setTwo] = useState(false);
   useEffect(() => {
@@ -237,9 +234,10 @@ function InCall({ s }: { s: CallSnapshot }) {
   const t = useT();
   const nameOf = useNameOf();
   usePeopleVersion();
+  const eventText = useEventText();
   const title = useConversationTitle(s.conv);
   const [security, setSecurity] = useState(false);
-  const outputs = useOutputs();
+  const [devices, setDevices] = useState(false);
   const twoCams = useHasTwoCameras(s.cam);
   const group = s.peers.length > 1 || (!!s.conv && !s.conv.isDm && s.conv.members.length > 2);
   const main = s.peers[0] ?? null;
@@ -247,11 +245,6 @@ function InCall({ s }: { s: CallSnapshot }) {
   const ended = s.m.phase === 'ended';
   const hangRef = useRef<HTMLDivElement>(null);
   useEffect(() => { hangRef.current?.querySelector<HTMLButtonElement>('.is-danger')?.focus(); }, []);
-  const cycleOutput = () => {
-    if (outputs.length < 2) return;
-    const i = outputs.findIndex((o) => o.deviceId === s.sinkId);
-    calls.setSink(outputs[(i + 1) % outputs.length]!.deviceId);
-  };
   const who = group ? title : s.peers[0] ? nameOf(s.peers[0].userId) : title;
   const [check, setCheck] = useState(false);
   const detail = ended ? endDetail(s) : null;
@@ -272,6 +265,7 @@ function InCall({ s }: { s: CallSnapshot }) {
           <p className="k-call-status" aria-live="polite">{status}</p>
           {weak ? <p className="k-call-weak" role="status">{weak}</p> : null}
           {!ended && s.camError ? <p className="k-call-weak" role="status">{t('calls.camError')}</p> : null}
+          {!ended && s.event ? <p className="k-call-event">{eventText(s.event)}</p> : null}
         </div>
         <button type="button" className="k-call-topbtn k-call-lock" onClick={() => setSecurity(true)} aria-label={t('calls.security.open')} title={t('calls.security.open')}>
           <CallIcon name="shield" />
@@ -322,13 +316,14 @@ function InCall({ s }: { s: CallSnapshot }) {
         <CtlButton icon={s.mic ? 'mic' : 'micOff'} label={s.mic ? t('calls.mute') : t('calls.unmute')} pressed={!s.mic} onClick={() => calls.toggleMic()} />
         <CtlButton icon={s.cam ? 'video' : 'videoOff'} label={s.cam ? t('calls.cameraOff') : t('calls.cameraOn')} pressed={s.cam} onClick={() => void calls.toggleCam()} />
         {s.cam && twoCams ? <CtlButton icon="flip" label={t('calls.switchCamera')} onClick={() => void calls.switchCamera()} /> : null}
-        {outputs.length > 1 ? <CtlButton icon="speaker" label={t('calls.speaker')} onClick={cycleOutput} /> : null}
+        {!ended ? <CtlButton icon="devices" label={t('calls.devices.open')} onClick={() => setDevices(true)} /> : null}
         <CtlButton icon="saver" label={s.saver ? t('calls.saver.off') : t('calls.saver.on')} pressed={s.saver} onClick={() => calls.setSaver(!s.saver)} />
         <CtlButton icon="hangup" tone="danger" label={t('calls.hangup')} onClick={() => (ended ? calls.dismiss() : calls.hangup())} />
       </div>
 
       <SecurityPanel s={s} open={security} onClose={() => setSecurity(false)} />
       <CallCheck open={check} onClose={() => setCheck(false)} />
+      <CallDevices s={s} open={devices && !ended} onClose={() => setDevices(false)} />
     </div>
   );
 }
@@ -402,9 +397,11 @@ function CallBar({ s }: { s: CallSnapshot }) {
 
 export function CallScreens({ s }: { s: CallSnapshot }): ReactNode {
   const t = useT();
+  const eventText = useEventText();
   const phase = s.m.phase;
-  // The status line is itself aria-live; this only announces the moment the call connects.
-  const announce = phase === 'active' ? t('calls.announce.connected') : '';
+  // The status line is itself aria-live; this only announces the moment the call connects, and who
+  // joins or leaves later (also while the call is minimised).
+  const announce = phase === 'active' ? (s.event ? eventText(s.event) : t('calls.announce.connected')) : '';
   let body: ReactNode = null;
   if (phase === 'incoming') body = <Incoming s={s} />;
   else if (phase !== 'idle') body = s.minimized && phase !== 'ended' ? <CallBar s={s} /> : <InCall s={s} />;

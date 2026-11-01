@@ -116,6 +116,13 @@ export interface KithwallPushPlugin {
    * until a listener is attached, so a tap during page load isn't lost.
    */
   addListener(event: 'open', fn: (e: { url: string }) => void): Promise<PluginListenerHandle>;
+  /**
+   * Android, newer builds: "Decline" on an incoming-call notification while the page runs in the
+   * background, so the page can send the sealed decline (the native side has no keys). Not retained.
+   */
+  addListener(event: 'call', fn: (e: { action?: string; conv?: string; call?: string }) => void): Promise<PluginListenerHandle>;
+  /** Android, newer builds: take down the incoming-call notification / screen for this conversation. */
+  cancelCall?(opts: { conv: string }): Promise<void>;
 }
 
 /** Capacitor's built-in SystemBars plugin (Android): status / navigation bar icon colour. */

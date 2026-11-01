@@ -77,8 +77,21 @@
             android:exported="false"
             android:foregroundServiceType="microphone|camera" />
 
-        <!-- Declines an incoming call from its notification (closes the notification only). -->
+        <!-- Declines an incoming call from its notification (and, with the app running, sends the decline). -->
         <receiver android:name=".CallActionReceiver" android:exported="false" />
+
+        <!-- Incoming call over the lock screen: the call notification's full-screen intent. Its own task, so
+             the app (which never shows over the lock screen) isn't brought up with it; no app content in it. -->
+        <activity
+            android:name=".IncomingCallActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:theme="@style/AppTheme.IncomingCall" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

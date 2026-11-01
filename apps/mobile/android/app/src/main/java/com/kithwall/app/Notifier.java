@@ -27,11 +27,23 @@ import java.util.regex.Pattern;
  *  - only same-app paths can be opened;
  *  - a hidden chat gets the generic "You have new activity on Kithwall." with no sender and no link into it;
  *  - while Kithwall is on screen, message and call pushes are left to the app itself;
- *  - calls ring with a full-screen, call-style notification that expires after 45 s.
- * Lock-screen copies are always the generic text (VISIBILITY_PRIVATE with a public version).
+ *  - calls ring with a full-screen, call-style notification (IncomingCallActivity over the lock screen) that
+ *    stops when the caller's 45 s are up, when the call is answered, declined or cancelled on this device
+ *    (the page calls KithwallPush.cancelCall), or when Answer / Decline is tapped.
+ * Lock-screen copies are always the generic text (VISIBILITY_PRIVATE with a public version; for calls,
+ * "Incoming call" with no name).
  */
 final class Notifier {
     private Notifier() {}
+
+    static final String EXTRA_CONV = "kw_conv";
+    static final String EXTRA_CALL = "kw_call";
+    /** How long a call rings (lib/calls/engine.ts RING_MS). */
+    static final long RING_MS = 45_000;
+    private static final Pattern CALL_QUERY = Pattern.compile("[?&]call=([0-9a-fA-F-]{36})(?:&|$)");
+    static final Pattern UUID = Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+    /** Call notifications showing now: tag → call id (a repeated push for the same call doesn't ring again). */
+    private static final java.util.Map<String, String> ringing = new java.util.concurrent.ConcurrentHashMap<>();
 
     static final String CH_MESSAGES = "messages";
     static final String CH_CALLS = "calls";
@@ -110,13 +122,23 @@ final class Notifier {
         return s == null ? "" : s.length() > n ? s.substring(0, n) : s;
     }
 
-    private static PendingIntent openIntent(Context c, String path, String tag, int req) {
+    /** Opens the app at an in-app path (MainActivity checks the per-install token). */
+    static Intent openActivityIntent(Context c, String path, String tag) {
         Intent i = new Intent(c, MainActivity.class);
         i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         i.putExtra(EXTRA_URL, path);
         i.putExtra(EXTRA_TAG, tag);
         i.putExtra(EXTRA_TOKEN, installToken(c));
-        return PendingIntent.getActivity(c, req, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        return i;
+    }
+
+    private static PendingIntent openIntent(Context c, String path, String tag, int req) {
+        return PendingIntent.getActivity(c, req, openActivityIntent(c, path, tag), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /** The call's chat link with "&answer=1": the page accepts the call's ring without a second tap. */
+    static String answerPath(String path) {
+        return path + (path.indexOf('?') >= 0 ? "&" : "?") + "answer=1";
     }
 
     static void show(Context c, String json) {
@@ -144,7 +166,7 @@ final class Notifier {
         int req = tag.hashCode();
         PendingIntent open = openIntent(c, path, tag, req);
         if ("call".equals(kind)) {
-            showCall(c, body, tag, open, req);
+            showCall(c, body, tag, path, d.optLong("ts", 0), open, req);
             return;
         }
         String channel = "message".equals(kind) ? CH_MESSAGES : CH_ACTIVITY;
@@ -172,31 +194,88 @@ final class Notifier {
                 .setContentIntent(open);
     }
 
-    private static void showCall(Context c, String body, String tag, PendingIntent open, int req) {
-        // "Dan is calling" → caller name "Dan" for the call-style layout.
-        String who = body.endsWith(" is calling") ? body.substring(0, body.length() - " is calling".length()) : "Kithwall";
-        Person caller = new Person.Builder().setName(who).setImportant(true).build();
+    /**
+     * How much of a call's ring is left, from when the call started (`ts`, the server's time of the call
+     * notice): 0 = over, don't ring. Clocks differ between phones and the server, so a little slack: a
+     * push that looks up to 15 s too old still rings for 15 s, and a clock that runs behind rings 45 s.
+     */
+    static long ringLeft(long ts, long now) {
+        if (ts <= 0) return RING_MS;
+        long age = now - ts;
+        if (age > RING_MS + 15_000) return 0;
+        return Math.max(15_000, Math.min(RING_MS, RING_MS - age));
+    }
+
+    /** The call id in a call push's link (/messages/<chat>?call=<id>), or null. */
+    static String callIdOf(String path) {
+        Matcher m = CALL_QUERY.matcher(path);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private static void showCall(Context c, String body, String tag, String path, long ts, PendingIntent open, int req) {
+        String conv = conversationOf(path, tag);
+        String call = callIdOf(path);
+        long left = ringLeft(ts, System.currentTimeMillis());
+        if (conv == null || call == null || left <= 0) return;
+        if (call.equals(ringing.get(tag)) && isShowing(c, tag)) return; // the same call again: it's ringing already
+        ringing.put(tag, call);
+        // "Dan is calling" / "Dan is calling a group conversation" → "Dan" for the call-style layout.
+        boolean group = body.endsWith(" is calling a group conversation");
+        String suffix = group ? " is calling a group conversation" : " is calling";
+        String who = body.endsWith(suffix) ? body.substring(0, body.length() - suffix.length()) : null;
+        String incoming = c.getString(group ? R.string.kw_call_group : R.string.kw_call_incoming);
+        Person caller = new Person.Builder().setName(who != null ? who : c.getString(R.string.app_name)).setImportant(true).build();
+
         Intent decline = new Intent(c, CallActionReceiver.class);
         decline.putExtra(EXTRA_TAG, tag);
+        decline.putExtra(EXTRA_CONV, conv);
+        decline.putExtra(EXTRA_CALL, call);
         PendingIntent declinePi = PendingIntent.getBroadcast(c, req, decline, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        NotificationCompat.Builder b = base(c, CH_CALLS, "Kithwall", body, open)
+        // Answer: straight into the call (the page accepts the ring itself, lib/calls/engine.ts probe()).
+        PendingIntent answerPi = openIntent(c, answerPath(path), tag, req + 1);
+        Intent screen = new Intent(c, IncomingCallActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION)
+                .putExtra(EXTRA_TAG, tag).putExtra(EXTRA_URL, path).putExtra(EXTRA_CONV, conv).putExtra(EXTRA_CALL, call)
+                .putExtra(IncomingCallActivity.EXTRA_NAME, who).putExtra(IncomingCallActivity.EXTRA_GROUP, group)
+                .putExtra(IncomingCallActivity.EXTRA_DEADLINE, System.currentTimeMillis() + left);
+        PendingIntent screenPi = PendingIntent.getActivity(c, req + 2, screen, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+
+        // On a locked phone: "Incoming call" only, never who (the same rule as every other lock-screen copy).
+        NotificationCompat.Builder pub = new NotificationCompat.Builder(c, CH_CALLS)
+                .setSmallIcon(R.drawable.ic_stat_kithwall)
+                .setContentTitle(c.getString(R.string.app_name))
+                .setContentText(incoming)
+                .setCategory(NotificationCompat.CATEGORY_CALL);
+        NotificationCompat.Builder b = base(c, CH_CALLS, who != null ? who : c.getString(R.string.app_name), incoming, open)
+                .setPublicVersion(pub.build())
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setOngoing(true)
                 .setAutoCancel(true)
-                .setTimeoutAfter(45_000);
+                .setTimeoutAfter(left);
         // Call style needs a full-screen intent (or a foreground service); Android 14+ only allows those
         // when the person hasn't withdrawn "full-screen notifications" for the app. Otherwise: a plain
-        // high-priority notification with the same actions.
+        // high-priority (heads-up) notification with the same Decline / Answer actions.
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         boolean fullScreen = Build.VERSION.SDK_INT < 34 || (nm != null && nm.canUseFullScreenIntent());
         if (fullScreen) {
-            b.setFullScreenIntent(open, true);
-            b.setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, declinePi, open));
+            b.setFullScreenIntent(screenPi, true);
+            b.setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, declinePi, answerPi));
         } else {
-            b.addAction(0, "Decline", declinePi);
-            b.addAction(0, "Open", open);
+            b.addAction(0, c.getString(R.string.kw_call_decline), declinePi);
+            b.addAction(0, c.getString(R.string.kw_call_answer), answerPi);
         }
-        post(c, tag, b.build());
+        android.app.Notification n = b.build();
+        n.flags |= android.app.Notification.FLAG_INSISTENT; // the ringtone repeats until the call stops ringing
+        post(c, tag, n);
+    }
+
+    private static boolean isShowing(Context c, String tag) {
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (nm == null) return false;
+        for (android.service.notification.StatusBarNotification s : nm.getActiveNotifications()) {
+            if (tag.equals(s.getTag())) return true;
+        }
+        return false;
     }
 
     private static void post(Context c, String tag, android.app.Notification n) {
@@ -208,10 +287,17 @@ final class Notifier {
     }
 
     static void cancel(Context c, String tag) {
-        if (tag != null) NotificationManagerCompat.from(c).cancel(tag, 0);
+        if (tag == null) return;
+        NotificationManagerCompat.from(c).cancel(tag, 0);
+        if (CALL_TAG.matcher(tag).matches()) {
+            ringing.remove(tag);
+            IncomingCallActivity.close(tag);
+        }
     }
 
     static void cancelAll(Context c) {
         NotificationManagerCompat.from(c).cancelAll();
+        ringing.clear();
+        IncomingCallActivity.close(null);
     }
 }

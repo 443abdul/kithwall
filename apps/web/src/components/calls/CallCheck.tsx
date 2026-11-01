@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { getCallDevices, mediaErr, micConstraints, setCallDevices, type MediaErr } from '@/lib/calls/devices';
 
-function DeviceSelect({ label, value, devices, onChange }: { label: string; value: string; devices: MediaDeviceInfo[]; onChange: (id: string) => void }) {
+/** One device list (shown only when there is a choice), with "Default" first. Also used by CallDevices. */
+export function DeviceSelect({ label, value, devices, onChange }: { label: string; value: string; devices: MediaDeviceInfo[]; onChange: (id: string) => void }) {
   const t = useT();
   const id = useId();
   if (devices.length < 2) return null;

@@ -11,6 +11,8 @@ import { useKeyringVersion } from '@/lib/hooks';
 import { usePeopleVersion } from '@/lib/people';
 import { listConversations, readMessage, type ConversationSummary } from '@/lib/messages';
 import { isArchived, useMessagesPrefs } from '@/lib/chat/prefs';
+import { useLiveCall } from '@/lib/calls/live';
+import { LiveCallJoin } from '@/components/calls/LiveCall';
 import { rekeyWhereNeeded } from '@/lib/chat/live';
 import { useHiddenChats } from '@/lib/safety/hidden';
 import { Icon } from '@/components/ui/Icon';
@@ -51,6 +53,8 @@ function Row({ c, active, pinned, filter }: { c: ConversationSummary; active: bo
   const title = useConversationTitle(c);
   const nameOf = useNameOf();
   const when = useTimeLabel();
+  // A group call going on here that I'm not in (docs/v2/04-calls.md §14): say so, with a Join button.
+  const live = useLiveCall(c.id);
   let preview = '';
   if (c.last) {
     const d = readMessage(c, c.last);
@@ -61,7 +65,7 @@ function Row({ c, active, pinned, filter }: { c: ConversationSummary; active: bo
   } else preview = t('messages.preview.empty');
   if (!matches(filter, title, preview)) return null;
   return (
-    <li>
+    <li className={live ? 'k-chat-row-live' : undefined}>
       <Link href={`/messages/${c.id}`} className={cx('k-chat-row', c.unread && 'is-unread')} aria-current={active ? 'page' : undefined}>
         <ConversationAvatar c={c} size={48} />
         <span className="k-chat-row-body">
@@ -71,12 +75,15 @@ function Row({ c, active, pinned, filter }: { c: ConversationSummary; active: bo
             <time className="k-chat-row-time" dateTime={c.last?.created_at ?? c.last_message_at}>{when(c.last?.created_at ?? c.last_message_at)}</time>
           </span>
           <span className="k-chat-row-bottom">
-            <span className="k-chat-row-preview">{preview}</span>
+            {live ? (
+              <span className="k-chat-row-preview k-chat-row-call">{t('calls.live.title')} · {t('calls.live.people', { count: live.n })}</span>
+            ) : <span className="k-chat-row-preview">{preview}</span>}
             {pinned ? <span className="k-chat-row-pin" title={t('messages.pinned')}><ChatIcon name="pin" size={16} /></span> : null}
             {c.unread ? <span className="k-chat-row-dot" role="img" aria-label={t('messages.unread')} /> : null}
           </span>
         </span>
       </Link>
+      {live ? <LiveCallJoin convId={c.id} variant="row" /> : null}
     </li>
   );
 }

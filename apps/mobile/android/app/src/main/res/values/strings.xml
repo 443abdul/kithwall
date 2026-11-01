@@ -7,4 +7,9 @@
     <string name="kw_download_saved">Saved to Downloads: %1$s</string>
     <string name="kw_download_started">Downloading %1$s</string>
     <string name="kw_download_failed">Couldn’t save the file</string>
+    <!-- Incoming calls (Notifier, IncomingCallActivity). -->
+    <string name="kw_call_incoming">Incoming call</string>
+    <string name="kw_call_group">Incoming group call</string>
+    <string name="kw_call_answer">Answer</string>
+    <string name="kw_call_decline">Decline</string>
 </resources>

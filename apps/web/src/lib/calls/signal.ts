@@ -18,6 +18,8 @@ export const MAX_SIGNAL_AGE_MS = 90_000;
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DEV_RE = /^[A-Za-z0-9_-]{6,32}$/;
 const MAX_SDP = 64 * 1024;
+/** Upper bound for a `live` participant count (calls are capped at 8; a little slack for devices). */
+const MAX_LIVE_PEOPLE = 32;
 
 /** One device in a call: "<user id>:<random per-page device id>". */
 export type Endpoint = string;
@@ -70,7 +72,14 @@ export type SignalBody =
   | { k: 'restart' }
   /** "Please renegotiate" (no ICE restart): the answering side wants a different Opus packet time, or RED on/off. */
   | { k: 'reneg'; red?: boolean }
-  | { k: 'leave' };
+  | { k: 'leave' }
+  /**
+   * Late join (docs §14), on the per-person ring topic of conversation members who aren't in the call:
+   * "this call is going on, with `n` people". Carries the per-call frame key (as `ring` did for the same
+   * people), so tapping Join can enter the call at once. `n` = 0: the call is over. Sent by one participant
+   * when the roster changes and every LIVE_MS while it lasts; older clients drop it as malformed.
+   */
+  | { k: 'live'; n: number; video: boolean; key: string };
 
 export type SignalKind = SignalBody['k'];
 
@@ -135,6 +144,8 @@ function validBody(b: unknown): b is SignalBody {
   const sdp = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= MAX_SDP;
   switch (x.k) {
     case 'ring': return bool(x.video) && typeof x.key === 'string' && /^[A-Za-z0-9_-]{43}$/.test(x.key);
+    case 'live': return Number.isInteger(x.n) && (x.n as number) >= 0 && (x.n as number) <= MAX_LIVE_PEOPLE
+      && bool(x.video) && typeof x.key === 'string' && /^[A-Za-z0-9_-]{43}$/.test(x.key);
     case 'join': case 'here': return bool(x.fe) && bool(x.video) && (x.tr === undefined || bool(x.tr));
     case 'offer': case 'answer': return sdp(x.sdp) && bool(x.fe) && (x.tr === undefined || bool(x.tr));
     case 'cand': return validCandidates(x);
