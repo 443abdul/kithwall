@@ -236,12 +236,13 @@ begin
   return null;
 end $$;
 
--- Backfill under a lock so no sign-up slips between the backfill and the trigger.
-lock table public.profiles in share row exclusive mode;
-
+-- Backfill under a lock so no sign-up slips between the backfill and the trigger. The lock is taken inside
+-- the DO block (a bare LOCK TABLE is refused when the CLI sends the file as one implicit transaction) and is
+-- held until the migration commits, i.e. past the trigger creation below.
 do $$
 declare r record;
 begin
+  lock table public.profiles in share row exclusive mode;
   for r in select p.id, p.sign_pub, p.kx_pub, p.key_version from public.profiles p order by p.created_at, p.id loop
     perform kw.kt_publish(r.id, r.sign_pub, r.kx_pub, r.key_version);
   end loop;
