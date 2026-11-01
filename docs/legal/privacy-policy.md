@@ -444,7 +444,8 @@ e-privacy rules, strictly necessary storage does not need consent, so **we show 
 | Sign-in session token (and refresh token) | Your browser (local storage and/or a first-party cookie) | Keeps you signed in | Until you log out; access tokens expire after 1 hour and are refreshed |
 | Wrapped account key ("Keep me logged in" only) | IndexedDB | Lets the app unlock without your passkey or passphrase. It is locked with a device key that the browser will not let be exported | Until you log out |
 | Encrypted local cache | IndexedDB | Makes the app fast; content is encrypted with a key from your account | Until you log out |
-| Service worker | Your browser | Receives push notifications (if you turn them on) and shows them. It **caches nothing** — no pages, no data | Until you clear site data |
+| Service worker | Your browser | Receives push notifications (if you turn them on) and shows them. While you are signed in it also keeps the app's own public files (program code, icons and a blank offline start page, the same for everyone) so Kithwall can open without the internet. It never stores your posts, messages or any other data | The app's files: until you log out (or a newer version replaces them); otherwise until you clear site data |
+| Offline kit (Kit Drop) | IndexedDB | Lets you open Kithwall and use Kit Drop with no internet: posts you wrote offline and Kit Drop files you received (end-to-end encrypted, as on the server), your key bundle as stored on the server, and the keys and contacts' public keys this device already uses, encrypted with a key from your account | Until you log out |
 | Push settings flags | Local storage | Whether you turned push on for this device, and when you dismissed the "turn on notifications" card | Until you clear site data |
 
 The app also locks itself after 30 minutes of inactivity (you can change this), which wipes keys

@@ -8,6 +8,7 @@ import { PushManager } from '@/components/push/PushManager';
 import { InstallRuntime } from '@/components/install/InstallRuntime';
 import { NativeRuntime } from '@/components/native/NativeRuntime';
 import { NetRuntime } from '@/components/net/NetRuntime';
+import { OfflineRuntime } from '@/components/net/OfflineRuntime';
 import { invalidateSoon } from '@/lib/invalidate';
 import { people } from '@/lib/people';
 import { releaseFileUrls } from '@/lib/media';
@@ -27,6 +28,7 @@ export function Providers({ children }: { children: ReactNode; nonce?: string })
       <InstallRuntime />
       <NativeRuntime />
       <NetRuntime />
+      <OfflineRuntime />
       {children}
     </QueryClientProvider>
   );

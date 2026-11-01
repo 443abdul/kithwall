@@ -2522,5 +2522,20 @@
   "kitdrop.fromVerified": "From {name}, signature checked · {when}",
   "kitdrop.fromUnverified": "Claims to be from {name}, signature not checked · {when}",
   "kitdrop.forget": "Remove",
-  "kitdrop.readableCount": "{total, plural, one {You can read {count} of # post} other {You can read {count} of # posts}}"
+  "kitdrop.readableCount": "{total, plural, one {You can read {count} of # post} other {You can read {count} of # posts}}",
+  "kitdrop.videoOffline": "No connection. A video can't wait in the outbox (it's too big to keep and pass on): post it when you're back online, or post photos instead.",
+  "kitdrop.waitingMedia": "Photos wait here too, already encrypted. Videos can't: they need a connection.",
+  "kitdrop.mediaNote": "Photos go along in a smaller size, up to 6 MB per file. Videos don't.",
+  "kitdrop.savedPhotos": "{count, plural, one {# photo included.} other {# photos included.}}",
+  "kitdrop.photosLeft": "{count, plural, one {# photo left out (no room in the file, or not on this device).} other {# photos left out (no room in the file, or not on this device).}}",
+  "kitdrop.videosLeft": "{count, plural, one {Videos aren't carried: # post goes without its video.} other {Videos aren't carried: # posts go without their videos.}}",
+  "kitdrop.noVideo": "This post has a video. Videos aren't carried in Kit Drop files; it plays once you're online.",
+  "offline.title": "You're offline",
+  "offline.shellBody": "No connection, so Kithwall opened from this phone. Posts you write wait here, already encrypted, and go out by themselves later. You can make and open Kit Drop files.",
+  "offline.backOnline": "You're back online.",
+  "offline.openKithwall": "Open Kithwall",
+  "offline.tryAgain": "Try again",
+  "offline.signedOut": "Kithwall needs a connection to sign in. Once you're signed in and have opened it with a connection, it can open here without one too.",
+  "offline.unavailable": "This device doesn't have what it needs to open your account without a connection yet. Open Kithwall once with a connection, then it works offline too.",
+  "offline.nothingLost": "Nothing is lost: what was already sent waits, end-to-end encrypted, on the server until you're back."
 }

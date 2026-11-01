@@ -15,6 +15,7 @@ import { sb, must } from './supabase';
 import { coalescer, droppedPaths, staleInfos, type InfoStamp } from './peopleSync';
 import { openExtra } from './social/profileTiers';
 import type { ProfileInfo, ProfileRow } from './types';
+import { knownOffline } from './net/offline';
 
 export interface ProfileInfoRow extends InfoStamp { envelope: Envelope }
 
@@ -24,6 +25,8 @@ export interface Person extends ProfileRow {
 }
 
 type KeyLookup = (aud: string, epoch: number) => Uint8Array | null;
+export interface PeopleSnapshot { rows: { row: ProfileRow; trust: SignerTrust | null }[]; infos: ProfileInfoRow[] }
+const MAX_SNAPSHOT = 3000;
 export type SignerTrust = 'self' | 'new' | 'pinned' | 'vouched' | 'unvouched';
 export type TrustResolver = (rows: { id: string; s: string; x: string }[]) => Promise<Map<string, { s: string; x: string; trust: SignerTrust }>>;
 
@@ -101,8 +104,37 @@ class People {
     return { ...row, info, name: info?.name || row.display_name_public || row.username };
   }
 
+  /**
+   * For the offline snapshot (lib/keys/offline): the rows as this device trusts them (identity keys already
+   * resolved through the pins) and their sealed profile info.
+   */
+  snapshot(): PeopleSnapshot {
+    const rows = [...this.rows.values()].slice(0, MAX_SNAPSHOT);
+    return {
+      rows: rows.map((r) => ({ row: r, trust: this.trustOf.get(r.id) ?? null })),
+      infos: rows.map((r) => this.infoRows.get(r.id)).filter((x): x is ProfileInfoRow => !!x),
+    };
+  }
+
+  /**
+   * Opened without a connection: take the rows trusted the last time this device was online. They bypass
+   * the resolver on purpose (it needs the vault, i.e. the server); the keys in them are the resolved ones.
+   */
+  restore(snap: PeopleSnapshot) {
+    for (const { row, trust } of snap.rows) {
+      if (!row?.id || typeof row.sign_pub !== 'string') continue;
+      this.rows.set(row.id, row);
+      if (trust) this.trustOf.set(row.id, trust); else this.trustOf.delete(row.id);
+      this.infos.delete(row.id);
+    }
+    for (const r of snap.infos) if (r?.user_id && this.rows.has(r.user_id)) this.infoRows.set(r.user_id, r);
+    this.bump();
+  }
+
   /** Fetch any missing profile rows (and their encrypted info) in batches. */
   async ensure(ids: Iterable<string>): Promise<void> {
+    // Opened offline: don't wait on requests that can't succeed; people not on this device stay "loading".
+    if (knownOffline()) return;
     const missing = [...new Set(ids)].filter((id) => id && !this.rows.has(id) && !this.inflight.has(id));
     const waits = [...new Set(ids)].map((id) => this.inflight.get(id)).filter(Boolean) as Promise<void>[];
     if (missing.length) {

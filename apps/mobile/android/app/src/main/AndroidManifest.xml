@@ -69,6 +69,24 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="${kwHost}" />
             </intent-filter>
+
+            <!-- Kit Drop files (docs/v2/08-censorship.md §5, KwKitDrop): "Open with" from Files, Downloads or
+                 Quick Share, and the share sheet. A MIME type without a scheme matches content: URIs. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.kithwall.kitdrop+json" />
+            </intent-filter>
+            <!-- Most apps type a .kwd file by its extension, which Android doesn't know: it arrives as
+                 application/octet-stream or application/json. KwKitDrop checks the content before opening it. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
         </activity>
 
         <!-- "Call in progress" while a call is connected (microphone / camera keep working in the background). -->

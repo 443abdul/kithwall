@@ -28,6 +28,10 @@
   ],
   "shortcuts": [
     { "name": "Messages", "url": "/messages", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
-    { "name": "Activity", "url": "/activity", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+    { "name": "Activity", "url": "/activity", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Kit Drop", "url": "/you/kitdrop", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ],
+  "file_handlers": [
+    { "action": "/you/kitdrop", "accept": { "application/vnd.kithwall.kitdrop+json": [".kwd"] } }
   ]
 }

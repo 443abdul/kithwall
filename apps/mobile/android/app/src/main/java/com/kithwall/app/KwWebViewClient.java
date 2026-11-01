@@ -26,10 +26,26 @@ class KwWebViewClient extends BridgeWebViewClient {
 
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-        if (holdNetwork) {
-            return new WebResourceResponse("text/plain", "utf-8", 503, "Waiting for Tor", null, new java.io.ByteArrayInputStream(new byte[0]));
-        }
+        if (holdNetwork) return held();
         return super.shouldInterceptRequest(view, request);
+    }
+
+    /** The answer to every request while waiting for Tor (page and service worker alike). */
+    static WebResourceResponse held() {
+        return new WebResourceResponse("text/plain", "utf-8", 503, "Waiting for Tor", null, new java.io.ByteArrayInputStream(new byte[0]));
+    }
+
+    /**
+     * Capacitor has just loaded the bundled offline page. If this origin's service worker keeps the offline
+     * shell (docs/v2/08-censorship.md §5), load it again with the origin, so it offers "Open Kit Drop"
+     * (apps/mobile/scripts/prepare.mjs); `file=1` when a Kit Drop file handed to the app is waiting.
+     */
+    private void offerOfflineShell(WebView view) {
+        String origin = bridge.getServerUrl();
+        String error = bridge.getErrorUrl();
+        if (origin == null || error == null || bridge.getActivity() == null) return;
+        if (!KithwallShellPlugin.offlineShellReady(bridge.getActivity(), origin)) return;
+        view.loadUrl(error + "?shell=" + android.net.Uri.encode(origin.replaceAll("/+$", "")) + (KwKitDrop.hasPending() ? "&file=1" : ""));
     }
 
     private static final String TAG = "KwWebView";
@@ -60,6 +76,7 @@ class KwWebViewClient extends BridgeWebViewClient {
         if (BuildConfig.DEBUG) Log.w(TAG, "main-frame error " + code + " " + error.getDescription() + " " + request.getUrl());
         if (isOffline(code, String.valueOf(error.getDescription()))) {
             super.onReceivedError(view, request, error);
+            offerOfflineShell(view);
             // Maybe the usual address is blocked here: try the mirrors (KwNet, docs/v2/08-censorship.md).
             if (bridge.getActivity() != null) KwNet.failover(bridge.getActivity());
         }
@@ -72,6 +89,7 @@ class KwWebViewClient extends BridgeWebViewClient {
         if (BuildConfig.DEBUG) Log.w(TAG, "main-frame HTTP " + status + " " + request.getUrl());
         if (status == 502 || status == 503 || status == 504) {
             super.onReceivedHttpError(view, request, response);
+            offerOfflineShell(view);
             if (bridge.getActivity() != null) KwNet.failover(bridge.getActivity());
         }
     }

@@ -5,6 +5,10 @@ import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.webkit.ServiceWorkerClient;
+import android.webkit.ServiceWorkerController;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
@@ -18,7 +22,8 @@ import com.getcapacitor.WebViewListener;
 
 /**
  * Kithwall for Android: a Capacitor WebView showing the deployed web app (docs/v2/05-native.md), plus four
- * app-local plugins. Opening a notification or a verified Kithwall link goes to that path in the app.
+ * app-local plugins. Opening a notification or a verified Kithwall link goes to that path in the app; a Kit
+ * Drop file opened from outside (share sheet, "Open with", Quick Share) goes to the Kit Drop page (KwKitDrop).
  *
  * The app frame (docs/v2/05-native.md §1, "App frame"):
  *  - the system splash (Android 12+ SplashScreen API, back-ported by core-splashscreen) stays up until the
@@ -107,6 +112,14 @@ public class MainActivity extends BridgeActivity {
         s.setDisplayZoomControls(false);
         s.setMediaPlaybackRequiresUserGesture(false); // calls: remote audio/video starts without a second tap
         bridge.setWebViewClient(new KwWebViewClient(bridge));
+        // The offline shell's service worker (docs/v2/08-censorship.md §5) fetches outside the WebViewClient:
+        // its requests are held back for Tor exactly like the page's.
+        ServiceWorkerController.getInstance().setServiceWorkerClient(new ServiceWorkerClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebResourceRequest request) {
+                return KwWebViewClient.holdNetwork ? KwWebViewClient.held() : null;
+            }
+        });
         w.setWebChromeClient(new KwChromeClient(bridge));
         w.setDownloadListener(new KwDownloads(this, bridge));
         bridge.addWebViewListener(new WebViewListener() {
@@ -151,6 +164,14 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         String path = pathFrom(intent);
         if (path == null) return;
+        WebView w = bridge == null ? null : bridge.getWebView();
+        String current = w == null ? null : w.getUrl();
+        if (current != null && current.contains("/offline.html")) {
+            // No connection right now: a Kit Drop file opens in the offline shell if this origin keeps one,
+            // otherwise it waits (KwKitDrop) until the Kit Drop page next loads.
+            if (path.startsWith("/you/kitdrop") && KithwallShellPlugin.offlineShellReady(this, bridge.getServerUrl())) load("/offline");
+            return;
+        }
         PluginHandle h = bridge == null ? null : bridge.getPlugin("KithwallPush");
         if (h != null && h.getInstance() instanceof KithwallPushPlugin) {
             // The page is running: navigate inside it, keeping its unlocked keys in memory.
@@ -181,9 +202,21 @@ public class MainActivity extends BridgeActivity {
         super.onPause();
     }
 
-    /** The in-app path from a notification tap or a verified https://<origin>/… link, else null. */
+    /**
+     * The in-app path from a notification tap, a verified https://<origin>/… link, or a Kit Drop file opened
+     * from outside (KwKitDrop: copied now, opened by the Kit Drop page), else null.
+     */
     private String pathFrom(Intent intent) {
         if (intent == null) return null;
+        Uri kitDrop = KwKitDrop.uriFrom(intent);
+        if (kitDrop != null) {
+            String id = KwKitDrop.receive(this, kitDrop);
+            // Handled once: not again when the activity is recreated with the same intent.
+            intent.setAction(null);
+            intent.setData(null);
+            intent.removeExtra(Intent.EXTRA_STREAM);
+            return "/you/kitdrop?incoming=" + id;
+        }
         String extra = intent.getStringExtra(Notifier.EXTRA_URL);
         if (extra != null) {
             // Only our own notification taps carry the per-install token (security review L15): another app

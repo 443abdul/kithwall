@@ -77,6 +77,20 @@ export interface KithwallShellPlugin {
   setCallAudio(opts: { active: boolean; speaker?: boolean; video?: boolean }): Promise<void>;
   /** A screenshot (iOS; Android 14+) or screen recording started (iOS) on this device. Local notice only: nobody else is told. */
   addListener(event: 'screenshot', fn: (e: { kind: 'screenshot' | 'recording' }) => void): Promise<PluginListenerHandle>;
+  /**
+   * Android: whether this origin's service worker keeps the offline shell (lib/net/shell.ts), so the bundled
+   * offline page can offer "Open Kit Drop" (docs/v2/08-censorship.md §5).
+   */
+  setOfflineShell(opts: { ready: boolean }): Promise<void>;
+  /**
+   * Android: a Kit Drop file opened in Kithwall from outside (share sheet, "Open with", Quick Share), copied into
+   * the app's cache (lib/native/kitdrop.ts). Waits for the copy to finish; {} when there is none.
+   */
+  kitdropPending(): Promise<{ id?: string; name?: string; size?: number }>;
+  /** Up to 768 KiB of that file from `offset`, base64. */
+  kitdropRead(opts: { id: string; offset: number }): Promise<{ data: string }>;
+  /** Delete the copy (opened, or refused). */
+  kitdropDone(opts: { id: string }): Promise<void>;
 }
 
 export type NativePushProvider = 'fcm' | 'apns' | 'unifiedpush';

@@ -1,7 +1,19 @@
-/* Kithwall service worker — Web Push only.
+/* Kithwall service worker — Web Push, and the offline app shell.
  *
- * - No fetch handler and no caches: nothing a user sees or sends is ever stored here. Every request
- *   goes straight to the network exactly as without a service worker.
+ * - Offline app shell (Kit Drop, docs/v2/08-censorship.md §5, privacy review there): once a signed-in page
+ *   asks for it, this keeps ONE cache per build ("kw-shell-<build>", the build comes from the registration
+ *   URL /sw.js?v=<build>) holding only static, non-personal files: the /offline entry point (fetched
+ *   without cookies; the same document for everyone), the /_next/static files it and the app use, and
+ *   icons / theme.js / the manifest. Never an API response, a Supabase request, user data or any other
+ *   page's HTML. Navigations always go to the network; only when the network can't be reached does the
+ *   browser get the shell (/offline), which opens the account from what the app keeps on the device.
+ *   Old builds' caches are deleted on activation; the app deletes this one on sign-out, the panic wipe
+ *   deletes everything.
+ * - The cached shell is served with a FRESH CSP nonce on every load: the page's nonce attributes and the
+ *   CSP header are rewritten together here, so a stored nonce is never reused (src/proxy.ts mints one per
+ *   request the same way).
+ * - In the Kithwall app (/sw.js?…&app=1) navigations are never answered here: a failed page load must reach
+ *   the app (bundled offline page, mirror failover); that offline page links to /offline instead.
  * - Push payloads are "who + what" ("dan sent you a message"), encrypted end to end between our
  *   server and this browser (RFC 8291); the push service in between can't read them.
  * - Clicking a notification focuses an open Kithwall tab and asks it to navigate in-app (keeping
@@ -18,8 +30,187 @@
 const ICON = '/icons/icon-192.png';
 const BADGE = '/icons/badge-72.png';
 
-self.addEventListener('install', () => { self.skipWaiting(); });
-self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()); });
+// ---------------------------------------------------------------------------------------
+// Offline app shell
+const PARAMS = new URL(self.location.href).searchParams;
+const BUILD = (PARAMS.get('v') || 'dev').replace(/[^\w.-]/g, '').slice(0, 80) || 'dev';
+const IN_APP = PARAMS.get('app') === '1';
+// `next dev` serves changing files under stable names: never cache-first there.
+const DEV = PARAMS.get('dev') === '1';
+const SHELL_PREFIX = 'kw-shell-';
+const SHELL_CACHE = SHELL_PREFIX + BUILD;
+const SHELL_PATH = '/offline';
+/** Non-hashed static files (network first, cached copy when offline). */
+const PLAIN_FILES = ['/theme.js', '/manifest.webmanifest', '/icon.svg', '/icon-maskable.svg', '/icons/icon-192.png', '/icons/badge-72.png', '/icons/apple-touch-icon.png'];
+/** Headers kept with the shell document. */
+const SHELL_HEADERS = ['content-security-policy', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'permissions-policy',
+  'cross-origin-opener-policy', 'cross-origin-resource-policy', 'strict-transport-security'];
+const NONCE_RE = /'nonce-([A-Za-z0-9+/=]+)'/;
+
+const isHashedStatic = (url) => url.pathname.indexOf('/_next/static/') === 0;
+const isPlainStatic = (url) => PLAIN_FILES.indexOf(url.pathname) >= 0;
+
+/** Is this build's shell stored? (The document is stored last; a cache without it doesn't count.) */
+const hasShell = () => caches.match(SHELL_PATH, { cacheName: SHELL_CACHE }).then((r) => !!r, () => false);
+
+/** Did this device keep a shell for any build (so a new build should fetch its own)? */
+async function shellEnabled() {
+  try {
+    for (const k of await caches.keys()) {
+      if (k.indexOf(SHELL_PREFIX) === 0 && await caches.match(SHELL_PATH, { cacheName: k })) return true;
+    }
+  } catch { /* no Cache Storage */ }
+  return false;
+}
+
+/**
+ * Fetch this build's shell: /offline without cookies (a static page, the same for everyone), then every
+ * /_next/static file it references, then the plain static files. The document is stored last, so a stored
+ * shell always has its files.
+ */
+async function fillShell() {
+  const res = await fetch(SHELL_PATH, { credentials: 'omit', cache: 'no-store', redirect: 'error' });
+  const csp = res.headers.get('content-security-policy') || '';
+  if (!res.ok || res.type !== 'basic' || (res.headers.get('content-type') || '').indexOf('text/html') !== 0 || !NONCE_RE.test(csp)) {
+    throw new Error('shell unavailable');
+  }
+  const html = await res.text();
+  const files = new Set(PLAIN_FILES);
+  const re = /\/_next\/static\/[^"'\s\\<>()]+/g;
+  for (let m = re.exec(html); m; m = re.exec(html)) files.add(m[0]);
+  const cache = await caches.open(SHELL_CACHE);
+  await Promise.all([...files].map(async (u) => {
+    try {
+      if (await cache.match(u)) return;
+      const r = await fetch(u, { credentials: 'omit' });
+      if (r.ok && r.type === 'basic') await cache.put(u, r);
+    } catch { /* one missing file must not stop the rest */ }
+  }));
+  const headers = new Headers({ 'content-type': 'text/html; charset=utf-8' });
+  for (const h of SHELL_HEADERS) { const v = res.headers.get(h); if (v) headers.set(h, v); }
+  await cache.put(SHELL_PATH, new Response(html, { status: 200, headers }));
+}
+
+async function ensureShell() {
+  try {
+    if (await hasShell()) return true;
+    await fillShell();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function freshNonce() {
+  const b = new Uint8Array(18);
+  crypto.getRandomValues(b);
+  let s = '';
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s);
+}
+
+/** The stored shell with a new nonce in both the CSP header and the document, or null. */
+async function shellResponse() {
+  const res = await caches.match(SHELL_PATH, { cacheName: SHELL_CACHE });
+  if (!res) return null;
+  const csp = res.headers.get('content-security-policy') || '';
+  const m = NONCE_RE.exec(csp);
+  if (!m) return null;
+  const old = m[1];
+  const nonce = freshNonce();
+  const html = (await res.text()).split(old).join(nonce);
+  const headers = new Headers(res.headers);
+  headers.set('content-security-policy', csp.split(old).join(nonce));
+  headers.set('cache-control', 'no-store');
+  return new Response(html, { status: 200, headers });
+}
+
+/** /offline itself: the stored shell first (it must open fast with no connection), else the network. */
+async function openShell(event) {
+  if (DEV) {
+    try { return await fetch(event.request); } catch (e) { const c = await shellResponse().catch(() => null); if (c) return c; throw e; }
+  }
+  const cached = await shellResponse().catch(() => null);
+  return cached || fetch(event.request);
+}
+
+/** Any other page: exactly the network's answer; only when there is none, the shell. */
+async function navigate(event) {
+  try {
+    const pre = await event.preloadResponse;
+    if (pre) return pre;
+    return await fetch(event.request);
+  } catch (e) {
+    if (!(await hasShell())) throw e;
+    const url = new URL(event.request.url);
+    return Response.redirect(SHELL_PATH + '?from=' + encodeURIComponent(url.pathname + url.search), 302);
+  }
+}
+
+/** Static files: content-hashed ones from the cache first, plain ones from the network first. */
+async function staticFile(request, url) {
+  const cached = () => caches.match(request, { cacheName: SHELL_CACHE });
+  if (isHashedStatic(url) && !DEV) {
+    const hit = await cached();
+    if (hit) return hit;
+  }
+  try {
+    const res = await fetch(request);
+    // Checked again right before storing: signing out deletes the shell, and nothing may bring it back.
+    if (res.ok && res.type === 'basic' && await hasShell()) {
+      const copy = res.clone();
+      await caches.open(SHELL_CACHE).then((c) => c.put(request, copy)).catch(() => undefined);
+    }
+    return res;
+  } catch (e) {
+    const hit = await cached();
+    if (hit) return hit;
+    throw e;
+  }
+}
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (req.mode === 'navigate') {
+    if (url.pathname === SHELL_PATH) event.respondWith(openShell(event));
+    else if (!IN_APP) event.respondWith(navigate(event));
+    return;
+  }
+  // Only while the shell is kept (a signed-in device asked for it): static files, nothing else.
+  if (isHashedStatic(url) || isPlainStatic(url)) {
+    event.respondWith(hasShell().then((on) => (on ? staticFile(req, url) : fetch(req))));
+  }
+});
+
+self.addEventListener('message', (event) => {
+  const d = event.data;
+  if (!d || d.type !== 'kw:shell-enable') return;
+  const port = event.ports && event.ports[0];
+  event.waitUntil(ensureShell().then((ready) => { if (port) port.postMessage({ type: 'kw:shell', ready, build: BUILD }); }));
+});
+
+self.addEventListener('install', (event) => {
+  event.waitUntil((async () => {
+    // A device that kept the previous build's shell gets this build's before it takes over.
+    if (await shellEnabled()) await ensureShell();
+    await self.skipWaiting();
+  })());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    try {
+      for (const k of await caches.keys()) if (k.indexOf(SHELL_PREFIX) === 0 && k !== SHELL_CACHE) await caches.delete(k);
+    } catch { /* nothing to clean */ }
+    // Pages load as fast as without a service worker: the request starts while this worker starts up.
+    if (!IN_APP && self.registration.navigationPreload) await self.registration.navigationPreload.enable().catch(() => undefined);
+    if (IN_APP && self.registration.navigationPreload) await self.registration.navigationPreload.disable().catch(() => undefined);
+    await self.clients.claim();
+  })());
+});
 
 /** Kithwall 2 routes for links in pushes queued by older servers (v1 paths). */
 function v2Path(p) {

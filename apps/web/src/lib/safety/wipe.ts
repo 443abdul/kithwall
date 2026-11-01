@@ -14,6 +14,8 @@ import { getSession, signOut } from '../keys/session';
 import { deleteDeviceDatabase } from '../keys/device';
 import { sb } from '../supabase';
 import { clearSwHidden } from './swmirror';
+import { deleteKitDropDatabase } from '../social/kitdrop';
+import { offlineStore } from '../keys/offline';
 import { isNative } from '../native';
 
 function within<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
@@ -42,9 +44,12 @@ async function dropPush(): Promise<void> {
 }
 
 async function dropStorage(): Promise<void> {
-  // Known databases first (Firefox has no indexedDB.databases()).
+  // Known databases first (Firefox has no indexedDB.databases()): the Kit Drop outbox and received files,
+  // and what the app keeps to open offline (lib/keys/offline).
   await deleteDeviceDatabase();
   await clearSwHidden();
+  await deleteKitDropDatabase();
+  await offlineStore.clear();
   try {
     const dbs = await indexedDB.databases?.();
     await Promise.all((dbs ?? []).map((d) => d.name ? new Promise<void>((resolve) => {

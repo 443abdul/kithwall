@@ -3,23 +3,32 @@
 //
 //  - Outbox: a post written while offline is sealed on this device exactly as if it were sent (end-to-end
 //    encrypted to its audience, signed by me) and kept here; it goes out by itself when the connection is
-//    back (flushOutbox).
-//  - Kit Drop file: my waiting posts plus recent posts this device already has, in one file signed by my
-//    identity key. Pass it to someone nearby however works (Quick Share, Bluetooth, USB, SD card).
+//    back (flushOutbox). Its photos are re-encoded and encrypted exactly as for a normal upload and wait here
+//    as ciphertext too; on flush they are uploaded first and the post is inserted only once all of them are
+//    stored. (Videos can't wait: they are too big to keep and pass on.)
+//  - Kit Drop file: my waiting posts plus recent posts this device already has, with their photos (the
+//    medium size, as ciphertext, up to MAX_MEDIA_BYTES), in one file signed by my identity key
+//    (./kitdropFormat). Pass it to someone nearby however works (Quick Share, Bluetooth, USB, SD card).
 //  - Opening one: the file's signature is checked against the sender's identity key, and every post again
-//    against its author's (readPost), then decrypted with the keys the reader's device holds. People see
-//    only posts they could see on Kithwall anyway; a file can't be forged or altered.
+//    against its author's (readPost), then decrypted with the keys the reader's device holds; photos with the
+//    key inside their post. People see only posts they could see on Kithwall anyway; a file can't be forged
+//    or altered.
 // Everything here is ciphertext at rest (IndexedDB, wiped by the panic wipe like everything else).
-import { b64u, canonicalJson, signDetached, verifyDetached } from '@kithwall/crypto';
+import { b64u } from '@kithwall/crypto';
 import { identity, me } from '../keys/session';
 import { people } from '../people';
-import { insertSealedPost, preparePosts, type SealedPost } from '../content';
+import { insertSealedPost, preparePosts, readPost, type SealedPost } from '../content';
+import { fileCiphertext, holdCiphertext, isHeld, linkMedia, releaseCiphertext, uploadSealed } from '../media';
 import { isOfflineError } from '../net/offline';
 import type { PostRow } from '../types';
+import {
+  checkKitDrop, KITDROP_KIND, KITDROP_MIME, MAX_FILE_BYTES, MAX_ITEMS, MAX_MEDIA_BYTES, MAX_MEDIA_ITEMS, mediaEntry, parseKitDrop,
+  signKitDrop, stripRow, type KitDropMedia,
+} from './kitdropFormat';
+
+export { KITDROP_MIME } from './kitdropFormat';
 
 const DB = 'kw-kitdrop';
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
-const MAX_ITEMS = 600;
 
 // ------------------------------------------------------------------------------------- storage
 function db(): Promise<IDBDatabase> {
@@ -45,20 +54,62 @@ async function tx<T>(store: 'outbox' | 'inbox', mode: IDBTransactionMode, fn: (s
   });
 }
 
-// ------------------------------------------------------------------------------------- outbox
-export interface OutboxItem { id: string; owner: string; queuedAt: string; post: SealedPost }
+/** Delete the whole Kit Drop store (panic wipe; browsers without indexedDB.databases()). */
+export function deleteKitDropDatabase(): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.deleteDatabase(DB);
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    } catch { resolve(); }
+  });
+}
 
-export async function queuePost(post: SealedPost): Promise<void> {
-  await tx('outbox', 'readwrite', (s) => { s.put({ id: post.id, owner: me(), queuedAt: new Date().toISOString(), post } satisfies OutboxItem); });
+/** Photo ciphertext kept on this device, by storage path. */
+export interface HeldFile { path: string; cipher: Blob }
+
+// ------------------------------------------------------------------------------------- outbox
+export interface OutboxItem {
+  id: string; owner: string; queuedAt: string; post: SealedPost;
+  /** Encrypted photo files the post refers to, not uploaded yet. */
+  media?: HeldFile[];
+  /** Paths of `media` already uploaded by an earlier, interrupted flush. */
+  uploaded?: string[];
+}
+
+/** Keep a sealed post (and its encrypted photos; `uploaded`: the ones already stored) until there is a connection. */
+export async function queuePost(post: SealedPost, media: HeldFile[] = [], uploaded: string[] = []): Promise<void> {
+  const item: OutboxItem = { id: post.id, owner: me(), queuedAt: new Date().toISOString(), post, ...(media.length ? { media, uploaded } : {}) };
+  await tx('outbox', 'readwrite', (s) => { s.put(item); });
+  holdCiphertext(media);
 }
 
 export async function outboxItems(): Promise<OutboxItem[]> {
   const all = ((await tx<OutboxItem[]>('outbox', 'readonly', (s) => s.getAll())) ?? []) as OutboxItem[];
-  return all.filter((x) => x.owner === me()).sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
+  const mine = all.filter((x) => x.owner === me()).sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
+  holdCiphertext(mine.flatMap((x) => x.media ?? []));
+  return mine;
 }
 
 export async function dropOutboxItem(id: string): Promise<void> {
+  const item = (await tx<OutboxItem>('outbox', 'readonly', (s) => s.get(id))) as OutboxItem | undefined;
   await tx('outbox', 'readwrite', (s) => { s.delete(id); });
+  releaseCiphertext((item?.media ?? []).map((m) => m.path));
+}
+
+/** One waiting post: upload its photos (skipping ones an earlier attempt stored), then insert it, then link them. */
+async function send(item: OutboxItem): Promise<void> {
+  const media = item.media ?? [];
+  const done = new Set(item.uploaded ?? []);
+  for (const m of media) {
+    if (done.has(m.path)) continue;
+    await uploadSealed(m.path, m.cipher);
+    done.add(m.path);
+    item.uploaded = [...done];
+    await tx('outbox', 'readwrite', (s) => { s.put(item); });
+  }
+  // Never before every photo is stored: a post must not point at files that don't exist.
+  await insertSealedPost(item.post);
+  if (media.length) await linkMedia(media.map((m) => m.path), { postId: item.id });
 }
 
 let flushing: Promise<number> | null = null;
@@ -67,7 +118,7 @@ export function flushOutbox(): Promise<number> {
   flushing ??= (async () => {
     let sent = 0;
     for (const item of await outboxItems()) {
-      try { await insertSealedPost(item.post); await dropOutboxItem(item.id); sent++; }
+      try { await send(item); await dropOutboxItem(item.id); sent++; }
       catch (e) { if (isOfflineError(e)) break; /* still offline */ }
     }
     return sent;
@@ -77,64 +128,98 @@ export function flushOutbox(): Promise<number> {
 
 
 // ------------------------------------------------------------------------------------- files
-export interface KitDropFile {
-  v: 1; kind: 'kithwall-kitdrop';
-  from: string; made: string;
-  /** Post rows as stored on Kithwall (ciphertext envelopes; created_at may be the time it was written offline). */
-  posts: PostRow[];
-  sig: string;
+export interface MadeKitDrop {
+  blob: Blob; count: number; name: string;
+  /** Photos carried, photos left out (over the size cap or not on this device), posts with a video (never carried). */
+  photos: number; photosLeft: number; videos: number;
 }
 
-const sigMessage = (f: Omit<KitDropFile, 'sig'>) => canonicalJson({ d: 'kithwall/v1/kitdrop', v: f.v, from: f.from, made: f.made, posts: f.posts });
-
-/** Build my signed Kit Drop file: my waiting posts plus `recent` posts this device has. */
-export async function makeKitDrop(recent: PostRow[]): Promise<{ blob: Blob; count: number; name: string }> {
+/** Build my signed Kit Drop file: my waiting posts plus `recent` posts this device has, with their photos. */
+export async function makeKitDrop(recent: PostRow[]): Promise<MadeKitDrop> {
   const now = new Date().toISOString();
   const waiting: PostRow[] = (await outboxItems()).map((o) => ({ ...(o.post as PostRow), created_at: o.queuedAt, edited_at: null }));
   const seen = new Set<string>();
   const posts = [...waiting, ...recent].filter((p) => !seen.has(p.id) && !!seen.add(p.id)).slice(0, MAX_ITEMS);
-  const body = { v: 1 as const, kind: 'kithwall-kitdrop' as const, from: me(), made: now, posts: posts.map(stripRow) };
-  const file: KitDropFile = { ...body, sig: signDetached(sigMessage(body), identity().signPriv) };
-  const blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
-  return { blob, count: posts.length, name: `kithwall-kitdrop-${now.slice(0, 10)}.kwd` };
+  const carried = await carryPhotos(posts);
+  const file = signKitDrop({ v: 2, kind: KITDROP_KIND, from: me(), made: now, posts: posts.map(stripRow), media: carried.media }, identity().signPriv);
+  const blob = new Blob([JSON.stringify(file)], { type: KITDROP_MIME });
+  return { blob, count: posts.length, name: `kithwall-kitdrop-${now.slice(0, 10)}.kwd`, photos: carried.media.length, photosLeft: carried.left, videos: carried.videos };
 }
 
-/** Only the columns a reader needs (and that the server would show them anyway). */
-function stripRow(p: PostRow): PostRow {
-  return {
-    id: p.id, author_id: p.author_id, wall_owner_id: p.wall_owner_id, group_id: p.group_id, event_id: p.event_id,
-    kind: p.kind, is_public: p.is_public, audience_id: p.audience_id, epoch: p.epoch, shared_post_id: p.shared_post_id,
-    envelope: p.envelope, created_at: p.created_at, edited_at: p.edited_at ?? null,
-  };
+/**
+ * The medium-size ciphertext of the photos in these posts (oldest waiting posts first, then recent ones),
+ * until MAX_MEDIA_BYTES: the copies held on this device, else the stored ones while there is a connection.
+ */
+async function carryPhotos(posts: PostRow[]): Promise<{ media: KitDropMedia[]; left: number; videos: number }> {
+  const media: KitDropMedia[] = [];
+  const seen = new Set<string>();
+  let total = 0, left = 0, videos = 0, online = true;
+  for (const p of posts) {
+    const d = readPost(p);
+    if (!d.ok) continue;
+    if (d.value.video) videos++;
+    for (const photo of d.value.photos ?? []) {
+      const ref = photo.files?.med;
+      if (!ref?.path || seen.has(ref.path)) continue;
+      seen.add(ref.path);
+      if (media.length >= MAX_MEDIA_ITEMS || total >= MAX_MEDIA_BYTES || (!online && !isHeld(ref.path))) { left++; continue; }
+      let cipher: Blob | null = null;
+      try {
+        cipher = await within(fileCiphertext(ref), 8000);
+      } catch (e) {
+        // No connection: from now on only the copies held here.
+        if (isOfflineError(e) || (e as Error).message === 'timeout') online = false;
+      }
+      if (!cipher || total + cipher.size > MAX_MEDIA_BYTES) { left++; continue; }
+      const bytes = new Uint8Array(await cipher.arrayBuffer());
+      total += bytes.byteLength;
+      media.push(await mediaEntry(ref.path, bytes));
+    }
+  }
+  return { media, left, videos };
 }
 
-export interface OpenedKitDrop { id: string; from: string; made: string; posts: PostRow[]; verified: boolean; receivedAt: string }
+/** `p`, or a 'timeout' rejection after `ms`. */
+function within<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
+}
+
+export interface OpenedKitDrop {
+  id: string; from: string; made: string; posts: PostRow[]; verified: boolean; receivedAt: string;
+  /** Photo ciphertext carried in the file (v2). */
+  media?: HeldFile[];
+}
 
 /** Read and check a Kit Drop file. Throws on anything malformed; `verified` says whether the sender's signature checked out. */
-export async function openKitDrop(file: File): Promise<OpenedKitDrop> {
+export async function openKitDrop(file: Blob): Promise<OpenedKitDrop> {
   if (file.size > MAX_FILE_BYTES) throw new Error('too_big');
-  let f: KitDropFile;
-  try { f = JSON.parse(await file.text()) as KitDropFile; } catch { throw new Error('not_kitdrop'); }
-  if (!f || f.kind !== 'kithwall-kitdrop' || f.v !== 1 || typeof f.from !== 'string' || typeof f.made !== 'string'
-    || typeof f.sig !== 'string' || !Array.isArray(f.posts) || f.posts.length > MAX_ITEMS) throw new Error('not_kitdrop');
-  const posts = f.posts.filter((p) => p && typeof p.id === 'string' && typeof p.author_id === 'string' && p.envelope && typeof p.created_at === 'string').map(stripRow);
-  await people.ensure([f.from, ...posts.map((p) => p.author_id)]).catch(() => undefined);
+  const f = parseKitDrop(await file.text());
+  await people.ensure([f.from, ...f.posts.map((p) => p?.author_id).filter((x): x is string => typeof x === 'string')]).catch(() => undefined);
   const sender = people.get(f.from);
-  let verified = false;
-  try { verified = !!sender && verifyDetached(f.sig, sigMessage({ v: 1, kind: 'kithwall-kitdrop', from: f.from, made: f.made, posts: f.posts }), b64u.decode(sender.sign_pub)); } catch { verified = false; }
-  await preparePosts(posts).catch(() => undefined);
-  const opened: OpenedKitDrop = { id: `${f.from}:${f.made}`, from: f.from, made: f.made, posts, verified, receivedAt: new Date().toISOString() };
+  let signPub: Uint8Array | null = null;
+  try { signPub = sender ? b64u.decode(sender.sign_pub) : null; } catch { signPub = null; }
+  const checked = await checkKitDrop(f, signPub);
+  await preparePosts(checked.posts).catch(() => undefined);
+  const media = checked.media.map((m) => ({ path: m.path, cipher: new Blob([m.cipher as BlobPart], { type: 'application/octet-stream' }) }));
+  const opened: OpenedKitDrop = {
+    id: `${f.from}:${f.made}`, from: f.from, made: f.made, posts: checked.posts, verified: checked.verified,
+    receivedAt: new Date().toISOString(), ...(media.length ? { media } : {}),
+  };
   await tx('inbox', 'readwrite', (s) => { s.put({ ...opened, owner: me() }); });
+  holdCiphertext(media);
   return opened;
 }
 
 export async function receivedKitDrops(): Promise<OpenedKitDrop[]> {
   const all = ((await tx<(OpenedKitDrop & { owner: string })[]>('inbox', 'readonly', (s) => s.getAll())) ?? []);
   const mine = all.filter((x) => x.owner === me()).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+  holdCiphertext(mine.flatMap((x) => x.media ?? []));
   await people.ensure(mine.flatMap((x) => [x.from, ...x.posts.map((p) => p.author_id)])).catch(() => undefined);
   return mine;
 }
 
 export async function forgetKitDrop(id: string): Promise<void> {
+  const k = (await tx<OpenedKitDrop>('inbox', 'readonly', (s) => s.get(id))) as OpenedKitDrop | undefined;
   await tx('inbox', 'readwrite', (s) => { s.delete(id); });
+  releaseCiphertext((k?.media ?? []).map((m) => m.path));
 }
