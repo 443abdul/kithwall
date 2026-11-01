@@ -21,11 +21,13 @@
     "@zxcvbn-ts/core": "^4.2.0",
     "altcha": "^3.4.0",
     "altcha-lib": "^2.6.0",
+    "drand-client": "1.2.5",
     "fflate": "^0.8.3",
     "next": "16.4.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "tldts": "7.4.16",
+    "tlock-js": "0.9.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

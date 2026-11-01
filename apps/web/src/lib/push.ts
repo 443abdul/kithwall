@@ -167,6 +167,15 @@ async function nativeRefreshPermission(): Promise<void> {
   if (before !== nativePermission) changed();
 }
 
+/**
+ * Re-read the notification permission (the app came back to the foreground, e.g. from the system
+ * notification settings) so switches and nudges don't keep showing a stale "blocked" or "ask".
+ */
+export async function refreshPushPermission(): Promise<void> {
+  if (isNative()) { await nativeRefreshPermission(); return; }
+  changed();
+}
+
 export async function enablePush(userId: string): Promise<void> {
   if (isNative()) {
     const n = await nativePush();
@@ -248,7 +257,7 @@ export async function pushEnabledHere(): Promise<boolean> {
  */
 export async function syncPush(userId: string): Promise<void> {
   if (isNative()) {
-    await (await nativePush()).nativeSyncPush();
+    await (await nativePush()).nativeSyncPush({ wasOn: wasEnabled(userId) });
     await nativeRefreshPermission();
     changed();
     return;

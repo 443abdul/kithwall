@@ -28,6 +28,7 @@ import type { FriendshipRow } from '@/lib/types';
 import { HANDLE_RE, normalizeHandle, outgoingRequests, redeemInvite } from './data';
 import { InviteCard } from './InviteCard';
 import { PersonActions } from './PersonActions';
+import { RequestSafety } from './RequestSafety';
 
 type Tab = 'connections' | 'requests' | 'invite';
 
@@ -164,7 +165,7 @@ function IncomingRow({ f }: { f: FriendshipRow }) {
   const note = p ? readRequestNote(f) : null;
   return (
     <PersonRow id={f.requested_by}
-      sub={note ? t('people.note', { note }) : t('people.wantsToConnect')}
+      sub={<>{note ? t('people.note', { note }) : t('people.wantsToConnect')}<RequestSafety userId={f.requested_by} compact /></>}
       trailing={<PersonActions userId={f.requested_by} name={p?.name ?? ''} compact />} />
   );
 }

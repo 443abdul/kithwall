@@ -19,11 +19,22 @@ final class PushProviderImpl {
     private static final String INSTANCE = "default";
     private static PushCallback pending;
     private static final Handler main = new Handler(Looper.getMainLooper());
+    /** The fallback and give-up timers of the registration in progress; cancelled when it settles, so a
+     *  timer left over from an earlier attempt can never answer (or fail) a later one. */
+    private static Runnable fallback, giveUp;
+
+    private static void cancelTimers() {
+        if (fallback != null) main.removeCallbacks(fallback);
+        if (giveUp != null) main.removeCallbacks(giveUp);
+        fallback = null;
+        giveUp = null;
+    }
 
     static synchronized void complete(String token, String p256dh, String auth) {
         if (pending == null) return;
         PushCallback cb = pending;
         pending = null;
+        cancelTimers();
         cb.ok(PROVIDER, token, p256dh, auth);
     }
 
@@ -31,11 +42,13 @@ final class PushProviderImpl {
         if (pending == null) return;
         PushCallback cb = pending;
         pending = null;
+        cancelTimers();
         cb.error(code);
     }
 
     private static synchronized void setPending(PushCallback cb) {
         if (pending != null) pending.error("failed");
+        cancelTimers();
         pending = cb;
     }
 
@@ -58,10 +71,12 @@ final class PushProviderImpl {
             }
             // An install that is already registered may not get a new endpoint callback: answer with the
             // endpoint we know, then give up after 30 s.
-            main.postDelayed(() -> {
-                if (known != null && PROVIDER.equals(known[0])) complete(known[1], known[2], known[3]);
-            }, 5_000);
-            main.postDelayed(() -> fail("failed"), 30_000);
+            synchronized (PushProviderImpl.class) {
+                fallback = () -> { if (known != null && PROVIDER.equals(known[0])) complete(known[1], known[2], known[3]); };
+                giveUp = () -> fail("failed");
+                main.postDelayed(fallback, 5_000);
+                main.postDelayed(giveUp, 30_000);
+            }
             return kotlin.Unit.INSTANCE;
         }));
     }

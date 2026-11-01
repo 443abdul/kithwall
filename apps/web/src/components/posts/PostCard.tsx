@@ -36,6 +36,7 @@ import { isExpired, isScheduled, timeLeft } from '@/lib/chat/ephemeral';
 import { useWhen } from './PostOptions';
 import { usePostLike } from './useLike';
 import { PollView } from './Poll';
+import { CapsuleView } from './Capsule';
 import { SharedPost, ShareDialog } from './Share';
 import { REACTIONS, reactionOf, setReaction, type Reaction } from '@/lib/social/engage';
 import { isSaved, loadSocialPrefs, setMuted, setSaved, useSocialPrefs } from '@/lib/social/prefs';
@@ -132,7 +133,7 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
     ...(payload ? [{ label: saved ? t('post.unsave') : t('post.save'), icon: 'book' as const, onSelect: () => void run(() => setSaved(row.id, !saved), saved ? 'post.unsaved' : 'post.saved') }] : []),
     ...(canPin && payload ? [{ label: isPinned ? t('post.unpin') : t('post.pin'), icon: 'mapPin' as const, onSelect: () => void pin(!isPinned) }] : []),
     ...(!mine ? [{ label: t('post.mute', { name }), icon: 'eyeOff' as const, onSelect: () => void run(() => setMuted(row.author_id, 30), 'post.muted') }] : []),
-    ...(mine && payload ? [{ label: t('feed.edit'), icon: 'edit' as const, onSelect: () => setEditing(true) }] : []),
+    ...(mine && payload && !payload.capsule ? [{ label: t('feed.edit'), icon: 'edit' as const, onSelect: () => setEditing(true) }] : []),
     ...(mine || row.wall_owner_id === userId ? [{ label: t('feed.delete'), icon: 'trash' as const, danger: true, onSelect: () => setDeleting(true) }] : []),
     ...(!mine ? [{ label: t('feed.report'), icon: 'flag' as const, onSelect: () => setReporting(true) }] : []),
   ];
@@ -239,6 +240,8 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
 
 /** `onOpenMedia(i)`: open the gallery at item i (photos first, then the video); without it the video plays inline. */
 export function PostBody({ payload, row, nested = false, onOpenMedia }: { payload: PostPayload; row?: PostRow; nested?: boolean; onOpenMedia?: (i: number) => void }) {
+  // A time capsule carries nothing else: show it locked, or opened (CapsuleView renders the inner payload).
+  if (payload.capsule) return <div className="k-post-body"><CapsuleView capsule={payload.capsule} row={row} /></div>;
   const text = [payload.text, payload.sharedText].filter(Boolean).join('\n\n');
   return (
     <div className="k-post-body">

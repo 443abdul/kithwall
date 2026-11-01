@@ -159,3 +159,22 @@ export function openSealed(args: {
     wipe(key);
   }
 }
+
+/**
+ * Was this sealed box really sealed by `senderSignPub` to `recipientKxPub` for `context`? Checks the
+ * signature only (nothing is decrypted), so any member can verify a delivery addressed to someone else,
+ * e.g. as proof that a key authority once gave them this audience's key. A v2 box also binds the
+ * recipient's ML-KEM key, so it is checked only when `recipientPqPub` (their published key) is given.
+ * Never throws.
+ */
+export function sealedSignatureValid(args: { sealed: unknown; senderSignPub: Uint8Array; recipientKxPub: Uint8Array; context: string; recipientPqPub?: Uint8Array | null }): boolean {
+  const s = args.sealed as Partial<Sealed> | null;
+  if (!s || typeof s !== 'object' || typeof s.eph !== 'string' || typeof s.n !== 'string' || typeof s.ct !== 'string') return false;
+  try {
+    if (s.v === 1) return edVerifyB64(s.sig, sealSigMessage(args.context, args.recipientKxPub, s.eph, s.n, s.ct), args.senderSignPub);
+    if (s.v === 2 && typeof s.kem === 'string' && args.recipientPqPub) {
+      return edVerifyB64(s.sig, sealSigMessageV2(args.context, args.recipientKxPub, args.recipientPqPub, s.eph, s.kem, s.n, s.ct), args.senderSignPub);
+    }
+    return false;
+  } catch { return false; }
+}

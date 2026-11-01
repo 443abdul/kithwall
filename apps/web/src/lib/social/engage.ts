@@ -69,9 +69,10 @@ export type Reaction = (typeof REACTIONS)[number];
 
 /** React to a post (replacing an earlier reaction), or take it back with null. */
 export async function setReaction(row: PostRow, emoji: Reaction | null): Promise<void> {
+  // Seal first: if the post's key isn't here yet, nothing is changed (the old reaction stays).
+  const sealed = !emoji || emoji === '❤️' ? null : seal(row, 'reaction', 'reaction', { e: emoji });
   must(await sb().from('likes').delete().match({ target_kind: 'post', target_id: row.id, user_id: me() }));
   if (!emoji) return;
-  const sealed = emoji === '❤️' ? null : seal(row, 'reaction', 'reaction', { e: emoji });
   const r = await sb().from('likes').insert({ target_kind: 'post', target_id: row.id, user_id: me(), sealed });
   if (r.error && r.error.code !== '23505') throw new Error(r.error.message);
 }

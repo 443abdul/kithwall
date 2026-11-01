@@ -14,6 +14,14 @@ export function pushFailureToast(e: unknown, t: (k: MessageKey) => string, toast
     toast({ message: t('nudge.pushBlockedApp'), tone: 'danger', action: { label: t('nudge.pushOpenSettings'), onClick: () => void openNotificationSettings() } });
     return;
   }
+  // Inside the app: say what actually failed (and show the code, so a screenshot tells us), never "browser settings".
+  const code = (e as { code?: string } | null)?.code ?? '';
+  if (isNative() && !(e instanceof PushError)) {
+    const k: MessageKey = code === 'unavailable' ? 'nudge.pushNativeUnavailable' : code === 'timeout' ? 'nudge.pushNativeTimeout'
+      : code === 'not_allowed' ? 'nudge.pushNativeNotAllowed' : 'nudge.pushNativeFailed';
+    toast({ message: `${t(k)}${code ? ` (${code})` : ''}`, tone: 'danger', duration: 12_000 });
+    return;
+  }
   const key: MessageKey = e instanceof PushError
     ? e.code === 'pending' ? 'nudge.pushPending' : e.code === 'blocked' ? 'nudge.pushBlockedWeb' : 'nudge.pushFailed'
     : 'nudge.pushFailed';

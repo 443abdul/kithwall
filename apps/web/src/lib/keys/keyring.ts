@@ -20,7 +20,7 @@
 // Security review R-K-2: admins count as key authorities only with a chain of signed grants back to the
 // owner (./authority.ts verifiedAdmins); unsigned (server-made) admins can't get a key adopted.
 import {
-  b64u, epochCommit, newSymmetricKey, openSealed, pqKeysFromKx, seal, signPqPub, verifiedPqPub, signAdminGrant, signEpochRecord, signMemberAdd, verifyMemberAdd, type Identity, type Sealed, type Unlocked,
+  b64u, epochCommit, newSymmetricKey, openSealed, pqKeysFromKx, seal, signPqPub, verifiedPqPub, signAdminGrant, signEpochRecord, signMemberAdd, verifyMemberAdd, sealedSignatureValid, type Identity, type Sealed, type Unlocked,
 } from '@kithwall/crypto';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSyncExternalStore } from 'react';
@@ -28,7 +28,7 @@ import { sb, must } from '../supabase';
 import type { AudienceRow } from '../types';
 import { people } from '../people';
 import {
-  judgeIncoming, isKeyAuthority, memberVouched, recordIsValid, verifiedAdmins,
+  judgeIncoming, isKeyAuthority, memberVouched, provenBySealer, recordIsValid, verifiedAdmins,
   type AudienceMeta, type EpochRecordRow, type GrantRow, type MemberAddRow, type Roster, type TrustedSigner,
 } from './authority';
 import { onPinsChanged, resolveSigners, sealGate } from './pins';
@@ -138,19 +138,52 @@ class Keyring {
     const out = new Set<string>();
     const cx = await this.context([...new Set(rows.map((r) => r.audience_id))]);
     await people.ensure([...cx.members.values()].map((m) => m.add_by ?? '').filter(Boolean));
+    const empty = { admins: new Set<string>(), members: new Set<string>() };
+    // Signatures count only from identity keys this device trusts (never an unvouched key change).
+    const trustedPub = (id: string) => { const sg = this.signerOf(id); return sg && sg.trust !== 'unvouched' ? sg.s : null; };
+    const unproven: { audience_id: string; recipient_id: string }[] = [];
     for (const r of rows) {
       const aud = cx.auds.get(r.audience_id);
       if (!aud) continue;
       const key = `${r.audience_id}|${r.recipient_id}`;
-      if (aud.kind === 'friends' || aud.kind === 'self' || r.recipient_id === aud.owner_id) { out.add(key); continue; }
       const row = cx.members.get(key);
-      const roster = cx.rosters.get(r.audience_id) ?? { admins: new Set<string>(), members: new Set<string>() };
-      const ok = !!row && memberVouched(aud, roster, row, (by, sig) => {
-        const pub = this.signerOf(by)?.s;
+      const roster = cx.rosters.get(r.audience_id) ?? empty;
+      const ok = aud.kind === 'friends' || aud.kind === 'self' || r.recipient_id === aud.owner_id || (!!row && memberVouched(aud, roster, row, (by, sig) => {
+        const pub = trustedPub(by);
         return !!pub && verifyMemberAdd(b64u.decode(pub), { audienceId: r.audience_id, memberId: r.recipient_id, addedBy: by }, sig);
-      });
-      if (ok) out.add(key);
-      else console.warn('key delivery: not delivering to a member nobody entitled added', r.audience_id, r.recipient_id);
+      }));
+      if (ok) out.add(key); else if (row) unproven.push(r);
+    }
+    // No valid addition signature: accept members a key authority already delivered this audience's key to
+    // (the sealed box's signature proves it; the server can't forge one).
+    const byAud = new Map<string, string[]>();
+    for (const r of unproven) byAud.set(r.audience_id, [...(byAud.get(r.audience_id) ?? []), r.recipient_id]);
+    for (const [audId, ids] of byAud) {
+      const aud = cx.auds.get(audId)!;
+      const roster = cx.rosters.get(audId) ?? empty;
+      const { data } = await sb().rpc('member_key_proofs', { p_aud: audId, p_members: ids });
+      const proofs = (data ?? []) as { member_id: string; epoch: number; sealed_by: string; sealed: unknown }[];
+      const profs = new Map<string, { kx: string; pq: string | null; pqSig: string | null; sign: string }>();
+      if (proofs.length) {
+        const { data: ps } = await sb().from('profiles').select('id, kx_pub, pq_pub, pq_sig, sign_pub').in('id', [...new Set(proofs.map((x) => x.member_id))]);
+        for (const p of (ps ?? []) as { id: string; kx_pub: string; pq_pub: string | null; pq_sig: string | null; sign_pub: string }[]) profs.set(p.id, { kx: p.kx_pub, pq: p.pq_pub, pqSig: p.pq_sig, sign: p.sign_pub });
+        await people.ensure(proofs.map((x) => x.sealed_by));
+      }
+      for (const pr of proofs) {
+        const key = `${audId}|${pr.member_id}`;
+        if (out.has(key) || !provenBySealer(aud, roster, pr.sealed_by, this.userId!)) continue;
+        const sealer = trustedPub(pr.sealed_by);
+        const rp = profs.get(pr.member_id);
+        if (!sealer || !rp) continue;
+        try {
+          const kx = b64u.decode(rp.kx);
+          const pq = verifiedPqPub({ userId: pr.member_id, kxPub: kx, pqPub: rp.pq, sig: rp.pqSig, signPub: b64u.decode(rp.sign) });
+          if (sealedSignatureValid({ sealed: pr.sealed, senderSignPub: b64u.decode(sealer), recipientKxPub: kx, context: ctx(audId, pr.epoch, pr.member_id), recipientPqPub: pq })) out.add(key);
+        } catch { /* malformed: no proof */ }
+      }
+    }
+    for (const r of unproven) {
+      if (!out.has(`${r.audience_id}|${r.recipient_id}`)) console.warn('key delivery: not delivering to a member nobody entitled added', r.audience_id, r.recipient_id);
     }
     return out;
   }
@@ -212,12 +245,15 @@ class Keyring {
       const chunk = audIds.slice(i, i + 100);
       const [a, m, r] = await Promise.all([
         sb().from('audiences').select('id, kind, owner_id, current_epoch').in('id', chunk),
-        sb().from('audience_members').select('audience_id, member_id, role, status, grant_by, grant_sig, add_by, add_sig, created_at').in('audience_id', chunk).eq('status', 'active'),
+        sb().from('audience_members').select('audience_id, member_id, role, status, grant_by, grant_sig, add_by, add_sig, created_at').in('audience_id', chunk).in('status', ['active', 'invited']),
         sb().from('audience_epochs').select('audience_id, epoch, rotated_by, commit, sig').in('audience_id', chunk),
       ]);
       for (const row of (a.data ?? []) as AudienceMeta[]) auds.set(row.id, row);
       for (const row of (m.data ?? []) as ({ audience_id: string } & GrantRow & MemberAddRow)[]) {
+        // Invited members are vouched for too (they may read a circle's name before accepting); only
+        // active members count towards the roster (who may sign, who are admins).
         members.set(`${row.audience_id}|${row.member_id}`, row);
+        if (row.status !== 'active') continue;
         const g = grants.get(row.audience_id) ?? [];
         g.push(row);
         grants.set(row.audience_id, g);
@@ -496,6 +532,13 @@ class Keyring {
     for (const r of recs) {
       const sig = signEpochRecord(next.signPriv, { audienceId: r.audience_id, epoch: r.epoch, rotatedBy: me, commit: r.commit });
       const res = await sb().from('audience_epochs').update({ sig }).match({ audience_id: r.audience_id, epoch: r.epoch });
+      if (!res.error) n++;
+    }
+    // Member additions I signed are re-signed with the new key, or the people I added would stop being vouched for.
+    const adds = ((await sb().from('audience_members').select('audience_id, member_id').eq('add_by', me)).data ?? []) as { audience_id: string; member_id: string }[];
+    for (const a of adds) {
+      const add_sig = signMemberAdd(next.signPriv, { audienceId: a.audience_id, memberId: a.member_id, addedBy: me });
+      const res = await sb().from('audience_members').update({ add_sig }).match({ audience_id: a.audience_id, member_id: a.member_id, add_by: me });
       if (!res.error) n++;
     }
     // R-K-2: admin grants I signed are re-signed too, or the admins I made stop counting as key authorities.

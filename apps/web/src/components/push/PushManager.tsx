@@ -2,7 +2,10 @@
 // Mounted once from Providers. Renders nothing.
 //  - Signed in: registers the push-only service worker and re-syncs this device's subscription if
 //    the person turned push on here before (never prompts).
-//  - Signed out: unsubscribes this browser so a shared device stops getting the last person's pushes.
+//  - Signed out ON PURPOSE (session.signOut, not a session that merely failed to load or refresh on a bad
+//    network): unsubscribes this device so a shared device stops getting the last person's pushes. Dropping
+//    it on any 'signed_out' state silently switched notifications off after an offline cold start.
+//  - Coming back to the app (e.g. from the system notification settings): re-reads the permission.
 //  - Handles "kw:navigate" from the service worker (notification clicks) with in-app navigation,
 //    so the tab keeps its unlocked keys.
 //  - Clears the installed app's icon badge while Kithwall is on screen.
@@ -10,8 +13,8 @@
 //    same in-app navigation and are re-broadcast as a 'kw:navigate' window event (components/calls/CallRuntime listens).
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSession } from '@/lib/keys/session';
-import { clearAppBadge, dropDeviceSubscription, registerServiceWorker, syncPush } from '@/lib/push';
+import { onLock, useSession } from '@/lib/keys/session';
+import { clearAppBadge, dropDeviceSubscription, refreshPushPermission, registerServiceWorker, syncPush } from '@/lib/push';
 import { isNative } from '@/lib/native';
 import { safePath } from '@/lib/auth/next';
 
@@ -23,11 +26,10 @@ export function PushManager() {
     if (status === 'ready' && userId) {
       void registerServiceWorker()?.catch(() => undefined);
       void syncPush(userId).catch((e) => console.warn('push sync failed', (e as Error).message));
-    } else if (status === 'signed_out') {
-      // Also on a fresh load with no session: no one is signed in here, so nobody's pushes belong here.
-      void dropDeviceSubscription();
     }
   }, [status, userId]);
+
+  useEffect(() => onLock((reason) => { if (reason === 'sign_out') void dropDeviceSubscription(); }), []);
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -55,7 +57,11 @@ export function PushManager() {
   }, [router]);
 
   useEffect(() => {
-    const onVisible = () => { if (document.visibilityState === 'visible') clearAppBadge(); };
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      clearAppBadge();
+      void refreshPushPermission().catch(() => undefined);
+    };
     onVisible();
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);

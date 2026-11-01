@@ -23,6 +23,9 @@ export interface Draft {
   link?: LinkDraft | null;
   /** A recorded voice note (sent on its own, without text or other files). */
   voice?: VoiceDraft;
+  /** The message id, fixed when the draft is first sent: a retry reuses it, so a send that actually
+   *  reached the server before the connection dropped is never stored twice. */
+  id?: string;
 }
 
 export type SendErrorCode = 'key_waiting' | 'too_long' | 'video_too_big' | 'bad_file' | 'rate_limited' | 'not_allowed' | 'failed';
@@ -96,7 +99,7 @@ export async function sendDraft(conv: ConversationRow, draft: Draft, onProgress?
       onProgress?.(Math.min(0.99, done / total));
     }
     if (draft.link?.image) preview = await uploadPreparedImage(draft.link.image);
-    const id = crypto.randomUUID();
+    const id = draft.id ?? crypto.randomUUID();
     const p = draft.link?.preview;
     const payload: ChatPayload = {
       text,
@@ -122,6 +125,8 @@ export async function sendDraft(conv: ConversationRow, draft: Draft, onProgress?
   } catch (e) {
     const paths = [...refs.flatMap(fileRefPaths), ...(preview ? [preview.path] : [])];
     await deleteMedia(paths).catch(() => undefined);
+    // A retry of a message the server already has (same id): it was sent; this attempt's copies are gone.
+    if (draft.id && /duplicate key|23505/i.test((e as Error)?.message ?? '')) return draft.id;
     throw classify(e);
   }
 }

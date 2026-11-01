@@ -107,7 +107,11 @@ export async function saveProfileInfo(info: ProfileInfo, opts: { replacePrivate?
     const k = await keyring.current(list);
     open.x = sealExtra(me(), list, k.epoch, k.key, close);
   }
-  if (JSON.stringify(mine) !== JSON.stringify(prevPrivate)) await saveMyPrivateFields(mine);
+  // The vault keeps every field that isn't in the open envelope (close friends AND only me), so a device that
+  // can't open the close-friends part yet (key just rotated) never re-seals my profile without it.
+  const kept = { ...close, ...mine };
+  delete kept.friends;
+  if (JSON.stringify(kept) !== JSON.stringify(prevPrivate)) await saveMyPrivateFields(kept);
   const payload: ProfileInfo = open;
   const envelope = sealEnvelope({ header: profileHeader(me(), aud, epoch), payload, audienceKey: key, signPriv: identity().signPriv });
   const row = { user_id: me(), audience_id: aud, epoch, envelope, updated_at: new Date().toISOString() };

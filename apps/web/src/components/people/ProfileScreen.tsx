@@ -31,6 +31,7 @@ import { KeyChangeBanner } from '@/components/verify/KeyChangeBanner';
 import { VerifiedBadge } from '@/components/verify/VerifiedBadge';
 import { EditProfileDialog } from './EditProfile';
 import { PersonActions } from './PersonActions';
+import { RequestSafety } from './RequestSafety';
 
 type Tab = 'posts' | 'photos' | 'about';
 
@@ -66,6 +67,7 @@ function Profile({ id }: { id: string }) {
   return (
     <Page title={p.name} back={self ? { href: '/you', label: t('common.back') } : undefined}>
       {!self ? <KeyChangeBanner userId={id} name={p.name} handle={p.username} /> : null}
+      {!self ? <RequestSafety userId={id} /> : null}
       <Card className="k-profile-head">
         <Avatar name={p.name} src={avatar} size={96} />
         <div className="k-profile-head-text">

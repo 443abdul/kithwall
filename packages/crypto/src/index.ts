@@ -51,7 +51,7 @@ export {
   unlockWithPrf,
 } from './passkey';
 
-export { type Sealed, seal, openSealed } from './seal';
+export { type Sealed, seal, openSealed, sealedSignatureValid } from './seal';
 export { PQ_PUB_LEN, pqKeysFromKx, signPqPub, verifiedPqPub } from './pq';
 
 export {

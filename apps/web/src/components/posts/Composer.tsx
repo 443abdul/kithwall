@@ -36,6 +36,8 @@ import { ensureCloseList } from '@/lib/social/closeFriends';
 import { notifyMentions, resolveMentions } from '@/lib/social/engage';
 import { loadDraft, saveDraft } from '@/lib/social/prefs';
 import { finishPoll, PollEditor } from './Poll';
+import { CapsulePicker } from './Capsule';
+import { CAPSULE_MAX_MS, CAPSULE_MIN_MS, sealCapsule } from '@/lib/social/capsule';
 
 const MAX_TEXT = 8000;
 const MAX_PHOTOS = 10;
@@ -105,6 +107,8 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
   const [options, setOptions] = useState<PostOptionsValue>({ disappear: null, schedule: null });
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [poll, setPoll] = useState<NonNullable<PostPayload['poll']> | null>(null);
+  /** Time capsule: '' = picker open but no date yet, null = not a capsule. */
+  const [capsule, setCapsule] = useState<string | null>(null);
 
   // Drafts (kept in my encrypted vault, per composer): restored when the composer opens empty, saved a
   // moment after typing stops, cleared once the post goes out.
@@ -203,6 +207,11 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
     setErr(null);
     const body = text.trim().slice(0, MAX_TEXT);
     const pendingLink = req.current;
+    const capsuleAt = capsule ? new Date(capsule) : null;
+    if (capsule !== null) {
+      const ms = capsuleAt ? capsuleAt.getTime() - Date.now() : NaN;
+      if (!(ms >= CAPSULE_MIN_MS - 60_000 && ms <= CAPSULE_MAX_MS)) { setErr(t('capsule.badDate')); return; }
+    }
     const readyPoll = finishPoll(poll);
     if (poll && !readyPoll) { setErr(t('poll.needTwo')); return; }
     if (!body && !photos.length && !video && !link && !pendingLink && !readyPoll) { setErr(t('feed.writeSomething')); return; }
@@ -252,13 +261,15 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
         }
       }
       setProgress({ label: t('feed.sharing'), pct: 100 });
+      // Time capsule: the whole payload is timelock-encrypted; the post carries only the capsule.
+      const finalPayload: PostPayload = capsuleAt ? { capsule: await sealCapsule(clean(payload), capsuleAt) } : clean(payload);
       await createPost({
-        id, kind, payload: clean(payload), audience: target.audience, groupId: target.groupId, eventId: target.eventId,
+        id, kind: capsuleAt ? 'status' : kind, payload: finalPayload, audience: target.audience, groupId: target.groupId, eventId: target.eventId,
         publishAt: schedule ? schedule.toISOString() : null, disappearSecs: options.disappear,
       });
       if (uploaded.length) await linkPostMedia(uploaded, id);
-      if (mentioned.length && !schedule) await notifyMentions(mentioned, 'post', id);
-      setText(''); clearPhotos(); setVideo(null); setLink(null); setPoll(null); skip.current.clear();
+      if (mentioned.length && !schedule && !capsuleAt) await notifyMentions(mentioned, 'post', id);
+      setText(''); clearPhotos(); setVideo(null); setLink(null); setPoll(null); setCapsule(null); skip.current.clear();
       void saveDraft(draftKey, '').catch(() => undefined);
       setOptions({ disappear: null, schedule: null });
       if (schedule) {
@@ -335,6 +346,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
         ) : null}
 
         {poll ? <PollEditor value={poll} onChange={setPoll} /> : null}
+        {capsule !== null ? <CapsulePicker value={capsule} onChange={setCapsule} onRemove={() => setCapsule(null)} /> : null}
         {progress ? (
           <div className="k-composer-progress" role="status" aria-live="polite">
             <span className="k-small">{progress.label}</span>
@@ -351,6 +363,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
           <IconButton icon="image" label={t('feed.addPhotos')} disabled={busy || !!video || photos.length >= MAX_PHOTOS} onClick={() => photoInput.current?.click()} />
           <IconButton icon="video" label={t('feed.addVideo')} disabled={busy || photos.length > 0 || !!video} onClick={() => videoInput.current?.click()} />
           <IconButton icon="listBullet" label={t('poll.add')} disabled={busy || !!poll} onClick={() => setPoll({ options: ['', ''] })} />
+          <IconButton icon="gift" label={t('capsule.add')} disabled={busy || capsule !== null} variant={capsule !== null ? 'soft' : 'ghost'} onClick={() => setCapsule('')} />
           <IconButton icon="clock" label={t('schedule.options')} disabled={busy} aria-haspopup="dialog"
             variant={options.disappear || options.schedule ? 'soft' : 'ghost'} onClick={() => setOptionsOpen(true)} />
           <span className="k-spacer" />

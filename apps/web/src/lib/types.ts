@@ -67,6 +67,11 @@ export interface PostPayload {
   poll?: { question?: string; options: string[]; multi?: boolean; ends?: string };
   /** Connections mentioned with @handle (they get a notification). */
   mentions?: Uuid[];
+  /**
+   * Time capsule (lib/social/capsule): the real payload, timelock-encrypted to drand round `round`
+   * (published at `opens`); until then nobody can read it. A capsule post carries nothing else.
+   */
+  capsule?: { opens: string; round: number; ct: string };
 }
 
 export interface CommentPayload { text: string; /** Kithwall 2: id of the comment this replies to (one level). */ replyTo?: string }

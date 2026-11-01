@@ -33,17 +33,27 @@ export class NativePushError extends Error {
   constructor(public code: string) { super(code); }
 }
 
+/** Getting a push token can stall for minutes on a bad network (FCM retries with back-off): give up after this. */
+const REGISTER_TIMEOUT_MS = 45_000;
+
 async function store(): Promise<string> {
   const p = await nativePlugin('KithwallPush');
   let reg;
-  // The VAPID key lets UnifiedPush distributors accept pushes from our server only.
-  try { reg = await p.register({ vapid: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || undefined }); } catch (e) { throw new NativePushError(nativeErrorCode(e) || 'failed'); }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // The VAPID key lets UnifiedPush distributors accept pushes from our server only.
+    reg = await Promise.race([
+      p.register({ vapid: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || undefined }),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'timeout' })), REGISTER_TIMEOUT_MS); }),
+    ]);
+  } catch (e) { throw new NativePushError(nativeErrorCode(e) || 'failed'); } finally { clearTimeout(timer); }
   const { error } = await sb().rpc('register_native_push', {
     p_provider: reg.provider, p_token: reg.token, p_p256dh: reg.p256dh, p_auth: reg.auth,
     p_label: await label(), p_apns_env: reg.apnsEnv ?? null,
   });
   if (error) {
     if (error.code === 'P0429') throw new NativePushError('rate_limited');
+    if (error.code === '42501') throw new NativePushError('not_allowed');
     if (error.code === '23514') throw new NativePushError('unsupported_endpoint');
     throw new NativePushError('failed');
   }
@@ -86,11 +96,16 @@ export async function nativePushEnabledHere(): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** After sign-in: re-register (tokens rotate; another account may have used this phone). Never prompts for permission. */
-export async function nativeSyncPush(): Promise<void> {
+/**
+ * After sign-in: re-register (tokens rotate; another account may have used this phone). Never prompts for
+ * permission. `wasOn`: this account turned notifications on here before; if the phone has lost its token
+ * since (older app versions dropped it whenever a session failed to load at start-up), register again
+ * instead of silently staying off.
+ */
+export async function nativeSyncPush(opts: { wasOn?: boolean } = {}): Promise<void> {
   if ((await refreshNativePermission()) !== 'granted') return;
   const cur = await (await nativePlugin('KithwallPush')).current().catch(() => ({} as { token?: string }));
-  if (!cur.token) return;   // never turned on here (or turned off): nothing to sync
+  if (!cur.token && !opts.wasOn) return;   // never turned on here (or turned off): nothing to sync
   await store();
 }
 

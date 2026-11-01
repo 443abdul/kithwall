@@ -65,25 +65,26 @@ public class MainActivity extends BridgeActivity {
     private static volatile boolean proxyApplied = false;
 
     /**
-     * "Use Tor (Orbot)": the WebView proxy must be in effect BEFORE the first request, or that request
-     * would leave without Tor. BridgeActivity.onCreate calls load(), which creates the bridge and loads
-     * the start page, so it waits here until ProxyController confirms the override.
+     * "Use Tor (Orbot)": the WebView proxy must be in effect BEFORE the first request, or that request would
+     * leave without Tor. The bridge is still created right here in onCreate: Capacitor and our plugins
+     * register activity-result launchers while it is built, and Android refuses (crashes) once the activity
+     * is RESUMED, which is what happened when bridge creation waited for the proxy. Instead every request
+     * is held back (KwWebViewClient.holdNetwork) until ProxyController confirms the override, then the start
+     * page is loaded again through Tor.
      */
     @Override
     protected void load() {
-        if (!proxyApplied && KwNet.torEnabled(this) && KwNet.proxySupported()) {
-            KwNet.applyProxy(this, () -> runOnUiThread(() -> {
-                proxyApplied = true;
-                if (isFinishing() || isDestroyed()) return;
-                load();
-                afterBridge();
-                // onStart/onResume already ran without a bridge: catch the plugins up.
-                if (bridge != null && getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) bridge.onStart();
-                if (bridge != null && getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) bridge.onResume();
-            }));
-            return;
-        }
+        boolean waitForTor = !proxyApplied && KwNet.torEnabled(this) && KwNet.proxySupported();
+        if (waitForTor) KwWebViewClient.holdNetwork = true;
         super.load();
+        if (!waitForTor) return;
+        if (bridge != null && bridge.getWebView() != null) bridge.getWebView().stopLoading();
+        KwNet.applyProxy(this, () -> runOnUiThread(() -> {
+            proxyApplied = true;
+            KwWebViewClient.holdNetwork = false;
+            if (isFinishing() || isDestroyed() || bridge == null || bridge.getWebView() == null) return;
+            bridge.getWebView().loadUrl(bridge.getAppUrl());
+        }));
     }
 
     private void afterBridge() {

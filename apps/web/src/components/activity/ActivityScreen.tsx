@@ -26,6 +26,7 @@ import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { PersonAvatar } from '@/components/messages/look';
 import { dayBucket } from '@/components/messages/chatModel';
 import { ACTIVITY_TYPES, activityHref, activityIcon, groupActivity, type ActivityGroup } from './activityModel';
+import { RequestSafety } from '@/components/people/RequestSafety';
 
 const KNOWN = new Set<string>(ACTIVITY_TYPES);
 
@@ -180,6 +181,7 @@ function RequestsTab() {
                 <span className="k-act-text"><b>{p?.name ?? t('messages.someone')}</b></span>
                 {p?.username ? <span className="k-small k-muted k-ltr">@{p.username}</span> : null}
                 {note ? <span className="k-act-preview" dir="auto">“{note}”</span> : null}
+                <RequestSafety userId={r.requested_by} />
               </span>
               <span className="k-act-req-actions">
                 <Button size="sm" variant="primary" busy={busy === r.requested_by} disabled={!!busy} onClick={() => void act(r.requested_by, true)}>{t('activity.accept')}</Button>

@@ -126,7 +126,7 @@ export async function createConversation(memberIds: string[], dm: string | null 
   if (name?.trim() && !dm) await writeName(aud, name.trim()).catch((e) => console.warn('conversation name', e));
   // Sign each addition (the database created the rows), so devices deliver keys to these members only.
   for (const id of ids) {
-    await sb().from('audience_members').update(keyring.memberAdd(aud.id, id)).match({ audience_id: aud.id, member_id: id });
+    must(await sb().from('audience_members').update(keyring.memberAdd(aud.id, id)).match({ audience_id: aud.id, member_id: id }));
   }
   await keyring.deliverPending();
   return conv.data as ConversationRow;

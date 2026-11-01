@@ -155,10 +155,12 @@ export function judgeIncoming(args: {
 // Signed member additions (roadmap 2026-11, batch 2). The server lists who should get an audience's key
 // (pending_key_deliveries); a compromised server could add a member row of its own and have honest devices
 // seal the key to it (the 2025 WhatsApp group analysis, ePrint 2025/794). So before sealing to a member of
-// a list, group, event or conversation, a device checks that someone entitled added them, by signature.
-
-/** Rows created before signed additions existed are accepted as they are (the server was trusted then). */
-export const MEMBER_SIG_CUTOFF = '2026-10-31T00:00:00Z';
+// a list, group, event or conversation, a device checks cryptographic evidence that the member belongs:
+//  - a signed addition (audience, member, added_by) by someone entitled to add them, or
+//  - proof of earlier membership: a key delivery to them sealed and signed by a key authority (members
+//    from before signed additions existed, and members whose adder has since left). The caller checks
+//    that signature (crypto sealedSignatureValid) and passes `proven`.
+// Nothing the server merely asserts (timestamps, roles of people who signed nothing) counts.
 
 export interface MemberAddRow {
   audience_id: string; member_id: string; role: 'admin' | 'member'; status: string;
@@ -166,20 +168,26 @@ export interface MemberAddRow {
 }
 
 /**
- * May I seal this audience's key to `row.member_id`? `verify(signerId, sig)` checks the add signature with
- * the signer's trusted identity key. Owners and legacy rows pass; otherwise the adder must be the owner
- * (lists), an active admin (groups / events) or any active member (conversations: members add people they
- * know), or, for events only, the member themselves (circle events are joined directly).
+ * May I seal this audience's key to `row.member_id`? `verify(signerId, sig)` checks the addition signature
+ * against the signer's TRUSTED identity key. Entitled adders, as the database's own rules allow: the owner
+ * (the only one for lists); any active member, admins included (circle members invite friends, circle-event
+ * guests invite circle members, conversation members add people they know); and the member themselves for
+ * circles and events (open circles and circle events are joined directly).
  */
-export function memberVouched(aud: AudienceMeta, roster: Roster, row: MemberAddRow, verify: (signerId: string, sig: string) => boolean): boolean {
+export function memberVouched(aud: AudienceMeta, roster: Roster, row: MemberAddRow, verify: (signerId: string, sig: string) => boolean, proven = false): boolean {
   if (aud.kind === 'friends' || aud.kind === 'self') return true;
   if (row.member_id === aud.owner_id) return true;
-  if (row.created_at < MEMBER_SIG_CUTOFF) return true;
+  if (proven) return true;
   const by = row.add_by;
   if (!by || !row.add_sig || !verify(by, row.add_sig)) return false;
   if (by === aud.owner_id) return true;
   if (aud.kind === 'list') return false;
-  if (aud.kind === 'conversation') return roster.members.has(by);
-  if (by === row.member_id) return aud.kind === 'event';
-  return roster.admins.has(by);
+  if (by === row.member_id) return aud.kind === 'group' || aud.kind === 'event';
+  return roster.members.has(by);
+}
+
+/** Who may have sealed a key that proves earlier membership: a key authority, or (conversations) a member. */
+export function provenBySealer(aud: AudienceMeta, roster: Roster, sealedBy: string, me: string): boolean {
+  if (sealedBy === aud.owner_id || sealedBy === me || roster.admins.has(sealedBy)) return true;
+  return aud.kind === 'conversation' && roster.members.has(sealedBy);
 }

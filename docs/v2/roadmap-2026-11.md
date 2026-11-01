@@ -68,3 +68,29 @@ legal review of PECA/SMPRA (10).
 
 Server-side search and trending, marketplace, live streaming and federation: each needs the server to read
 content or makes the anonymity set public. Local (on-device) search of decrypted posts is the substitute.
+
+## Round 3 (2026-11-01): review fixes, notifications, new features
+
+- **Signed member additions, reworked after review.** The server's `created_at` no longer grandfathers
+  anyone; earlier members are accepted on cryptographic proof (a key delivery to them signed by a key
+  authority, checked with `sealedSignatureValid`, fetched through `member_key_proofs`). Any current member
+  may vouch for people they added (as the database rules allow), invited members are covered, unvouched
+  signer keys are refused, and `resealMine` re-signs additions after an identity change.
+- **Notifications (Android).** The device registration is dropped only on an explicit sign-out (a session
+  that failed to load at start-up used to delete the push token silently), a lost token is re-registered on
+  the next sign-in, the permission is re-read when the app returns to the foreground, token requests time
+  out after 45 s, failures say what went wrong (with a code), and the test notification reports when no
+  device received it. Verified on an emulator with both a debug and a release-shrunk build.
+- **Tor (Orbot) users:** the app no longer crashes on launch (bridge built in onCreate, network held until
+  the proxy is confirmed).
+- **Fixes:** close-friends stories (kw.can_story), close-friends profile fields kept in the vault, reactions
+  sealed before the old one is removed, offline chat queue survives leaving the chat and never duplicates a
+  message, UnifiedPush timers, MFA rule on post_votes.
+- **New: time capsules.** Posts sealed with drand timelock encryption (tlock) that nobody can open before the
+  chosen date; beacons come through our own relay (`/api/drand/...`) and are verified against the pinned
+  quicknet key.
+- **New: scam and impersonation shield.** Connection requests and strangers' profiles show account age,
+  mutual connections (from connections' own encrypted friend lists) and a warning when a name or @handle
+  imitates one of your connections (homoglyph-aware, `lib/social/lookalike.ts`).
+- Next from the research: Data Saver mode, offline "Kit Drop" bundles for shutdowns, on-device translation,
+  legacy contact.

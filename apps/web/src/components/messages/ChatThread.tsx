@@ -45,6 +45,10 @@ interface Line extends ChatLine { row: MessageRow; payload: ChatPayload | null }
 /** 'queued': failed because the device is offline; it is sent again by itself when the connection is back. */
 interface Pending { tempId: string; draft: Draft; status: 'sending' | 'failed' | 'queued'; progress: number; error?: string }
 
+/** Messages still being sent or waiting for a connection, per conversation: kept outside the thread
+ *  component so leaving the chat (or switching chats) doesn't silently drop them. */
+const pendingByChat = new Map<string, Pending[]>();
+
 /** Did a send fail because there is no connection (rather than being refused)? */
 function offlineFailure(e: unknown): boolean {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
@@ -97,7 +101,13 @@ function Thread({ c }: { c: ConversationSummary }) {
   const typing = useTyping(s.typingIndicator ? c.id : null);
   const root = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const [pending, setPending] = useState<Pending[]>([]);
+  const [pending, setPendingState] = useState<Pending[]>(() => pendingByChat.get(c.id) ?? []);
+  // The per-chat store is the source of truth (a send that finishes after I left the chat still updates it).
+  const setPending = useCallback((fn: (p: Pending[]) => Pending[]) => {
+    const next = fn(pendingByChat.get(c.id) ?? []);
+    if (next.length) pendingByChat.set(c.id, next); else pendingByChat.delete(c.id);
+    setPendingState(next);
+  }, [c.id]);
   const [reply, setReply] = useState<ReplyTarget | null>(null);
   const [focusKey, setFocusKey] = useState(0);
   const [acting, setActing] = useState<Line | null>(null);
@@ -187,8 +197,9 @@ function Thread({ c }: { c: ConversationSummary }) {
   };
   const toBottom = () => { const el = scroller.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); setNewBelow(false); };
 
-  const send = useCallback((draft: Draft) => {
+  const send = useCallback((input: Draft) => {
     const tempId = crypto.randomUUID();
+    const draft: Draft = { ...input, id: input.id ?? crypto.randomUUID() };
     setReply(null);
     setAtBottom(true);
     setPending((p) => [...p, { tempId, draft, status: 'sending', progress: 0 }]);
@@ -207,7 +218,7 @@ function Thread({ c }: { c: ConversationSummary }) {
       }
     };
     void run();
-  }, [c, qc, t]);
+  }, [c, qc, t, setPending]);
 
   const retry = (p: Pending) => { setPending((xs) => xs.filter((q) => q.tempId !== p.tempId)); send(p.draft); };
   // Back online: send everything that waited for the connection, in the order it was written.

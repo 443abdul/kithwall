@@ -448,3 +448,19 @@
 .kw .k-fingerprints { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .kw .k-fingerprints code, .kw .k-set-section code { font-size: var(--text-xs); word-break: break-all; }
 .kw .k-chat-queued { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--text-muted); }
+
+/* ---- Round 3: request safety screen ---- */
+.kw .k-req-safety { display: flex; flex-direction: column; gap: var(--space-1); margin-block-start: var(--space-1); }
+.kw .k-req-safety:not([data-compact]) { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.kw .k-req-warn { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-2); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); font-weight: var(--weight-bold); }
+.kw .k-req-facts { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); color: var(--text-muted); }
+.kw .k-req-facts > span { display: inline-flex; align-items: center; gap: 4px; }
+.kw .k-req-facts [data-tone="warn"] { color: var(--warning, #b45309); }
+.kw .k-req-facts .k-icon { inline-size: 14px; block-size: 14px; }
+.kw .k-capsule { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: var(--space-5) var(--space-4); border-radius: var(--radius-lg); text-align: center;
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface-2)); border: 1px dashed var(--accent); }
+.kw .k-capsule.is-open { align-items: stretch; text-align: start; background: none; border-style: solid; border-color: var(--border); padding: var(--space-3); }
+.kw .k-capsule-ico { display: grid; place-items: center; inline-size: 48px; block-size: 48px; border-radius: 50%; background: var(--surface); color: var(--accent-text); }
+.kw .k-capsule-title { font-weight: var(--weight-bold); font-size: var(--text-lg); margin: 0; }
+.kw .k-capsule-tag { display: flex; align-items: center; gap: var(--space-1); color: var(--accent-text); font-weight: var(--weight-bold); }
+.kw .k-capsule-edit { padding: var(--space-3); border: 1px dashed var(--accent); border-radius: var(--radius-md); margin-block: var(--space-2); }

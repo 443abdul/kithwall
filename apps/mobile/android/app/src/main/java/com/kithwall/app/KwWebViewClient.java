@@ -17,6 +17,21 @@ import com.getcapacitor.BridgeWebViewClient;
  * server being down (502/503/504) show it; every other response is the site's own page.
  */
 class KwWebViewClient extends BridgeWebViewClient {
+    /**
+     * "Use Tor (Orbot)": true from the moment the bridge is created until the WebView proxy override is
+     * confirmed. Every request the page makes meanwhile is refused here, so nothing leaves without Tor
+     * (MainActivity.load creates the bridge at the normal time and reloads once the proxy is in effect).
+     */
+    static volatile boolean holdNetwork = false;
+
+    @Override
+    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        if (holdNetwork) {
+            return new WebResourceResponse("text/plain", "utf-8", 503, "Waiting for Tor", null, new java.io.ByteArrayInputStream(new byte[0]));
+        }
+        return super.shouldInterceptRequest(view, request);
+    }
+
     private static final String TAG = "KwWebView";
 
     private final Bridge bridge;

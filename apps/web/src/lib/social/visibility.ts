@@ -39,7 +39,7 @@ export function useVisibility(): VisibilityMap {
   return useSyncExternalStore((l) => { listeners.add(l); return () => { listeners.delete(l); }; }, () => current, () => current);
 }
 
-/** My 'only me' fields (for the editor and for re-saving without losing them). */
+/** My fields that are not in the open envelope (close friends and only me): for the editor and for re-saving. */
 export async function myPrivateFields(): Promise<Partial<ProfileInfo>> {
   return (await vaultGet<Partial<ProfileInfo>>(PRIVATE_NS)) ?? {};
 }

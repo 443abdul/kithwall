@@ -71,7 +71,12 @@ function PushSection() {
   }
   async function test() {
     setBusy('test');
-    try { await sendTestPush(); toast({ message: t('settings.notifications.testSent') }); }
+    try {
+      const r = await sendTestPush();
+      // The server answers how many devices it actually handed the test to; 0 means nothing will arrive.
+      if (r && typeof r.sent === 'number' && r.sent === 0) toast({ message: t('settings.notifications.testNone'), tone: 'danger' });
+      else toast({ message: t('settings.notifications.testSent') });
+    }
     catch { toast({ message: t('settings.notifications.testFailed'), tone: 'danger' }); } finally { setBusy(null); }
   }
 
