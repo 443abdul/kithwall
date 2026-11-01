@@ -23,7 +23,7 @@
     "altcha-lib": "^2.6.0",
     "drand-client": "1.2.5",
     "fflate": "^0.8.3",
-    "next": "16.4.2",
+    "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "tldts": "7.4.16",
