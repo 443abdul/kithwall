@@ -31,6 +31,29 @@ import org.json.JSONArray;
 )
 public class KithwallPushPlugin extends Plugin {
 
+    /** The running page's plugin instance, for call actions that start outside it (CallActionReceiver). */
+    private static volatile java.lang.ref.WeakReference<KithwallPushPlugin> running = new java.lang.ref.WeakReference<>(null);
+
+    @Override
+    public void load() {
+        running = new java.lang.ref.WeakReference<>(this);
+    }
+
+    /**
+     * An incoming-call action for the page (only "decline" today), if a page is running; not retained, so a
+     * page that loads later never acts on a stale one. Returns false when there was nobody to tell.
+     */
+    static boolean emitCall(String action, String conv, String call) {
+        KithwallPushPlugin p = running.get();
+        if (p == null || p.getBridge() == null) return false;
+        JSObject d = new JSObject();
+        d.put("action", action);
+        d.put("conv", conv);
+        d.put("call", call);
+        p.notifyListeners("call", d, false);
+        return true;
+    }
+
     /**
      * The real state, from Android itself. Capacitor's getPermissionState() answers from a cache that records
      * "denied" the first time the dialog closes without a yes (on Android 13+ even dismissing it counts) and
@@ -187,6 +210,15 @@ public class KithwallPushPlugin extends Plugin {
     @PluginMethod
     public void clearNotifications(PluginCall call) {
         Notifier.cancelAll(getContext());
+        call.resolve();
+    }
+
+    /** This device stopped ringing for a call in that chat (answered, declined, cancelled…): stop the notification and screen. */
+    @PluginMethod
+    public void cancelCall(PluginCall call) {
+        String conv = call.getString("conv");
+        if (conv == null || !Notifier.UUID.matcher(conv).matches()) { call.reject("bad conversation", "failed"); return; }
+        Notifier.cancel(getContext(), "call:" + conv);
         call.resolve();
     }
 

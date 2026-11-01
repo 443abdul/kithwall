@@ -212,10 +212,15 @@ security review N6: before this the comment claimed it but nothing cleared them)
   text, linking to Activity.
 - **On screen.** While the app is in front, message and call pushes are left to the app (Android:
   `MainActivity.isForeground`; iOS: `willPresent` returns no presentation).
-- **Calls.** "is calling" pushes use a high-importance `calls` channel with the ringtone, a full-screen
-  intent and `NotificationCompat.CallStyle` (Decline closes it; Answer/tap opens
-  `/messages/<chat>?call=<id>`, where the app asks the caller whether it is still ringing; 45 s timeout).
-  On Android 14+ without the full-screen permission it degrades to a normal heads-up notification. iOS:
+- **Calls.** "is calling" pushes use a high-importance `calls` channel with a repeating ringtone,
+  `NotificationCompat.CallStyle` and a full-screen intent to `IncomingCallActivity` (a bare native screen
+  over the lock screen: "Incoming call" only while the phone is locked, the caller's name once unlocked).
+  Answer unlocks first and opens `/messages/<chat>?call=<id>&answer=1` (the page accepts the call's ring
+  without a second tap); Decline stops ringing and, with the page running, sends the sealed decline; tap
+  opens the chat (the page asks the caller whether it is still ringing). It stops when the page stops
+  ringing for that call (`KithwallPush.cancelCall`) or at the caller's 45 s (`ts` in the payload). Details
+  and limits: `04-calls.md` §14.3. On Android 14+ without the full-screen permission it degrades to a
+  heads-up notification with Decline / Answer. iOS:
   time-sensitive interruption level. WebRTC itself stays in the WebView (Android WebView, WKWebView 14.3+);
   microphone/camera permissions are requested at call time (Capacitor's WebChromeClient on Android;
   `NSMicrophoneUsageDescription` / `NSCameraUsageDescription` on iOS).

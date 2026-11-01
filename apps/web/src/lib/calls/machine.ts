@@ -3,6 +3,7 @@
 //
 //   idle ──place──▶ outgoing ──peer-connected──▶ active ──hangup / last peer left──▶ ended
 //   idle ──ring───▶ incoming ──accept──▶ connecting ──peer-connected──▶ active
+//   idle ──join───▶ connecting (late join: a group call that is already going on, docs §14)
 //                   incoming ──decline / timeout / cancel / answered-elsewhere──▶ ended
 //   outgoing ──all declined / busy / timeout──▶ ended
 //   ended ──reset──▶ idle
@@ -20,7 +21,8 @@ export type EndReason =
   | 'elsewhere'         // I answered on another device
   | 'failed'            // couldn't connect
   | 'no-media'          // microphone / camera unavailable or refused
-  | 'relay';            // "Always relay" is on but the relay couldn't be reached (fail fast, never go direct)
+  | 'relay'             // "Always relay" is on but the relay couldn't be reached (fail fast, never go direct)
+  | 'over';             // late join: nobody answered, the call had already ended
 
 export interface MachineState {
   phase: Phase;
@@ -38,6 +40,7 @@ export interface MachineState {
 export type MachineEvent =
   | { t: 'place'; invited: string[] }
   | { t: 'ring'; invited: string[] }
+  | { t: 'join'; invited: string[] }
   | { t: 'accept' }
   | { t: 'decline' }
   | { t: 'peer-connected'; count: number }
@@ -47,7 +50,7 @@ export type MachineEvent =
   | { t: 'answered-elsewhere' }
   | { t: 'timeout' }
   | { t: 'hangup' }
-  | { t: 'failed'; reason?: 'failed' | 'no-media' | 'relay' }
+  | { t: 'failed'; reason?: 'failed' | 'no-media' | 'relay' | 'over' }
   | { t: 'reset' };
 
 export const IDLE: MachineState = Object.freeze({ phase: 'idle', invited: [], declined: [], connected: 0, everConnected: false, reason: null }) as MachineState;
@@ -61,6 +64,8 @@ export function step(s: MachineState, e: MachineEvent): MachineState {
       return s.phase === 'idle' || s.phase === 'ended' ? { ...IDLE, phase: 'outgoing', invited: [...e.invited] } : s;
     case 'ring':
       return s.phase === 'idle' || s.phase === 'ended' ? { ...IDLE, phase: 'incoming', invited: [...e.invited] } : s;
+    case 'join':
+      return s.phase === 'idle' || s.phase === 'ended' ? { ...IDLE, phase: 'connecting', invited: [...e.invited] } : s;
     case 'accept':
       return s.phase === 'incoming' ? { ...s, phase: 'connecting' } : s;
     case 'decline':

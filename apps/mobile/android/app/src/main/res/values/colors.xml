@@ -4,4 +4,10 @@
 <resources>
     <color name="kw_background">#fbf6f0</color>
     <color name="kw_splash_icon_background">#b4532a</color>
+    <!-- The incoming-call screen over the lock screen: dark in both modes, like the system's own. -->
+    <color name="kw_call_background">#1b1613</color>
+    <color name="kw_call_text">#ffffff</color>
+    <color name="kw_call_muted">#c9bfb6</color>
+    <color name="kw_call_answer">#2e7d32</color>
+    <color name="kw_call_decline">#c62828</color>
 </resources>

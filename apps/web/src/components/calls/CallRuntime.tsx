@@ -1,13 +1,17 @@
 'use client';
 // Loaded by ./CallRoot once the app is unlocked (signed-out pages never download the call engine). Listens
 // for incoming calls while the app is unlocked (never in the duress decoy), answers "is it still ringing?" for pushes (?call=<id> on a chat link), and shows the call
-// screens above whatever page is open, so a call survives navigating around the app.
+// screens above whatever page is open, so a call survives navigating around the app. In the Android app,
+// Answer on the incoming-call notification adds &answer=1 (accept without a second tap) and Decline
+// reaches the engine here while the page runs in the background (lib/native/calls.ts).
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { useLocale } from '@/i18n';
 import { useSession } from '@/lib/keys/session';
 import { useAppLock } from '@/lib/safety/applock';
 import { calls, useCall } from '@/lib/calls/engine';
+import { isNative } from '@/lib/native';
+import { onNativeCallAction } from '@/lib/native/calls';
 import { CallScreens } from './CallScreens';
 
 const CHAT = /^\/messages\/([0-9a-f-]{36})$/;
@@ -18,9 +22,10 @@ function probeFrom(url: string, replace: boolean) {
   const call = u.searchParams.get('call');
   const m = CHAT.exec(u.pathname);
   if (!call || !m) return;
-  void calls.probe(m[1]!, call);
+  void calls.probe(m[1]!, call, u.searchParams.get('answer') === '1');
   if (replace) {
     u.searchParams.delete('call');
+    u.searchParams.delete('answer');
     window.history.replaceState(window.history.state, '', u.pathname + u.search + u.hash);
   }
 }
@@ -61,6 +66,16 @@ export function CallRuntime() {
     };
     window.addEventListener('kw:navigate', onNav);
     return () => window.removeEventListener('kw:navigate', onNav);
+  }, [ready]);
+
+  // Decline on the app's incoming-call notification while this page runs in the background.
+  useEffect(() => {
+    if (!ready || !isNative()) return;
+    let off: (() => void) | null = null;
+    let live = true;
+    void onNativeCallAction((a) => { void calls.declineFromPush(a.conv, a.call); })
+      .then((o) => { if (live) off = o; else o(); }, () => undefined);
+    return () => { live = false; off?.(); };
   }, [ready]);
 
   if (!ready || s.m.phase === 'idle') return null;
