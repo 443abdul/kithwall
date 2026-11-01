@@ -20,6 +20,7 @@ import { people, usePeopleVersion, usePerson } from '@/lib/people';
 import { useFileUrl } from '@/lib/media';
 import type { CommentRow, PostRow } from '@/lib/types';
 import { RelativeTime, RichText } from './bits';
+import { Translatable } from '@/components/translate/Translatable';
 import { threadComments } from './logic';
 import { Menu } from './Menu';
 import { ReportDialog } from './ReportDialog';
@@ -196,7 +197,7 @@ function CommentView({ item, canDelete, onReply, onDelete, contentKey, postId }:
                 <Button size="sm" variant="primary" type="submit" busy={saving} disabled={!draft.trim()}>{t('edit.save')}</Button>
               </div>
             </form>
-          ) : item.text !== null ? <RichText text={item.text} clamp={400} /> : <p className="k-muted k-small">{t('feed.commentHidden')}</p>}
+          ) : item.text !== null ? <Translatable text={item.text} variant="comment" textClassName="k-rich" mine={mine}><RichText text={item.text} clamp={400} /></Translatable> : <p className="k-muted k-small">{t('feed.commentHidden')}</p>}
         </div>
         <div className="k-comment-meta k-small">
           <RelativeTime iso={item.created_at} />

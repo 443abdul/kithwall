@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- play flavour: Firebase Cloud Messaging. Token creation waits until the person turns notifications on,
      and Firebase's optional analytics/metrics are off. Messages are data-only ciphertext. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <application>
         <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
         <meta-data android:name="firebase_analytics_collection_enabled" android:value="false" />
@@ -11,6 +12,14 @@
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
+        </service>
+        <!-- No Google usage telemetry ("Firelog"). ML Kit (on-device translation) and Firebase log usage events
+             (for ML Kit: the languages detected and translated, text sizes, device model) through datatransport,
+             whose only uploader is the CCT backend registered here. Without it the scheduler finds no backend
+             and deletes the queued events instead of sending them. Translation, language identification and
+             push delivery don't depend on it. -->
+        <service android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery" tools:node="merge">
+            <meta-data android:name="backend:com.google.android.datatransport.cct.CctBackendFactory" tools:node="remove" />
         </service>
     </application>
 </manifest>

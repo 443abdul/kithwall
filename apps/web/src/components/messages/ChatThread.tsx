@@ -40,6 +40,7 @@ import { useSwipeBack, useVisualViewportHeight } from './runtime';
 import { OldChatSuggestion, TimerHint } from './Ephemeral';
 import { CallButtons } from '@/components/calls/CallButtons';
 import { ChatKeyNotices } from '@/components/verify/ChatKeyNotices';
+import { Translatable } from '@/components/translate/Translatable';
 
 interface Line extends ChatLine { row: MessageRow; payload: ChatPayload | null }
 /** 'queued': failed because the device is offline; it is sent again by itself when the connection is back. */
@@ -410,7 +411,11 @@ function Bubble({ l, c, first, last, mine, isGroup, replyTo, reactions, seen, re
               <>
                 {voice ? <VoiceNote file={voice.file} meta={voice.meta} messageId={l.id} mine={mine} persist={!isHiddenChat(c.id)} /> : null}
                 {p?.attachments?.length ? <ChatAttachments files={p.attachments} trusted={mine || connections.has(l.sender)} pending={!mine && !friends.data} /> : null}
-                {text ? <p className="k-chat-text" dir="auto"><MessageText text={text} /></p> : null}
+                {text ? (
+                  <Translatable text={text} variant="chat" textClassName="k-chat-text" mine={mine}>
+                    <p className="k-chat-text" dir="auto"><MessageText text={text} /></p>
+                  </Translatable>
+                ) : null}
                 {p?.link ? <LinkCard link={p.link} /> : null}
               </>
             ) : (

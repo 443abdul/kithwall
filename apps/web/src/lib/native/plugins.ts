@@ -1,4 +1,4 @@
-// Type contracts of the four app-local Capacitor plugins (apps/mobile; Android in
+// Type contracts of the app-local Capacitor plugins (apps/mobile; Android in
 // android/app/src/main/java/com/kithwall/app/, iOS in ios/App/App/Kithwall*.swift). Keep in step with the
 // native code: names, argument keys and error codes are part of the contract.
 import type { PluginListenerHandle } from '@capacitor/core';
@@ -116,6 +116,31 @@ export interface KithwallPushPlugin {
    * until a listener is attached, so a tap during page load isn't lost.
    */
   addListener(event: 'open', fn: (e: { url: string }) => void): Promise<PluginListenerHandle>;
+}
+
+/**
+ * On-device translation (Android, play build: Google ML Kit Translation + Language Identification; the foss
+ * build has no Google libraries and answers `supported: false`). Text never leaves the phone: the only
+ * network use is downloading a language pack (~30 MB each, from Google) after the person agreed.
+ * Language tags are BCP 47 language subtags ('ur', 'en', 'zh'). Errors: 'unsupported' (this build or
+ * language), 'not_downloaded' (translate() before the packs are there), 'failed'.
+ */
+export interface KithwallTranslatePlugin {
+  /** `wifi`: the phone is on an unmetered network now (Wi-Fi / Ethernet). */
+  status(): Promise<{ supported: boolean; wifi: boolean }>;
+  /** Most likely languages first; an empty list when nothing is confident (ML Kit's 'und'). */
+  detect(opts: { text: string }): Promise<{ languages: { lang: string; confidence: number }[] }>;
+  /** Can this pair be translated, and which language packs would have to be downloaded first. */
+  pair(opts: { source: string; target: string }): Promise<{ supported: boolean; missing: string[] }>;
+  /**
+   * Download the packs for a pair (no-op when present). `wifiOnly` waits for an unmetered network, so the
+   * promise may stay pending until then (the download goes on in the background if the page is left).
+   */
+  download(opts: { source: string; target: string; wifiOnly: boolean }): Promise<void>;
+  translate(opts: { text: string; source: string; target: string }): Promise<{ text: string }>;
+  /** Downloaded language packs (English is built in and not listed). */
+  packs(): Promise<{ packs: string[] }>;
+  removePack(opts: { lang: string }): Promise<void>;
 }
 
 /** Capacitor's built-in SystemBars plugin (Android): status / navigation bar icon colour. */

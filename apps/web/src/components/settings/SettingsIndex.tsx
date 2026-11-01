@@ -1,5 +1,5 @@
 'use client';
-// Settings (Kithwall 2): Appearance and Language inline, everything else on its own page.
+// Settings (Kithwall 2): Appearance, Language and Translation inline, everything else on its own page.
 import { useT } from '@/i18n';
 import { signOut } from '@/lib/keys/session';
 import { Button } from '@/components/ui/Button';
@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { List, ListItem } from '@/components/ui/ListItem';
 import { StylePicker } from '@/components/onboarding/StylePicker';
 import { LanguagePicker } from '@/components/onboarding/LanguagePicker';
+import { TranslationSettings } from '@/components/translate/TranslationSettings';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { Page, useShellHref } from '@/components/shell/AppShell';
 import type { IconName } from '@/components/ui/Icon';
@@ -47,6 +48,7 @@ export function SettingsIndex() {
           </div>
         </Card>
       </section>
+      <TranslationSettings />
       <Card padding="flush">
         <List label={t('you.safety')}>
           <li><ListItem icon="shield" title={t('you.safety')} subtitle={t('you.safetySub')} href={href('/you/safety')} /></li>

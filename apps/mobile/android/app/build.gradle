@@ -123,6 +123,11 @@ dependencies {
     // The connector's Java-facing API uses kotlin.Unit / Function1 (Gradle resolves to the newest version requested).
     fossImplementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.21"
 
+    // On-device translation (KithwallTranslatePlugin → TranslateImpl), play build only: ML Kit Translation
+    // (language packs downloaded on request) and the bundled Language Identification model. foss has a stub.
+    playImplementation "com.google.mlkit:translate:$mlkitTranslateVersion"
+    playImplementation "com.google.mlkit:language-id:$mlkitLanguageIdVersion"
+
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

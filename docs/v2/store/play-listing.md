@@ -104,9 +104,13 @@ the encrypted content).
 | **App activity → Other user-generated content / Other actions** | Yes | Required | App functionality, Security/fraud prevention | Server-visible metadata: connections/friendships, circle and chat membership, timestamps of posts/messages, reactions' existence, notifications, reports filed. |
 | App activity → In-app search history, installed apps, web browsing | No | | | |
 | Web browsing | No | | | |
-| App info and performance → **Crash logs / Diagnostics** | No | | | No crash reporting or analytics SDKs. |
+| App info and performance → **Crash logs / Diagnostics** | No | | | No crash reporting or analytics SDKs. ML Kit (on-device translation) would log usage metrics; its uploader is removed from the play manifest (`05-native.md` §12), so they are never sent. Re-check with a network capture before answering. |
 | **Device or other IDs** | Yes | Optional | App functionality | Push token (FCM registration token) and the device's push public key, only when notifications are turned on; coarse device label ("Kithwall app on Android"). |
 | **Location** (approximate/precise) | No | | | The optional check-in location is end-to-end encrypted (exempt) and only sent when the person taps to attach it. |
+
+On-device translation (play build): the text being translated never leaves the phone (processed on the device,
+not collected). Downloading a language pack fetches a model file from Google (ML Kit may use a per-installation
+identifier for that, per Google's ML Kit data disclosure); no content is sent.
 
 Security practices to tick: data encrypted in transit; users can request deletion; (optionally) "committed
 to follow the Play Families policy" — no (not a kids app); independent security review — only once done.
