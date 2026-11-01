@@ -17,6 +17,7 @@ import { keyAuthorities } from './keys/roster';
 import type { AudienceRow, FileRef, MessagePayload, MessageRow } from './types';
 import type { Decrypted } from './content';
 import type { VoiceMeta } from './chat/voice';
+import { checkFrank, frankPayload } from './chat/franking';
 
 export interface ConversationRow {
   id: string; audience_id: string; created_by: string; dm_key: string | null; last_message_at: string; created_at: string;
@@ -71,6 +72,9 @@ export interface ChatPayload extends MessagePayload {
   voice?: VoiceMeta;
   /** A reply to (or reaction on) one of the recipient's stories: whose story it was. */
   story?: { author: string };
+  /** Franking key (lib/chat/franking.ts): fresh for every message and edit; it opens the commitment in
+   *  messages.frank_commit, and only leaves the chat if someone reports this message. */
+  fk?: string;
 }
 
 export const MAX_MESSAGE_CHARS = 20_000;
@@ -258,8 +262,9 @@ export async function sendMessage(conv: ConversationRow, payload: ChatPayload, i
   if ((payload.text ?? '').length > MAX_MESSAGE_CHARS) throw new Error('That message is too long.');
   const { key, epoch } = await conversationKey(conv);
   const base = { id, conversation_id: conv.id, sender_id: me(), epoch };
-  const envelope = sealEnvelope({ header: messageHeader(base, conv.audience_id), payload, audienceKey: key, signPriv: identity().signPriv });
-  const res = await sb().from('messages').insert({ ...base, envelope }).select().single();
+  const franked = frankPayload(base, payload);
+  const envelope = sealEnvelope({ header: messageHeader(base, conv.audience_id), payload: franked.payload, audienceKey: key, signPriv: identity().signPriv });
+  const res = await sb().from('messages').insert({ ...base, envelope, frank_commit: franked.commit }).select().single();
   if (res.error) {
     if (res.error.code === 'P0429') throw new Error('You\'ve sent a lot of messages today. Try again later.');
     if (res.error.code === '42501') throw new Error('You can\'t send messages in this conversation.');
@@ -285,7 +290,8 @@ export async function deleteMessage(row: MessageRow, attachments: FileRef[] = []
 
 /**
  * Edit my message: a new payload sealed under the SAME epoch key (so an edit never reaches people who
- * joined later), replacing the old one; the server sets edited_at and keeps no history.
+ * joined later), replacing the old one; the server sets edited_at and keeps no history. The edit gets its own
+ * franking key and commitment, which the server tags with the edit time.
  */
 export async function editMessage(conv: Pick<ConversationRow, 'audience_id'>, row: MessageRow, text: string): Promise<void> {
   if (row.sender_id !== me()) throw new Error('You can only edit your own messages.');
@@ -297,8 +303,9 @@ export async function editMessage(conv: Pick<ConversationRow, 'audience_id'>, ro
   let key = keyring.get(conv.audience_id, row.epoch);
   if (!key) { await keyring.load(); key = keyring.get(conv.audience_id, row.epoch); }
   if (!key) throw new KeyWaitingError(conv.audience_id);
-  const envelope = sealEnvelope({ header: messageHeader(row, conv.audience_id), payload: next, audienceKey: key, signPriv: identity().signPriv });
-  const res = await sb().from('messages').update({ envelope }).eq('id', row.id).select('id');
+  const franked = frankPayload(row, next);
+  const envelope = sealEnvelope({ header: messageHeader(row, conv.audience_id), payload: franked.payload, audienceKey: key, signPriv: identity().signPriv });
+  const res = await sb().from('messages').update({ envelope, frank_commit: franked.commit }).eq('id', row.id).select('id');
   if (res.error) throw new Error(res.error.code === 'P0429' ? "You've edited a lot of messages today. Try again later." : res.error.message);
   if (!res.data?.length) throw new Error("This message can't be edited any more.");
   forget(row.id);
@@ -353,7 +360,9 @@ export function readMessage(conv: Pick<ConversationRow, 'audience_id'>, row: Mes
   let out: Decrypted<ChatPayload>;
   try {
     const value = openEnvelope<ChatPayload>({ header: messageHeader(row, conv.audience_id), envelope: row.envelope, audienceKey: key, signPub: b64u.decode(sender.sign_pub) });
-    out = value && typeof value === 'object' && typeof (value.text ?? '') === 'string' ? { ok: true, value } : { ok: false, reason: 'unverified' };
+    // A franking commitment that doesn't match the content is shown as unverified, never silently accepted.
+    out = value && typeof value === 'object' && !Array.isArray(value) && typeof (value.text ?? '') === 'string' && checkFrank(row, value) !== 'bad'
+      ? { ok: true, value } : { ok: false, reason: 'unverified' };
   } catch {
     out = { ok: false, reason: 'unverified' };
   }

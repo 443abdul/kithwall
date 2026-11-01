@@ -1,7 +1,7 @@
 'use client';
 // Photos & files (spec §3.11): re-encode on device (drops EXIF/GPS), encrypt in chunks,
 // upload ciphertext to the private bucket, decrypt into blob: URLs for display.
-import { b64u, decryptFile, encryptFile } from '@kithwall/crypto';
+import { b64u, decryptFile, encryptFile, fileDigest } from '@kithwall/crypto';
 import { useEffect, useState } from 'react';
 import { sb, must, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './supabase';
 import { netUrl } from './net/runtime';
@@ -36,7 +36,7 @@ export async function uploadEncrypted(bytes: Uint8Array, mime: string, link: Med
   });
   if (up.error) throw new Error(up.error.message);
   must(await sb().from('media_objects').insert({ path, owner_id: me(), bytes: ciphertext.byteLength, ...linkCols(link) }));
-  return { path, key: b64u.encode(key), mime, bytes: bytes.byteLength };
+  return { path, key: b64u.encode(key), mime, bytes: bytes.byteLength, sha: fileDigest(ciphertext) };
 }
 
 export interface MediaLink { postId?: string; photoId?: string; messageId?: string; profileAvatar?: boolean }
@@ -92,6 +92,7 @@ export function fileUrl(ref: FileRef): Promise<string> {
     if (res.error || !res.data) throw new Error(res.error?.message ?? 'download failed');
     const cipher = new Uint8Array(await res.data.arrayBuffer());
     recordMediaBytes(cipher.byteLength);
+    if (ref.sha !== undefined && fileDigest(cipher) !== ref.sha) throw new Error('This file couldn’t be verified.');
     const plain = decryptFile(cipher, b64u.decode(ref.key), ref.path);
     return URL.createObjectURL(new Blob([plain as BlobPart], { type: ref.mime }));
   })();
@@ -195,6 +196,7 @@ export async function uploadLargeEncrypted(bytes: Uint8Array, mime: string,
   // Let the UI paint "Encrypting…" before the synchronous encryption pass.
   await new Promise((r) => setTimeout(r, 0));
   const { key, ciphertext } = encryptFile(bytes, first);
+  const sha = fileDigest(ciphertext);
   const n = Math.max(1, Math.ceil(ciphertext.byteLength / PART_BYTES));
   const paths = [first, ...Array.from({ length: n - 1 }, () => `${owner}/${crypto.randomUUID()}`)];
   const total = ciphertext.byteLength;
@@ -218,7 +220,7 @@ export async function uploadLargeEncrypted(bytes: Uint8Array, mime: string,
   }
   const keyB64 = b64u.encode(key);
   key.fill(0);
-  return { path: first, key: keyB64, mime, bytes: bytes.byteLength, ...(n > 1 ? { parts: paths } : {}) };
+  return { path: first, key: keyB64, mime, bytes: bytes.byteLength, sha, ...(n > 1 ? { parts: paths } : {}) };
 }
 
 /** Download every part of a file (with progress), verify and decrypt it on this device. */
@@ -256,6 +258,7 @@ export async function downloadFile(ref: FileRef, opts: { onProgress?: ProgressFn
   for (const c of chunks) { all.set(c, o); o += c.byteLength; }
   chunks.length = 0;
   await new Promise((r) => setTimeout(r, 0));
+  if (ref.sha !== undefined && fileDigest(all) !== ref.sha) throw new Error('This file couldn’t be verified.');
   try {
     return decryptFile(all, b64u.decode(ref.key), ref.path);
   } catch {

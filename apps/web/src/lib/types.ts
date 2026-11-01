@@ -47,7 +47,12 @@ export interface LikeRow {
  * objects: `parts` lists their paths in order (parts[0] === path); the ciphertext is their
  * concatenation and `path` is the file id bound into every chunk's associated data.
  */
-export interface FileRef { path: string; key: string /* b64u file key */; mime: string; w?: number; h?: number; bytes: number; parts?: string[] }
+export interface FileRef {
+  path: string; key: string /* b64u file key */; mime: string; w?: number; h?: number; bytes: number; parts?: string[];
+  /** SHA-256 of the whole stored ciphertext (b64u, @kithwall/crypto fileDigest): checked on download, and binds the
+   *  file to a message's franking commitment so it can't be swapped behind the same path. Files from before it have none. */
+  sha?: string;
+}
 
 /** Click-to-play video embed (lib/embeds.ts). Validated with validEmbed() before use. */
 export interface LinkEmbed { provider: 'youtube' | 'vimeo' | 'dailymotion' | 'streamable' | 'tiktok'; id: string; aspect: '16:9' | '9:16'; start?: number; hash?: string }
@@ -103,6 +108,9 @@ export interface MessageRow {
   /** Phase 3: set by the server from the chat's timer; edits; unsend tombstones; server notices (timer changes). */
   expires_at?: string | null; edited_at?: string | null; unsent_at?: string | null;
   notice?: { kind: 'timer'; secs: number | null } | null;
+  /** Message franking (lib/chat/franking.ts): the sender's commitment and the server's tag binding it to the
+   *  sender, chat and time. Null for server notices, unsent messages and messages from older apps. */
+  frank_commit?: string | null; frank_tag?: string | null;
 }
 export interface MessagePayload { text: string; attachments?: FileRef[]; subject?: string }
 

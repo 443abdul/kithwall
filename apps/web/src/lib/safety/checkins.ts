@@ -6,10 +6,13 @@
 // lib/messages.ts sendMessage), with its message id fixed in advance. The server keeps the sealed
 // messages in safety_checkin_alerts, invisible to the recipients, until the deadline; then pg_cron
 // copies them into public.messages and the normal push goes out. Checking in first deletes them.
+// Each alert carries its franking commitment (lib/chat/franking.ts) like any other message; the server
+// tags it when it is released.
 import { sealEnvelope } from '@kithwall/crypto';
 import { sb, must } from '../supabase';
 import { identity, me } from '../keys/session';
 import { conversationKey, messageHeader, openDm, type ChatPayload } from '../messages';
+import { frankPayload } from '../chat/franking';
 
 export interface Checkin {
   id: string;
@@ -82,11 +85,13 @@ export async function createCheckin(args: {
       text: args.text,
       safetyAlert: { v: 1, dueAt: args.due.toISOString(), ...(args.location ? { location: args.location } : {}) },
     };
+    const base = { id, conversation_id: conv.id, sender_id: me(), epoch };
+    const franked = frankPayload(base, payload);
     const envelope = sealEnvelope({
-      header: messageHeader({ id, conversation_id: conv.id, sender_id: me(), epoch }, conv.audience_id),
-      payload, audienceKey: key, signPriv: identity().signPriv,
+      header: messageHeader(base, conv.audience_id),
+      payload: franked.payload, audienceKey: key, signPriv: identity().signPriv,
     });
-    alerts.push({ id, conversation_id: conv.id, epoch, envelope });
+    alerts.push({ id, conversation_id: conv.id, epoch, envelope, frank_commit: franked.commit });
   }
   const { data, error } = await sb().rpc('create_safety_checkin', { p_due: args.due.toISOString(), p_repeat: args.repeatDaily, p_alerts: alerts });
   if (error) throw new Error(error.code === 'P0429' ? 'too_many' : error.code === '22023' ? 'bad_deadline' : error.message);

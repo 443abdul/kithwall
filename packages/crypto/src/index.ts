@@ -75,6 +75,8 @@ export {
 
 export { FILE_CHUNK_SIZE, encryptFile, decryptFile } from './files';
 
+export { newFrankingKey, frankingBody, frankCommit, frankMatches, fileDigest } from './franking';
+
 export { splitRecoveryKey, combineRecoveryShares, generateEphemeral, verificationPhrase } from './recovery';
 
 export {
