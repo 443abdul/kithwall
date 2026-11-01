@@ -16,6 +16,7 @@ import { formatBytes, formatDuration } from './bits';
 import { ExternalLink } from '@/components/links/ExternalLink';
 import { isolate } from '@/lib/links/leave';
 import { gridLayout, safeHref, stepIndex } from './logic';
+import { useDataSaver } from '@/lib/net/dataSaver';
 
 type Photo = NonNullable<PostPayload['photos']>[number];
 
@@ -31,6 +32,8 @@ export function PhotoGrid({ photos, onOpen }: { photos: Photo[]; onOpen: (i: num
   const t = useT();
   const { shown, more, layout } = gridLayout(photos.length);
   const single = photos.length === 1 ? photos[0]!.files.med : null;
+  // Data Saver: the small copy in the feed; the full photo loads when opened.
+  const saver = useDataSaver();
   return (
     <div className="k-pgrid" data-layout={layout}>
       {photos.slice(0, shown).map((p, i) => {
@@ -40,7 +43,7 @@ export function PhotoGrid({ photos, onOpen }: { photos: Photo[]; onOpen: (i: num
           <button key={p.id} type="button" className="k-pgrid-cell" onClick={() => onOpen(i)}
             style={single?.w && single.h ? { aspectRatio: `${Math.max(single.w / single.h, 0.6)}` } : undefined}
             aria-label={last ? `${alt}. ${t('feed.morePhotos', { count: more })}` : alt}>
-            <DecryptedImg file={p.files.med} alt="" />
+            <DecryptedImg file={saver ? p.files.thumb : p.files.med} alt="" />
             {last ? <span className="k-pgrid-more" aria-hidden>+{more}</span> : null}
           </button>
         );
@@ -157,7 +160,9 @@ export function LinkCard({ link, onRemove, localImg }: {
   link: NonNullable<PostPayload['link']>; onRemove?: () => void; localImg?: { url: string; w: number; h: number } | null;
 }) {
   const t = useT();
-  const decrypted = useFileUrl(localImg ? null : link.image);
+  // Data Saver: no preview image (the link itself is what matters).
+  const saver = useDataSaver();
+  const decrypted = useFileUrl(localImg || saver ? null : link.image);
   const img = localImg?.url ?? decrypted;
   const w = localImg?.w ?? link.image?.w;
   const h = localImg?.h ?? link.image?.h;

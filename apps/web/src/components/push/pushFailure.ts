@@ -10,6 +10,14 @@ import { isNative } from '@/lib/native';
 export function pushFailureToast(e: unknown, t: (k: MessageKey) => string, toast: (x: ToastInput) => void) {
   // The app's foss build explains a missing UnifiedPush app itself (native dialog).
   if ((e as { code?: string } | null)?.code === 'no_distributor') return;
+  if (e instanceof PushError && e.code === 'settings') {
+    toast({ message: t('nudge.pushSettingsOpened'), duration: 12_000 });
+    return;
+  }
+  if (e instanceof PushError && e.code === 'dismissed' && isNative()) {
+    toast({ message: t('nudge.pushDeclinedApp'), duration: 8_000 });
+    return;
+  }
   if (e instanceof PushError && e.code === 'blocked' && isNative()) {
     toast({ message: t('nudge.pushBlockedApp'), tone: 'danger', action: { label: t('nudge.pushOpenSettings'), onClick: () => void openNotificationSettings() } });
     return;

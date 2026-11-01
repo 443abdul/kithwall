@@ -132,7 +132,7 @@ export function wasEnabled(uid: string): boolean {
  * address bar, and the promise never settles until the person finds it), 'dismissed' (closed the prompt).
  */
 export class PushError extends Error {
-  constructor(public code: 'blocked' | 'pending' | 'dismissed', message: string) { super(message); }
+  constructor(public code: 'blocked' | 'pending' | 'dismissed' | 'settings', message: string) { super(message); }
 }
 
 /** Give up waiting for the permission prompt after this long (Chrome on Android's quiet prompt never answers). */
@@ -172,16 +172,34 @@ async function nativeRefreshPermission(): Promise<void> {
  * notification settings) so switches and nudges don't keep showing a stale "blocked" or "ask".
  */
 export async function refreshPushPermission(): Promise<void> {
-  if (isNative()) { await nativeRefreshPermission(); return; }
+  if (isNative()) {
+    await nativeRefreshPermission();
+    // Back from the notification settings with notifications now allowed: finish what the tap started.
+    if (resumeEnableFor && nativePermission === 'granted') {
+      const uid = resumeEnableFor;
+      resumeEnableFor = null;
+      try { await enablePush(uid); window.dispatchEvent(new CustomEvent('kw:push-enabled')); }
+      catch (e) { console.warn('push: finishing after settings failed', (e as Error).message); }
+    }
+    return;
+  }
   changed();
 }
+
+/** Set while the app's notification settings are open because of a "Turn on" tap (see enablePush). */
+let resumeEnableFor: string | null = null;
 
 export async function enablePush(userId: string): Promise<void> {
   if (isNative()) {
     const n = await nativePush();
-    try { await n.nativeEnablePush(); }
+    try { await n.nativeEnablePush(); resumeEnableFor = null; }
     catch (e) {
-      if (e instanceof n.NativePushError && e.code === 'denied') throw new PushError('blocked', 'Notifications are turned off for Kithwall on this phone.');
+      if (e instanceof n.NativePushError && e.code === 'settings') {
+        // The notification settings are open: finish switching on when the person comes back.
+        resumeEnableFor = userId;
+        throw new PushError('settings', 'Turn on notifications for Kithwall in the settings that just opened.');
+      }
+      if (e instanceof n.NativePushError && e.code === 'declined') throw new PushError('dismissed', 'You didn’t allow notifications.');
       throw e;
     } finally { await nativeRefreshPermission(); }
     rememberEnabled(userId, true);

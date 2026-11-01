@@ -7,12 +7,15 @@ import { sb, must, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './supabase';
 import { netUrl } from './net/runtime';
 import { me } from './keys/session';
 import type { FileRef, PhotoFiles } from './types';
+import { dataSaverActive, recordMediaBytes } from './net/dataSaver';
 
 const BUCKET = 'media';
 export const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
 const SIZES = { big: 2048, med: 720, thumb: 206 } as const;
+/** Data Saver: what I send is smaller too (my contacts may be on expensive data as well). */
+const SAVER_SIZES = { big: 1280, med: 600, thumb: 206 } as const;
 
-async function encode(bitmap: ImageBitmap, maxSide: number): Promise<{ bytes: Uint8Array; w: number; h: number }> {
+async function encode(bitmap: ImageBitmap, maxSide: number, quality = 0.86): Promise<{ bytes: Uint8Array; w: number; h: number }> {
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
@@ -20,7 +23,7 @@ async function encode(bitmap: ImageBitmap, maxSide: number): Promise<{ bytes: Ui
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas not available');
   ctx.drawImage(bitmap, 0, 0, w, h);
-  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.86 });
+  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
   return { bytes: new Uint8Array(await blob.arrayBuffer()), w, h };
 }
 
@@ -53,8 +56,9 @@ export async function uploadPhoto(file: File | Blob, link: MediaLink = {}): Prom
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   try {
     const out = {} as PhotoFiles;
-    for (const [name, side] of Object.entries(SIZES) as [keyof PhotoFiles, number][]) {
-      const { bytes, w, h } = await encode(bitmap, side);
+    const saver = dataSaverActive();
+    for (const [name, side] of Object.entries(saver ? SAVER_SIZES : SIZES) as [keyof PhotoFiles, number][]) {
+      const { bytes, w, h } = await encode(bitmap, side, saver ? 0.78 : 0.86);
       out[name] = { ...(await uploadEncrypted(bytes, 'image/jpeg', link)), w, h };
     }
     return out;
@@ -86,7 +90,9 @@ export function fileUrl(ref: FileRef): Promise<string> {
   const p = (async () => {
     const res = await sb().storage.from(BUCKET).download(ref.path);
     if (res.error || !res.data) throw new Error(res.error?.message ?? 'download failed');
-    const plain = decryptFile(new Uint8Array(await res.data.arrayBuffer()), b64u.decode(ref.key), ref.path);
+    const cipher = new Uint8Array(await res.data.arrayBuffer());
+    recordMediaBytes(cipher.byteLength);
+    const plain = decryptFile(cipher, b64u.decode(ref.key), ref.path);
     return URL.createObjectURL(new Blob([plain as BlobPart], { type: ref.mime }));
   })();
   p.catch(() => urls.delete(ref.path));
@@ -244,6 +250,7 @@ export async function downloadFile(ref: FileRef, opts: { onProgress?: ProgressFn
       opts.onProgress?.(got, Math.max(expected, got));
     }
   }
+  recordMediaBytes(got);
   const all = new Uint8Array(got);
   let o = 0;
   for (const c of chunks) { all.set(c, o); o += c.byteLength; }

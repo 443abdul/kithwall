@@ -60,13 +60,31 @@ async function store(): Promise<string> {
   return reg.token;
 }
 
-/** Turn notifications on for this app install (asks for the permission first). */
+/** A refusal that comes back faster than this was decided by Android without showing the dialog. */
+const AUTO_DENY_MS = 700;
+
+/**
+ * Turn notifications on for this app install. Whenever notifications aren't on, Android itself is asked:
+ * Capacitor caches "denied" the first time the permission dialog closes without a yes (on Android 13+ even
+ * dismissing it counts) and the app used to trust that cache, so the dialog never appeared again although
+ * Android would still have shown it. If Android refuses without asking (blocked after repeated refusals,
+ * switched off in settings, or Android 12 and older, which have no dialog), the app's notification
+ * settings are opened instead: code 'settings'. A plain "Don't allow": code 'declined'.
+ */
 export async function nativeEnablePush(): Promise<void> {
   const p = await nativePlugin('KithwallPush');
-  let { state } = await p.permission();
-  if (state === 'prompt') state = (await p.requestPermission()).state;
-  permissionCache = state === 'prompt' ? 'default' : state;
-  if (state !== 'granted') throw new NativePushError('denied');
+  const { state } = await p.permission();
+  if (state !== 'granted') {
+    const asked = Date.now();
+    const r = await p.requestPermission() as { state: string; blocked?: boolean };
+    if (r.state !== 'granted') {
+      permissionCache = 'denied';
+      const blocked = typeof r.blocked === 'boolean' ? r.blocked : Date.now() - asked < AUTO_DENY_MS;
+      if (blocked) { await nativeOpenSettings(); throw new NativePushError('settings'); }
+      throw new NativePushError('declined');
+    }
+  }
+  permissionCache = 'granted';
   await store();
 }
 

@@ -358,6 +358,22 @@ class Keyring {
     return { key, epoch: row.current_epoch };
   }
 
+  /**
+   * The newest key this device already holds for an audience, without asking the server: for sealing while
+   * offline (lib/social/kitdrop outbox). The server may know a newer epoch; readers who hold that epoch's
+   * predecessor (everyone who could read before) can still open it.
+   */
+  latestHeld(aud: string): { key: Uint8Array; epoch: number } | null {
+    let best: { key: Uint8Array; epoch: number } | null = null;
+    for (const [id, key] of this.keys) {
+      const cut = id.lastIndexOf(':');
+      if (id.slice(0, cut) !== aud) continue;
+      const epoch = Number(id.slice(cut + 1));
+      if (!best || epoch > best.epoch) best = { key, epoch };
+    }
+    return best;
+  }
+
   private record(aud: string, epoch: number, key: Uint8Array) {
     const commit = epochCommit(aud, epoch, key);
     return { commit, sig: signEpochRecord(this.u!.identity.signPriv, { audienceId: aud, epoch, rotatedBy: this.userId!, commit }) };

@@ -10,6 +10,7 @@ import { identity, me, onLock } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
 import { people } from './people';
 import type { CommentPayload, CommentRow, PostKind, PostPayload, PostRow } from './types';
+import { isOfflineError } from './net/offline';
 
 export type Audience =
   | { kind: 'friends' }                 // my friends (or the wall owner's friends when posting on their wall)
@@ -51,11 +52,33 @@ async function resolveAudience(args: CreatePostArgs): Promise<{ audienceId: stri
     const row = must(await sb().from('audiences').select('id').eq('owner_id', args.wallOwnerId).eq('kind', 'friends').single()) as { id: string };
     audienceId = row.id;
   } else audienceId = keyring.friendsAudience!.id;
-  const { key, epoch } = await keyring.current(audienceId);
-  return { audienceId, epoch, key };
+  try {
+    const { key, epoch } = await keyring.current(audienceId);
+    return { audienceId, epoch, key };
+  } catch (e) {
+    // Offline (a shutdown): seal with the newest key this device holds; the post waits in the outbox.
+    const held = isOfflineError(e) ? keyring.latestHeld(audienceId) : null;
+    if (!held) throw e;
+    return { audienceId, epoch: held.epoch, key: held.key };
+  }
 }
 
+/** A post sealed on this device, ready to insert (now, or later from the offline outbox / a Kit Drop). */
+export type SealedPost = Omit<PostRow, 'created_at' | 'edited_at'> & { publish_at?: string; disappear_secs?: number };
+
 export async function createPost(args: CreatePostArgs): Promise<PostRow> {
+  return insertSealedPost(await sealPost(args));
+}
+
+/** Insert a post sealed earlier. A repeat of one already stored (same id) returns the stored row. */
+export async function insertSealedPost(sealed: SealedPost): Promise<PostRow> {
+  const res = await sb().from('posts').insert(sealed).select().single();
+  if (res.error?.code === '23505') return must(await sb().from('posts').select('*').eq('id', sealed.id).single()) as PostRow;
+  return must(res) as PostRow;
+}
+
+/** Seal a post on this device without sending it (works offline once the audience key is here). */
+export async function sealPost(args: CreatePostArgs): Promise<SealedPost> {
   const id = args.id ?? crypto.randomUUID();
   const { audienceId, epoch, key } = await resolveAudience(args);
   const ctxIds = { wall_owner_id: null as string | null, group_id: args.groupId ?? null, event_id: args.eventId ?? null };
@@ -70,7 +93,7 @@ export async function createPost(args: CreatePostArgs): Promise<PostRow> {
     ...(args.publishAt ? { publish_at: args.publishAt } : {}),
     ...(args.disappearSecs ? { disappear_secs: args.disappearSecs } : {}),
   };
-  return must(await sb().from('posts').insert({ ...row, ...extra, envelope }).select().single()) as PostRow;
+  return { ...row, ...extra, envelope } as SealedPost;
 }
 
 /**

@@ -44,6 +44,12 @@ function PushSection() {
     pushEnabledHere().then((x) => { if (live) setOn(x); }).catch(() => { if (live) setOn(false); });
     return () => { live = false; };
   }, [v, userId]);
+  // Finished after a trip to the system notification settings (lib/push refreshPushPermission).
+  useEffect(() => {
+    const done = () => { setOn(true); toast({ message: t('nudge.pushOn') }); };
+    window.addEventListener('kw:push-enabled', done);
+    return () => window.removeEventListener('kw:push-enabled', done);
+  }, [t, toast]);
   useEffect(() => {
     if (!userId) return;
     let live = true;
@@ -81,7 +87,9 @@ function PushSection() {
   }
 
   const blocked = permission === 'denied';
-  const cant = !supported || iosNeedsInstall || blocked;
+  // In the app a tap always gets somewhere (Android's dialog, or its notification settings), so the switch is
+  // never disabled by a "blocked" state; in a browser only the site settings can undo a block.
+  const cant = !supported || iosNeedsInstall || (blocked && !isNative());
   return (
     <>
       <Section id="push" title={t('settings.notifications.push')} description={t('settings.notifications.pushBody')}>

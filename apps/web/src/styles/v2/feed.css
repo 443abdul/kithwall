@@ -464,3 +464,12 @@
 .kw .k-capsule-title { font-weight: var(--weight-bold); font-size: var(--text-lg); margin: 0; }
 .kw .k-capsule-tag { display: flex; align-items: center; gap: var(--space-1); color: var(--accent-text); font-weight: var(--weight-bold); }
 .kw .k-capsule-edit { padding: var(--space-3); border: 1px dashed var(--accent); border-radius: var(--radius-md); margin-block: var(--space-2); }
+.kw .k-saver-tap { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid rgb(255 255 255 / 0.5); border-radius: var(--radius-pill); background: rgb(0 0 0 / 0.35); color: #fff; font: inherit; cursor: pointer; }
+
+/* Kit Drop (You → Kit Drop) */
+.kw .k-kd-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.kw .k-kd-item { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.kw .k-kd-post { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; min-width: 0; }
+.kw .k-kd-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.kw .k-kd-from { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-bold); min-width: 0; }
+.kw .k-stack > .k-section-title { display: flex; align-items: center; gap: var(--space-2); }

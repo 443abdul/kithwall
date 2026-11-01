@@ -29,6 +29,7 @@ import {
   STORY_BACKGROUNDS, STORY_MAX_TEXT, STORY_VIDEO_MAX_BYTES, STORY_VIDEO_MAX_S, type StoryAudience, type StoryRow, type StoryVideo,
 } from '@/lib/stories';
 import { buildRings, hoursLeft, startIndex, step, type Ring } from './logic';
+import { useDataSaver } from '@/lib/net/dataSaver';
 
 const STORY_MS = 6000;
 
@@ -113,6 +114,7 @@ function StoryViewer({ rings, start, seen, onClose }: {
   rings: Ring<StoryRow>[]; start: { ring: number; story: number }; seen: ReadonlySet<string>; onClose: () => void;
 }) {
   const t = useT();
+  const fmt = useFormat();
   const toast = useToast();
   const qc = useQueryClient();
   const { dir } = useLocale();
@@ -134,7 +136,11 @@ function StoryViewer({ rings, start, seen, onClose }: {
   const avatar = useFileUrl(author?.info?.avatar?.thumb);
   const d = readStory(story);
   const photo = useFileUrl(d.ok ? d.value.photo?.file : null);
-  const vid = useStoryVideo(d.ok ? d.value.video : undefined);
+  // Data Saver: a video story waits for a tap before it is downloaded.
+  const saver = useDataSaver();
+  const [videoOk, setVideoOk] = useState<string | null>(null);
+  const wantVideo = !saver || videoOk === story.id;
+  const vid = useStoryVideo(d.ok && wantVideo ? d.value.video : undefined);
   const [muted, setMuted] = useState(false);
   const videoEl = useRef<HTMLVideoElement>(null);
   const isVideo = d.ok && !!d.value.video;
@@ -260,6 +266,10 @@ function StoryViewer({ rings, start, seen, onClose }: {
                 poster={vid.poster ?? undefined} aria-label={d.value.text || t('stories.video')}
                 onTimeUpdate={(e) => { const v = e.currentTarget; if (v.duration > 0) setElapsed((v.currentTime / v.duration) * 100); }}
                 onEnded={() => goRef.current(1)} />
+            ) : !wantVideo ? (
+              <button type="button" className="k-storyview-msg k-saver-tap" onClick={() => setVideoOk(story.id)}>
+                <Icon name="video" /> {t('saver.tapVideo', { size: formatBytes(d.value.video.file.bytes, fmt.number) })}
+              </button>
             ) : vid.s === 'error' ? <p className="k-storyview-msg">{t('stories.videoFailed')}</p>
               : <p className="k-storyview-msg"><Spinner size={32} /> <span className="k-small k-ltr">{vid.pct}%</span></p>
           ) : d.value.photo ? (

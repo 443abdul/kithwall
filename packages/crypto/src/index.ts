@@ -92,4 +92,4 @@ export {
   verifyKeyChange,
 } from './safety';
 
-export { signDocument, verifyDocument, documentPublicKey } from './signed';
+export { signDocument, verifyDocument, documentPublicKey, signDetached, verifyDetached } from './signed';

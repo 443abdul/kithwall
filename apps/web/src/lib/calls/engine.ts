@@ -39,6 +39,7 @@ import { getIceConfig, prefetchIceConfig, type IceConfig } from './turn';
 import { capVideoBandwidth, firstAudioCodec, isMobileUa, orderAudioCodecs, orderVideoCodecs, tuneOpus, videoStartBitrate } from './sdp';
 import { getCallDevices, mediaErr, micAllowed, micConstraints, type MediaErr } from './devices';
 import { nativeCallActive, nativeCallEnded } from '../native/calls';
+import { dataSaverActive } from '../net/dataSaver';
 import {
   deltaLoss,
   meshCeiling, PAUSED, QualityController, SAVER_AUDIO, shareUplink, startTier, videoEncoding,
@@ -606,7 +607,7 @@ class CallEngine {
   }
 
   /** Data saver for a new call: the setting, or the browser's Save-Data ("Lite mode"). */
-  private initialSaver() { return getCallPrefs().saver || !!netInfo()?.saveData; }
+  private initialSaver() { return getCallPrefs().saver || !!netInfo()?.saveData || dataSaverActive(); }
 
   // ------------------------------------------------------------------------------------ place
   /** Call everyone in a conversation (voice or video). */

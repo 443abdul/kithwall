@@ -13,6 +13,7 @@ import { Button, ButtonLink, IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/Toast';
 import { pushFailureToast } from '@/components/push/pushFailure';
+import { isNative } from '@/lib/native';
 
 export function RecoveryNudge({ force }: { force?: boolean }) {
   const t = useT();
@@ -55,13 +56,16 @@ export function PushNudge() {
   useEffect(() => {
     if (status !== 'ready' || !userId) return;
     const s = pushSupport();
-    const ok = !promptDismissed() && s.permission !== 'denied' && (s.supported || s.iosNeedsInstall);
+    // In the app a "denied" state is no reason to hide it: a tap asks Android or opens its notification settings.
+    const ok = !promptDismissed() && (s.permission !== 'denied' || isNative()) && (s.supported || s.iosNeedsInstall);
     if (!ok) return;
     if (s.iosNeedsInstall) { setIos(true); setEligible(true); return; }
     let live = true;
     pushEnabledHere().then((on) => { if (live) setEligible(!on); }).catch(() => undefined);
-    return () => { live = false; };
-  }, [status, userId]);
+    const done = () => { setHidden(true); toast({ message: t('nudge.pushOn') }); };
+    window.addEventListener('kw:push-enabled', done);
+    return () => { live = false; window.removeEventListener('kw:push-enabled', done); };
+  }, [status, userId, t, toast]);
 
   if (!eligible || hidden) return null;
   const close = () => { dismissPrompt(); setHidden(true); };

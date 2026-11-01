@@ -96,7 +96,8 @@ export interface NativePushRegistration {
  */
 export interface KithwallPushPlugin {
   permission(): Promise<{ state: 'granted' | 'denied' | 'prompt' }>;
-  requestPermission(): Promise<{ state: 'granted' | 'denied' | 'prompt' }>;
+  /** Asks Android. `blocked` (app 2.2+): Android refused without showing its dialog; only the settings can help. */
+  requestPermission(): Promise<{ state: 'granted' | 'denied' | 'prompt'; blocked?: boolean }>;
   /** Open this app's notification settings (the only way back once the permission was refused). */
   openSettings?(): Promise<void>;
   /** Get (or create) this install's push address and key. May show the UnifiedPush distributor picker. */

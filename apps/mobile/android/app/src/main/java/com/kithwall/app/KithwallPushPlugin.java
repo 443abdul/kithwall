@@ -31,15 +31,25 @@ import org.json.JSONArray;
 )
 public class KithwallPushPlugin extends Plugin {
 
+    /**
+     * The real state, from Android itself. Capacitor's getPermissionState() answers from a cache that records
+     * "denied" the first time the dialog closes without a yes (on Android 13+ even dismissing it counts) and
+     * never forgets it, so the app stopped asking although Android would still show the dialog. Here: granted
+     * and enabled = "granted"; not grantable by a dialog (Android 12 and older, or switched off in settings) =
+     * "denied"; otherwise "prompt": ask, and let Android decide whether it still shows the dialog.
+     */
     private String state() {
-        if (Build.VERSION.SDK_INT < 33) {
-            return NotificationManagerCompat.from(getContext()).areNotificationsEnabled() ? "granted" : "denied";
-        }
-        PermissionState s = getPermissionState("notifications");
-        if (s == PermissionState.GRANTED) return NotificationManagerCompat.from(getContext()).areNotificationsEnabled() ? "granted" : "denied";
-        if (s == PermissionState.DENIED) return "denied";
+        boolean enabled = NotificationManagerCompat.from(getContext()).areNotificationsEnabled();
+        if (Build.VERSION.SDK_INT < 33) return enabled ? "granted" : "denied";
+        boolean granted = androidx.core.content.ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        if (granted) return enabled ? "granted" : "denied";
         return "prompt";
     }
+
+    /** When the current permission request started (to tell a refusal Android made by itself from the person's). */
+    private long askedAt = 0;
+    private static final long AUTO_DENY_MS = 700;
 
     private void resolveState(PluginCall call) {
         JSObject r = new JSObject();
@@ -52,12 +62,24 @@ public class KithwallPushPlugin extends Plugin {
         resolveState(call);
     }
 
+    /**
+     * Ask Android. Resolves {state, blocked}: blocked = Android refused without showing the dialog (or there is
+     * no dialog to show), so only the notification settings can turn notifications on.
+     */
     @PluginMethod
     public void requestPermission(PluginCall call) {
-        if (Build.VERSION.SDK_INT < 33 || getPermissionState("notifications") == PermissionState.GRANTED) {
-            resolveState(call);
+        String now = state();
+        if (!"prompt".equals(now)) {
+            JSObject r = new JSObject();
+            r.put("state", now);
+            r.put("blocked", "denied".equals(now));
+            call.resolve(r);
             return;
         }
+        // Forget Capacitor's cached answer so its bookkeeping can't contradict what Android says now.
+        getContext().getSharedPreferences("PluginPermStates", android.content.Context.MODE_PRIVATE).edit()
+                .remove(Manifest.permission.POST_NOTIFICATIONS).apply();
+        askedAt = android.os.SystemClock.elapsedRealtime();
         requestPermissionForAlias("notifications", call, "permissionDone");
     }
 
@@ -85,7 +107,11 @@ public class KithwallPushPlugin extends Plugin {
 
     @PermissionCallback
     private void permissionDone(PluginCall call) {
-        resolveState(call);
+        String now = state();
+        JSObject r = new JSObject();
+        r.put("state", now);
+        r.put("blocked", !"granted".equals(now) && android.os.SystemClock.elapsedRealtime() - askedAt < AUTO_DENY_MS);
+        call.resolve(r);
     }
 
     @PluginMethod

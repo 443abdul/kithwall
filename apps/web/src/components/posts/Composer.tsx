@@ -14,7 +14,7 @@ import { Card } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/Toast';
-import { createPost, type Audience } from '@/lib/content';
+import { insertSealedPost, sealPost, type Audience } from '@/lib/content';
 import { clean, linkPostMedia } from '@/lib/feed/feed';
 import { firstUrl } from '@/lib/feed/linkMeta';
 import { loadLinkDraft, normalizeUrl, toPayloadLink, uploadPreparedImage, type LinkDraft } from '@/lib/feed/linkPreview';
@@ -38,6 +38,8 @@ import { loadDraft, saveDraft } from '@/lib/social/prefs';
 import { finishPoll, PollEditor } from './Poll';
 import { CapsulePicker } from './Capsule';
 import { CAPSULE_MAX_MS, CAPSULE_MIN_MS, sealCapsule } from '@/lib/social/capsule';
+import { flushOutbox, queuePost } from '@/lib/social/kitdrop';
+import { isOfflineError } from '@/lib/net/offline';
 
 const MAX_TEXT = 8000;
 const MAX_PHOTOS = 10;
@@ -109,6 +111,15 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
   const [poll, setPoll] = useState<NonNullable<PostPayload['poll']> | null>(null);
   /** Time capsule: '' = picker open but no date yet, null = not a capsule. */
   const [capsule, setCapsule] = useState<string | null>(null);
+
+  // Posts written offline wait in the Kit Drop outbox (sealed); send them as soon as there is a connection.
+  useEffect(() => {
+    if (!userId) return;
+    const flush = () => { void flushOutbox().then((n) => { if (n) void qc.invalidateQueries({ queryKey: ['v2feed'] }); }).catch(() => undefined); };
+    flush();
+    window.addEventListener('online', flush);
+    return () => window.removeEventListener('online', flush);
+  }, [userId, qc]);
 
   // Drafts (kept in my encrypted vault, per composer): restored when the composer opens empty, saved a
   // moment after typing stops, cleared once the post goes out.
@@ -263,10 +274,27 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
       setProgress({ label: t('feed.sharing'), pct: 100 });
       // Time capsule: the whole payload is timelock-encrypted; the post carries only the capsule.
       const finalPayload: PostPayload = capsuleAt ? { capsule: await sealCapsule(clean(payload), capsuleAt) } : clean(payload);
-      await createPost({
-        id, kind: capsuleAt ? 'status' : kind, payload: finalPayload, audience: target.audience, groupId: target.groupId, eventId: target.eventId,
+      const postArgs = {
+        id, kind: capsuleAt ? 'status' as const : kind, payload: finalPayload, audience: target.audience, groupId: target.groupId, eventId: target.eventId,
         publishAt: schedule ? schedule.toISOString() : null, disappearSecs: options.disappear,
-      });
+      };
+      // Sealed once; sent now, or (no connection) kept as is in the outbox.
+      const sealed = await sealPost(postArgs);
+      let queued = false;
+      try { await insertSealedPost(sealed); }
+      catch (x) {
+        // No connection (a shutdown, no signal): keep it sealed in the outbox; it goes out by itself later
+        // and can be passed on in a Kit Drop file meanwhile. Not possible once files had to be uploaded.
+        if (!isOfflineError(x) || uploaded.length) throw x;
+        await queuePost(sealed);
+        queued = true;
+      }
+      if (queued) {
+        setText(''); setPoll(null); setCapsule(null); skip.current.clear();
+        void saveDraft(draftKey, '').catch(() => undefined);
+        toast({ message: t('kitdrop.queued'), action: { label: t('kitdrop.title'), onClick: () => router.push('/you/kitdrop') } });
+        return;
+      }
       if (uploaded.length) await linkPostMedia(uploaded, id);
       if (mentioned.length && !schedule && !capsuleAt) await notifyMentions(mentioned, 'post', id);
       setText(''); clearPhotos(); setVideo(null); setLink(null); setPoll(null); setCapsule(null); skip.current.clear();

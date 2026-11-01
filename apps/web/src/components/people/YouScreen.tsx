@@ -57,6 +57,7 @@ export function YouScreen() {
           <li><ListItem icon="calendar" title={t('you.events')} href="/events" /></li>
           <li><ListItem icon="clock" title={t('schedule.title')} subtitle={t('schedule.youSub')} href="/you/scheduled" /></li>
           <li><ListItem icon="book" title={t('saved.title')} subtitle={t('saved.sub')} href="/you/saved" /></li>
+          <li><ListItem icon="share" title={t('kitdrop.title')} subtitle={t('kitdrop.sub')} href="/you/kitdrop" /></li>
           <li><ListItem icon="shield" title={t('you.safety')} subtitle={t('you.safetySub')} href={href('/you/safety')} /></li>
         </List>
       </Card>

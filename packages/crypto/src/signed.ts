@@ -9,8 +9,8 @@
  *
  * Verification is strict RFC 8032 (see edVerify) and never throws.
  */
-import { b64u } from './encoding';
-import { edPublicKey, edSign, edVerify, KEY_LEN } from './primitives';
+import { b64u, utf8 } from './encoding';
+import { edPublicKey, edSign, edVerify, edVerifyB64, KEY_LEN } from './primitives';
 
 const enc = new TextEncoder();
 
@@ -38,4 +38,17 @@ export function verifyDocument(context: string, body: string, sig: string, signP
   } catch {
     return false;
   }
+}
+
+/**
+ * Sign a UTF-8 message with an identity key (Ed25519), e.g. a Kit Drop file. The message must carry its own
+ * domain tag (a "d" field in canonical JSON), so a signature can't be replayed as one for something else.
+ */
+export function signDetached(message: string, signPriv: Uint8Array): string {
+  return b64u.encode(edSign(utf8(message), signPriv));
+}
+
+/** Never throws; false on any problem. */
+export function verifyDetached(sig: unknown, message: string, signPub: Uint8Array): boolean {
+  try { return edVerifyB64(sig, utf8(message), signPub); } catch { return false; }
 }
