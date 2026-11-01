@@ -19,6 +19,8 @@ describe('handles', () => {
     expect(handleShapeProblem('maya_k')).toBe('invalid');   // underscores are not allowed (profiles check)
     expect(handleShapeProblem('a'.repeat(31))).toBe('invalid');
     expect(handleShapeProblem('settings')).toBe('reserved');
+    expect(handleShapeProblem('offline')).toBe('reserved');
+    expect(handleShapeProblem('transparency')).toBe('reserved');
     expect(handleShapeProblem('@Admin')).toBe('reserved');
   });
 });
