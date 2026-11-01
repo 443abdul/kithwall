@@ -7,8 +7,8 @@
 //   index.html                       readable overview (open in any browser, no network)
 //   README.txt
 //   data/*.json                      profile, connections, posts, notes, comments, reactions, albums,
-//                                    photos, stories, circles, events, messages, settings, and
-//                                    what-kithwall-knows.json (the server's live inventory, /you/privacy-report)
+//                                    photos, stories, circles, events, messages, settings, legacy contact,
+//                                    and what-kithwall-knows.json (the server's live inventory, /you/privacy-report)
 //   media/albums/<album>/<id>.jpg    decrypted photos (largest size)
 //   media/posts/<post id>-<n>.jpg    photos attached to my posts
 //   media/stories/<story id>.jpg     my live stories
@@ -29,6 +29,7 @@ import { readEvent, type EventRow } from './events';
 import { readStory, type StoryRow } from './stories';
 import { fetchReactions, readReaction, type ReactionRow } from './chat/reactions';
 import { fetchTransparencyReport } from './transparency/report';
+import { exportLegacy } from './legacy/legacy';
 import type { CommentRow, FileRef, LikeRow, MessageRow, PostRow } from './types';
 
 export type ExportStep =
@@ -266,6 +267,9 @@ export async function buildExport(progress: Progress = () => undefined): Promise
     const row = (await sb().from('vault').select('blob, updated_at').eq('user_id', myId).maybeSingle()).data as { blob: string; updated_at: string } | null;
     settings = row ? { updated_at: row.updated_at, ...JSON.parse(new TextDecoder().decode(decryptBlob(deriveVaultKey(amk()), row.blob, `vault/${myId}`))) } : {};
   } catch (e) { skipped++; problems.push({ what: 'settings', why: (e as Error).message }); }
+  // Legacy contact: my choice and my note (opened from my own sealed copy), and who chose me.
+  let legacy: unknown = null;
+  try { legacy = await exportLegacy(); } catch (e) { skipped++; problems.push({ what: 'legacy', why: (e as Error).message }); }
 
   // The server's own inventory about me (the same as /you/privacy-report) ------------------------------------------------
   progress('inventory');
@@ -292,6 +296,7 @@ export async function buildExport(progress: Progress = () => undefined): Promise
   files['data/events.json'] = json(events);
   files['data/messages.json'] = json(conversations);
   files['data/settings.json'] = json(settings);
+  files['data/legacy.json'] = json(legacy);
   files['data/what-kithwall-knows.json'] = json(inventory);
   if (problems.length) files['data/export-problems.json'] = json(problems);
   const generated = new Date();

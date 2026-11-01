@@ -7,6 +7,8 @@ export interface ProfileRow {
   id: Uuid; username: string; discoverable: boolean; display_name_public: string | null;
   sign_pub: string; kx_pub: string; key_version: number; status: 'active' | 'suspended' | 'banned';
   suspended_until: string | null; created_at: string;
+  /** Set by the person's legacy contact after release: the profile shows "Remembering <name>" (lib/legacy). */
+  memorialised_at?: string | null;
 }
 
 export interface AudienceRow {

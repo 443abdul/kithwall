@@ -25,6 +25,7 @@ export function Birthdays() {
     queryFn: async () => { const ids = await myFriendIds(); await people.ensure(ids); return ids; },
   });
   const soon = (q.data ?? [])
+    .filter((id) => !people.get(id)?.memorialised_at)   // remembered accounts (lib/legacy) get no reminders
     .map((id) => ({ id, days: daysUntilBirthday(people.person(id)?.info) }))
     .filter((x): x is { id: string; days: number } => x.days !== null && x.days <= AHEAD)
     .sort((a, b) => a.days - b.days)

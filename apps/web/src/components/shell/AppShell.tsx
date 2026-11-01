@@ -17,6 +17,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { AccountNotices } from './AccountNotices';
+import { LegacyHeartbeat } from './LegacyHeartbeat';
 import { PullToRefresh } from '@/components/PullToRefresh';
 import { Logo } from './Logo';
 import { NAV, activeNav, type NavKey } from './nav';
@@ -103,7 +104,7 @@ export function AppShell({ children, base = '' }: { children: ReactNode; base?: 
         </div>
       </nav>
 
-      <div className="k-app-body">{base ? null : <AccountNotices />}{children}</div>
+      <div className="k-app-body">{base ? null : <><AccountNotices /><LegacyHeartbeat /></>}{children}</div>
 
       <nav className="k-tabbar" aria-label={t('shell.mainNav')}>
         <ul role="list">{navItems('tabs')}</ul>

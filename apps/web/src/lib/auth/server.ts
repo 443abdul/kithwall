@@ -111,7 +111,7 @@ export async function deleteAccountNow(userId: string): Promise<void> {
 }
 
 /** Records that a notice email was sent; returns false if it already was. */
-export async function claimNotice(kind: 'recovery_started' | 'account_recovered' | 'credential_added' | 'identity_key_changed', refId: string, userId: string): Promise<boolean> {
+export async function claimNotice(kind: 'recovery_started' | 'account_recovered' | 'credential_added' | 'identity_key_changed' | 'legacy_reminder', refId: string, userId: string): Promise<boolean> {
   const { error } = await admin().from('notice_emails').insert({ kind, ref_id: refId, user_id: userId });
   if (!error) return true;
   if (error.code === '23505') return false;

@@ -12,6 +12,7 @@ import { Menu, type MenuItem } from '@/components/posts/Menu';
 import { ReportDialog } from '@/components/posts/ReportDialog';
 import { acceptFriend, block, cancelRequest, ignoreRequest, sendFriendRequest, unblock } from '@/lib/friends';
 import { unfriendFully } from '@/lib/social/graph';
+import { usePerson } from '@/lib/people';
 import { useRelation, type Relation } from './data';
 
 export function PersonActions({ userId, name, compact }: { userId: string; name: string; compact?: boolean }) {
@@ -19,6 +20,8 @@ export function PersonActions({ userId, name, compact }: { userId: string; name:
   const toast = useToast();
   const qc = useQueryClient();
   const rel = useRelation(userId);
+  // A remembered account (lib/legacy) takes no new connections or chats; the server refuses them too.
+  const remembered = !!usePerson(userId)?.memorialised_at;
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<'remove' | 'block' | null>(null);
   const [reporting, setReporting] = useState(false);
@@ -50,11 +53,12 @@ export function PersonActions({ userId, name, compact }: { userId: string; name:
 
   return (
     <div className="k-person-actions">
-      {r === 'none' ? <Button size={size} variant="primary" icon="userPlus" busy={busy}
+      {remembered ? <span className="k-chip"><Icon name="heart" />{t('legacy.profile.chip')}</span> : null}
+      {r === 'none' && !remembered ? <Button size={size} variant="primary" icon="userPlus" busy={busy}
         onClick={() => void run(() => sendFriendRequest(userId), t('people.requestSent'), 'sent')}>{t('people.connect')}</Button> : null}
       {r === 'sent' ? <Button size={size} variant="secondary" icon="clock" busy={busy} title={t('people.cancelRequest')}
         onClick={() => void run(() => cancelRequest(userId), t('people.requestCancelled'), 'none')}>{t('people.requested')}</Button> : null}
-      {r === 'received' ? (
+      {r === 'received' && !remembered ? (
         <>
           <Button size={size} variant="primary" icon="check" busy={busy}
             onClick={() => void run(() => acceptFriend(userId), t('people.nowConnected', { name }), 'connected')}>{t('people.accept')}</Button>
@@ -65,7 +69,7 @@ export function PersonActions({ userId, name, compact }: { userId: string; name:
       {r === 'connected' ? (
         <>
           <span className="k-chip k-chip-ok"><Icon name="userCheck" />{t('people.connected')}</span>
-          <ButtonLink size={size} variant="soft" icon="messages" href={`/messages/new?to=${userId}`}>{t('people.message')}</ButtonLink>
+          {remembered ? null : <ButtonLink size={size} variant="soft" icon="messages" href={`/messages/new?to=${userId}`}>{t('people.message')}</ButtonLink>}
         </>
       ) : null}
       {r === 'blocked' ? <span className="k-chip">{t('profile.blockedBody')}</span> : null}

@@ -205,3 +205,108 @@ push subscriptions (with "stop") and the passkeys (managed in Settings → Secur
   screenshot notice.
 - Hidden contacts (brief §4) are not built; only hidden chats.
 - Daily check-ins repeat at the same UTC offset (a DST change shifts them by an hour).
+
+## 11. Legacy contact
+
+Status: implemented 2026-11-02 (roadmap 2026-11, item C2) · migration `20261102000200_legacy_contact.sql`
+
+A person picks **one** of their connections as their legacy contact, an inactivity period (3, 6 or 12 months)
+and, if they like, a farewell note. If they don't open Kithwall for that long, the contact receives the note and
+may choose to remember the account. Settings → Security, sections "Legacy contact" (`#legacy`) and "People who
+chose you" (`#legacy-for`).
+
+Code: `lib/legacy/model.ts` (dates, note payload; pure), `lib/legacy/note.ts` (sealing; pure),
+`lib/legacy/legacy.ts` (RPCs, heartbeat, reseal, export), `components/settings/LegacySettings.tsx`,
+`components/shell/LegacyHeartbeat.tsx`, `app/api/cron/legacy/route.ts`, and the remembered state in
+`components/people/ProfileScreen.tsx`, `PersonActions.tsx` and `components/posts/Birthdays.tsx`.
+
+### 11.1 The note
+
+Sealed on the owner's device with the signed sealed box (`packages/crypto` `seal`; v2 = hybrid X25519 +
+ML-KEM-768 when the contact has a verified post-quantum key), signed by the owner's identity key, twice:
+
+| Copy | Sealed to | Context | Purpose |
+|---|---|---|---|
+| `sealed_note` | the contact's identity key as trusted on the owner's device (`sealGate` refuses an unconfirmed key change) | `legacy-note/<owner>/<contact>` | what the contact opens after release |
+| `sealed_self` | the owner's own key | `legacy-note-self/<owner>` | lets the owner read and change the note later, and reseal it |
+
+The plaintext is `{v, text, at}` padded with spaces to a multiple of 512 bytes (at least 1 KiB), up to 5,000
+characters. The context binds writer and recipient, so the server can't hand one person's note to someone else
+or pass it off as written by another person. `note_kx` records the contact key it was sealed to.
+
+Once a day, when the owner opens the app, their device checks whether the note must be sealed again (the
+contact's trusted key changed, the owner's own identity changed, or the contact gained a post-quantum key while
+the box is still classical) and reseals it from `sealed_self` (`noteNeedsReseal`). The contact's device tries
+its current and earlier key-exchange keys (`previousKx`), so a note sealed before the contact rotated their
+identity still opens.
+
+### 11.2 Activity, reminders and release
+
+- **Activity.** Nothing suitable existed (Auth session refresh times disappear on sign-out and also tick with
+  background token refreshes), so the signed-in, unlocked app calls `legacy_seen()` at most once per UTC day per
+  device (and again when it returns to the foreground on a new day). It sets `last_active_on` to today. **Only
+  people with a legacy contact have this date stored, in their own row, at day granularity.** The duress decoy
+  never calls it.
+- **Daily job.** Vercel Cron `GET /api/cron/legacy` (`CRON_SECRET`, `45 4 * * *`) calls `legacy_tick()`
+  (service role only). This is the project's third daily cron; the Hobby plan ran three at launch
+  (`07-launch.md`). It sends a reminder about 30 days and again about 7 days before the end of the period: an
+  in-app notification to the owner, whose insert trigger sends the push "Open Kithwall to keep your legacy contact
+  on hold", and, if the owner set up a verified notice email, a content-free email (no names, no note;
+  deduplicated through `notice_emails`).
+- **Release** happens no earlier than the end of the period **and** at least 7 days after the second reminder,
+  so a late or missed run only ever delays a release. `released_at` is set and the contact gets a notification
+  (with push): "<name> left a note for you". The two must still be connected, with no block.
+- **Coming back.** The first `legacy_seen()` after a release clears `released_at` and the remembered state and
+  quietly tells the contact (in Activity, no push). A contact who already read the note keeps what they read.
+
+### 11.3 Who sees what
+
+| Who | Before release | After release |
+|---|---|---|
+| Owner | their whole row (`select` policy); changes through `set_legacy_contact` / `remove_legacy_contact` | the same |
+| Contact | `legacy_for_me()`: who chose them and since when; `decline_legacy_contact` steps back (the owner is told kindly) | also when it was released and whether there is a note; `legacy_note(owner)` returns the sealed note; `remember_account(owner, on)` |
+| Anyone else | nothing (no policy, no function) | nothing; a remembered profile shows "Remembering <name>" to whoever may see the profile |
+
+All writes go through `SECURITY DEFINER` functions; `authenticated` has no insert, update or delete on the
+table. The notifications (`legacy_contact`, `legacy_declined`, `legacy_cleared`, `legacy_reminder`,
+`legacy_released`, `legacy_active`) are written only by that code (`kw.notification_ok` refuses them from
+clients). Ending the connection (or blocking, which ends it) clears the legacy contact; the owner is told only
+when the other person removed the connection, never after a block. Account deletion cascades.
+
+**Remembering** (`profiles.memorialised_at`, changeable only inside the legacy functions,
+`kw.profiles_memorial_guard`): the profile shows a gentle "Remembering <name>", birthday reminders leave the
+person out (on the device), new connection requests and invite links (`friendships_memorial_guard`) and new chats
+or chat additions (`audience_members_memorial_guard`) are refused by the database, and the Connect and Message
+buttons are hidden. Existing content keeps its audiences and existing chats stay.
+
+### 11.4 Threat model
+
+- **The server can't read the note**, early or ever: it holds two sealed boxes, one openable only with the
+  contact's private key and one only with the owner's. Database access, backups or a legal demand yield
+  ciphertext.
+- **The server controls timing.** A malicious operator (or anyone with database write access) could release a
+  note early, never release it, suppress reminders or rewind `last_active_on`. An early release lets the contact
+  read the note while the owner is still around: that is the honest limit of a server-run "dead man's switch",
+  and the setup screen says that Kithwall decides when the note is passed on but can never read it. The owner's
+  app undoes a release the next time it is opened, and the contact is told.
+- **Metadata it learns:** that a person has a legacy contact and who, the period, the last day they opened the
+  app (only for these people), when reminders went out and when a note was released, and roughly how long the
+  note is (padded).
+- **A wrong contact key served by the server** at sealing time is refused unless it is the pinned key or a
+  vouched or verified change (`sealGate`), as for every other key delivery.
+- **A forged or swapped note** fails the signature and context check on the contact's device ("This note
+  couldn't be verified").
+- **Not protected:** the web-E2EE limit (modified JavaScript could read the note as it is typed); a contact who
+  shares the note after release; someone using the owner's unlocked app (that counts as activity).
+
+### 11.5 Tests
+
+`supabase/tests/legacy_contact.test.sql` (65): only connections can be chosen, period values, no direct writes,
+no self-made remembered state, nothing visible to the contact before release except "you were chosen" and
+nothing to anyone else ever, reminders at 30 and 7 days, a week's notice after a late reminder, a single release,
+the note only after release, remembering refuses new connections and chats but keeps existing ones, coming back
+clears everything and tells the contact, decline / remove / unfriend / block (the block isn't revealed), account
+deletion cascade, execute rights. `apps/web/src/lib/legacy/legacy.test.ts`: month arithmetic matching Postgres,
+note padding and length limit, sealing (opens for the contact and the owner only, bound to writer and recipient,
+opens after a contact key rotation), reseal detection. `components/activity/activityModel.test.ts`: the legacy
+notices and where they lead.
