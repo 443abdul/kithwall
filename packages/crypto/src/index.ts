@@ -93,3 +93,18 @@ export {
 } from './safety';
 
 export { signDocument, verifyDocument, documentPublicKey, signDetached, verifyDetached } from './signed';
+
+export {
+  MERKLE_HASH_LEN,
+  merkleLeafHash,
+  merkleNodeHash,
+  merkleEmptyRoot,
+  merkleRoot,
+  inclusionProof,
+  consistencyProof,
+  rootFromInclusionProof,
+  verifyInclusion,
+  verifyConsistency,
+} from './merkle';
+
+export { type KtEntry, KT_SALT_LEN, ktCommitment, ktLeafData, ktLeafHash } from './kt';

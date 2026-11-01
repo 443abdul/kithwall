@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { EMBED_FRAME_ORIGINS } from '@/lib/embeds';
 import { NET } from '@/lib/net/config';
-import { isOnionRequest, netConnectSources, onionLocation } from '@/lib/net/csp';
+import { isOnionRequest, netConnectSources, onionLocation, witnessConnectSource } from '@/lib/net/csp';
+import { KT_WITNESS } from '@/lib/kt/witness';
 
 // Per-request nonce + strict Content-Security-Policy (spec §7). No third-party origins
 // except the project's own Supabase API/Realtime endpoints.
@@ -13,6 +14,9 @@ export function proxy(request: NextRequest) {
   // Censorship resistance (lib/net, docs/v2/08-censorship.md): configured proxy / mirror origins only;
   // empty when nothing is configured. The onion service is plain http inside Tor, so it must not upgrade.
   const netSources = netConnectSources(NET);
+  // The key log's public witness on GitHub (lib/kt/witness.ts), read only when the person asks to compare.
+  const witness = witnessConnectSource(KT_WITNESS?.headUrl);
+  if (witness) netSources.push(witness);
   const onion = isOnionRequest(request.headers.get('host'), request.headers.get('x-kithwall-onion'), NET);
 
   const csp = [
