@@ -26,6 +26,7 @@ import { usePeopleVersion, usePerson } from '@/lib/people';
 import { useFileUrl } from '@/lib/media';
 import type { PostPayload, PostRow } from '@/lib/types';
 import { AudienceTag, NoteText, RelativeTime, RichText } from './bits';
+import { Translatable } from '@/components/translate/Translatable';
 import { Comments, useComments } from './Comments';
 import { audienceOf, deletePostFully } from './data';
 import { LinkCard, PhotoGrid, VideoPlayer } from './Media';
@@ -240,6 +241,7 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
 
 /** `onOpenMedia(i)`: open the gallery at item i (photos first, then the video); without it the video plays inline. */
 export function PostBody({ payload, row, nested = false, onOpenMedia }: { payload: PostPayload; row?: PostRow; nested?: boolean; onOpenMedia?: (i: number) => void }) {
+  const { userId } = useSession();
   // A time capsule carries nothing else: show it locked, or opened (CapsuleView renders the inner payload).
   if (payload.capsule) return <div className="k-post-body"><CapsuleView capsule={payload.capsule} row={row} /></div>;
   const text = [payload.text, payload.sharedText].filter(Boolean).join('\n\n');
@@ -251,7 +253,7 @@ export function PostBody({ payload, row, nested = false, onOpenMedia }: { payloa
           <NoteText md={payload.note.body} />
         </div>
       ) : null}
-      {text ? <RichText text={text} className="k-post-text" /> : null}
+      {text ? <Translatable text={text} variant="post" textClassName="k-rich k-post-text" mine={!!row && row.author_id === userId}><RichText text={text} className="k-post-text" /></Translatable> : null}
       {payload.photos?.length ? <PhotoGrid photos={payload.photos} onOpen={(i) => onOpenMedia?.(i)} /> : null}
       {payload.video ? <VideoPlayer video={payload.video} onOpen={onOpenMedia ? () => onOpenMedia(postVideoIndex(payload)) : undefined} /> : null}
       {payload.link ? <LinkCard link={payload.link} /> : null}

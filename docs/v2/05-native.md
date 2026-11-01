@@ -26,6 +26,7 @@ only carry ciphertext, screen protection and screenshot notices.
  │   KithwallSecure   Keystore (StrongBox) / Keychain, BiometricPrompt / Face ID
  │   KithwallShell    navigation policy, FLAG_SECURE / app-switcher cover, screenshot events, quick exit
  │   KithwallPush     FCM | UnifiedPush | APNs registration; decrypt + show natively
+ │   KithwallTranslate on-device translation (play: ML Kit; foss: unsupported stub), §12
  │ www/offline.html (the only bundled page: "can't connect", retry)                 │
  └──────────────────────────────────────────────────────────┘
 ```
@@ -88,6 +89,7 @@ only, its own chunk; browsers never load it).
 | `src/lib/native/shell.ts` | secure screen setting, screenshot events, quick exit |
 | `src/lib/native/runtime.ts` | app frame: Back, downloads, share, status-bar colour and strip, chat-at-bottom, call fallback |
 | `src/lib/native/calls.ts` | `nativeCallActive({speaker, video})` / `nativeCallEnded()` for the call UI |
+| `src/lib/translate/*`, `src/components/translate/*` | on-device translation (§12): engine choice, detection, in-memory cache, "Translate" action, Settings → Translation |
 | `src/components/native/NativeRuntime.tsx` | starts the runtime inside the app (mounted in `components/Providers.tsx`) |
 | `src/lib/native/association.ts` | assetlinks / AASA bodies, Android passkey origins |
 | `src/lib/push/crypto.ts` | RFC 8291 encrypt (server) + reference decrypt (tests) |
@@ -488,3 +490,38 @@ real phones.
 Web issues seen in the app, outside this audit's files: "You is calling…" on the caller's chat entry
 (calls), the language picker lists "English" twice, `no_credential` (no passkey on this phone) reads "The
 passkey request was cancelled".
+
+## 12. On-device translation (roadmap C1, 2026-11-01)
+
+"Translate" under posts, comments and chat messages written in another language than the reader's UI
+language. Text is only ever handed to an on-device model: nothing is sent to Kithwall or anyone else for
+translation, and there is no cloud fallback.
+
+| Where | Engine | Models |
+|---|---|---|
+| Desktop Chrome 138+ (and other browsers that ship both APIs) | built-in `Translator` + `LanguageDetector` | the browser downloads them itself, only from a tap (user activation); Kithwall asks first. Chrome has no Urdu model yet, so Urdu pairs are simply not offered there |
+| Android app, `play` | `KithwallTranslate` → `TranslateImpl` (src/play): ML Kit Translation 17.0.3 + bundled Language Identification 17.0.6 | language id is inside the app; translation packs (~30 MB per language, English is the pivot) are downloaded from Google only after the person agreed, "Wi-Fi only" by default (Data Saver and mobile data are pointed out) |
+| Android app, `foss`; iOS; other browsers | none: `TranslateImpl` (src/foss) answers `supported: false` | the action and the settings section are hidden |
+
+- **Web side.** `lib/translate/engines.ts` (engine selection, browser + native adapters; `availability()` that
+  never answers is treated as unavailable after 5 s, seen in an Electron-based Chromium), `core.ts` (lazy
+  detection when the text nears the screen, at most two at a time; offer only for confident detections of
+  ≥ 12 letters in another language and a supported pair; download planning; line-by-line translation; LRU
+  caches in memory only, cleared on lock), `languages.ts` (tags, romanised `*-Latn` results are not offered,
+  a script check that offers "Translate" for e.g. Arabic-script text while the browser's detector still needs
+  its download), `index.ts` (per-device prefs `kw.translate` / `kw.translate.intro` in localStorage).
+  Unit tests: `lib/translate/translate.test.ts`.
+- **First use** explains that translation happens on the device (dialog, once per device). **Settings →
+  Translation** (on the settings index, under Language): "Offer translation" and, in the app, the downloaded
+  packs with Remove.
+- **Google's view (play build).** Downloading a pack tells Google which language pack this phone fetched.
+  ML Kit also logs usage metrics (detected/translated languages, input sizes, device model) through
+  datatransport ("Firelog"); the play manifest removes datatransport's only uploader (the CCT backend), so
+  queued events are deleted instead of sent (transport-runtime 3.1.9 `Uploader`: "Unknown backend …,
+  deleting event batch"). This also stops the Firebase Messaging client's own Firelog events; push delivery
+  doesn't use it. To confirm with a network capture on a device.
+- **Size.** ML Kit adds native code to the play build: `libtranslate_jni.so` ~16 MB and
+  `liblanguage_id_l2c_jni.so` ~1 MB per ABI (Play delivers one ABI per device from the AAB). All 16 KB
+  aligned (zipalign `-P 16` and ELF LOAD alignment 0x4000 checked on the debug APK).
+- **Not verified on a device yet:** pack download (Wi-Fi only and mobile data), translation quality for Urdu,
+  removing a pack, and the telemetry block (network capture).

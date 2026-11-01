@@ -17,6 +17,7 @@ import '../styles/v2/calls.css';
 import '../styles/v2/install.css';
 import '../styles/v2/gallery.css';
 import '../styles/v2/net.css';
+import '../styles/v2/translate.css';
 import { Providers } from '@/components/Providers';
 import { CallRoot } from '@/components/calls/CallRoot';
 

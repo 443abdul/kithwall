@@ -48,6 +48,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(KithwallSecurePlugin.class);
         registerPlugin(KithwallPushPlugin.class);
         registerPlugin(KithwallNetPlugin.class);
+        registerPlugin(KithwallTranslatePlugin.class);
         // Censorship resistance (KwNet, docs/v2/08-censorship.md): start on the mirror that worked last time
         // when the usual origin was unreachable (null = the bundled config, i.e. the usual origin).
         config = KwNet.capConfig(this);

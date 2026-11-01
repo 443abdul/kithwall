@@ -14,10 +14,12 @@ ext {
     androidxEspressoCoreVersion = '3.7.0'
     cordovaAndroidVersion = '14.0.1'
 }
-// Kithwall (docs/v2/05-native.md): native passkeys, biometrics and push.
+// Kithwall (docs/v2/05-native.md): native passkeys, biometrics, push and on-device translation.
 ext {
     androidxCredentialsVersion = '1.6.0'
     androidxBiometricVersion = '1.1.0'
     firebaseMessagingVersion = '25.1.3'
     unifiedPushConnectorVersion = '3.3.5'
+    mlkitTranslateVersion = '17.0.3'
+    mlkitLanguageIdVersion = '17.0.6'
 }

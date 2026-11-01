@@ -1,0 +1,17 @@
+/* On-device translation (components/translate): the "Translate" line under posts, comments and chat
+   messages, the translated text, and Settings → Translation. Tokens only, logical properties only (RTL-safe). */
+
+.kw .k-tr-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.kw .k-tr-bar, .kw .k-tr-status { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--text-muted); }
+.kw .k-tr-status.is-error { color: var(--danger); }
+.kw .k-tr-btn { color: var(--text-muted); font-weight: var(--weight-bold); text-decoration: none; }
+.kw .k-tr-btn:hover, .kw .k-tr-btn:focus-visible { color: var(--text); text-decoration: underline; }
+.kw .k-tr-btn[aria-disabled="true"] { cursor: default; opacity: 0.6; text-decoration: none; }
+.kw .k-tr-live:empty { display: none; }
+
+/* Inside chat bubbles: smaller (only other people's messages are offered, never my accent bubbles). */
+.kw .k-tr-chat .k-tr-bar, .kw .k-tr-chat .k-tr-status { font-size: var(--text-xs); }
+.kw .k-tr-comment .k-tr-bar { margin-block-start: 2px; }
+
+.kw .k-tr-packs { margin: 0; padding-inline-start: var(--space-5); }
+.kw .k-tr-packlist { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
