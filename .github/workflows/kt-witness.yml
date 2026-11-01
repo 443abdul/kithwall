@@ -1,0 +1,73 @@
+name: Key log witness
+
+# Public witness of Kithwall's key-transparency log (docs/v2/09-key-transparency.md §5). Once a day it
+# fetches the production tree head (https://www.kithwall.com/api/kt/head), verifies an RFC 9162
+# consistency proof from the head it committed before, and commits the new head to the `kt-heads` branch
+# (infra/kt-witness/witness.mjs). A log that shrank or whose history was rewritten fails the run and
+# commits nothing, so the branch keeps the last good head as evidence and the failed run is public.
+# No secrets: only the job's own token, allowed to write repository contents in this one job.
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kt-witness
+  cancel-in-progress: false
+
+jobs:
+  witness:
+    name: Witness the key log
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      KT_ORIGIN: https://www.kithwall.com
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          path: src
+          sparse-checkout: infra/kt-witness
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      # The token goes in an http.extraheader for single git commands, never into .git/config.
+      - name: Check out the kt-heads branch (or start it)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          url="https://github.com/${GITHUB_REPOSITORY}.git"
+          if git -c http.extraheader="$auth" ls-remote --exit-code --heads "$url" kt-heads > /dev/null; then
+            git -c http.extraheader="$auth" clone --quiet --depth 1 --branch kt-heads --single-branch "$url" heads
+          else
+            echo "::notice::No kt-heads branch yet: starting it with this head"
+            git init --quiet -b kt-heads heads
+          fi
+
+      - name: Verify and record the head
+        run: node src/infra/kt-witness/witness.mjs --origin "$KT_ORIGIN" --dir heads
+
+      - name: Commit the new head
+        working-directory: heads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The log has not grown since the last witnessed head: nothing to commit"
+            exit 0
+          fi
+          size="$(node -p "require('./head.json').size")"
+          git -c user.name="kithwall-witness" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "Witness key log head: ${size} entries"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c http.extraheader="$auth" push --quiet "https://github.com/${GITHUB_REPOSITORY}.git" HEAD:kt-heads

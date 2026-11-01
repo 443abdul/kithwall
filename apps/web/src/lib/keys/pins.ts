@@ -13,6 +13,7 @@ import { b64u } from '@kithwall/crypto';
 import { sb, must } from '../supabase';
 import { getSession, identity, useSession } from './session';
 import { vaultGet, vaultUpdate } from '../settings';
+import { keyLogGate, queueKeyCheck } from '../kt/client';
 import {
   cleanPins, maySealTo, pinStatus, trustedKeysFor, vouchedFrom, type KeyChangeLogRow, type Pin, type PinMap, type TrustedKeys,
 } from './pinsCore';
@@ -79,6 +80,9 @@ export async function resolveSigners(rows: { id: string; s: string; x: string }[
     out.set(r.id, trustedKeysFor(pin, { s: r.s, x: r.x }, log));
   }
   if (fresh.length) await pinIfNew(fresh).catch((e) => console.warn('key pins', e));
+  // Key transparency: keys this account never checked against the public log (first sight, a change) are
+  // checked in the background; a failure shows as a safety-number warning and pauses sharing (sealGate).
+  queueKeyCheck(rows.filter((r) => r.id !== s.userId).map((r) => ({ userId: r.id, signPub: r.s, kxPub: r.x })));
   return out;
 }
 
@@ -140,6 +144,15 @@ export async function sealGate(recipients: { id: string; s: string; x: string }[
     else { blocked.add(r.id); console.warn('Kithwall: not sharing new keys with a contact whose identity key changed until you confirm it', r.id); }
   }
   if (fresh.length) await pinIfNew(fresh).catch((e) => console.warn('key pins', e));
+  // Key transparency: keys the public log can't vouch for (not in it, a bad proof, or a forked log and keys
+  // never confirmed) get nothing new until the user accepts them (KeyChangeBanner).
+  const refused = await keyLogGate(recipients.filter((r) => ok.has(r.id)).map((r) => ({ userId: r.id, signPub: r.s, kxPub: r.x })))
+    .catch(() => new Set<string>());
+  for (const id of refused) {
+    ok.delete(id);
+    blocked.add(id);
+    console.warn('Kithwall: not sharing new keys with a contact whose key the public key log does not confirm', id);
+  }
   return ok;
 }
 

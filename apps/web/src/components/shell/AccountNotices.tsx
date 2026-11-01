@@ -2,7 +2,8 @@
 // Security notices at the top of every signed-in screen (spec §3.5 step 2: every signed-in session
 // hears about recovery requests). Trusted-friend recovery can be started by anyone who knows a handle
 // (docs/v2/01-accounts.md §5), so the owner's devices must show it with a one-tap cancel. Also:
-// friends asking me for help, and moderation decisions.
+// friends asking me for help, moderation decisions, and a public key log that no longer matches what this
+// device saw before (docs/v2/09-key-transparency.md): that one can't be dismissed, only looked into.
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useFormat, useT } from '@/i18n';
@@ -10,6 +11,7 @@ import { sb } from '@/lib/supabase';
 import { useSession } from '@/lib/keys/session';
 import { loadSettings } from '@/lib/settings';
 import { cancelRequest, incomingRecoveryRequests, type RequestRow } from '@/lib/recovery';
+import { useKeyLogAlarm } from '@/lib/kt/client';
 import { people, usePeopleVersion } from '@/lib/people';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -32,6 +34,7 @@ export function AccountNotices() {
   const [helpNeeded, setHelpNeeded] = useState<string[]>([]);
   const [actions, setActions] = useState<ModAction[]>([]);
   const [hidden, setHidden] = useState<string[]>([]);
+  const ktAlarm = useKeyLogAlarm();
   usePeopleVersion();
 
   useEffect(() => {
@@ -62,11 +65,20 @@ export function AccountNotices() {
     try { localStorage.setItem(DISMISS, JSON.stringify(next.slice(-50))); } catch { /* ignore */ }
   };
   const shownActions = actions.filter((a) => !hidden.includes(a.id));
-  if (!ownRecovery.length && !helpNeeded.length && !shownActions.length) return null;
+  if (!ownRecovery.length && !helpNeeded.length && !shownActions.length && !ktAlarm) return null;
   const time = (iso: string) => f.date(new Date(iso), { dateStyle: 'medium', timeStyle: 'short' });
 
   return (
     <div className="k-notices" role="region" aria-label={t('notices.label')}>
+      {ktAlarm ? (
+        <div className="k-notice k-notice-danger" role="alert" data-testid="key-log-alarm">
+          <Icon name="alert" />
+          <div className="k-notice-body">
+            <strong>{t('kt.alarmTitle')}</strong>
+            <p>{t(ktAlarm.kind === 'shrunk' ? 'kt.alarmShrunk' : 'kt.alarmForked')} <Link href="/transparency#key-log">{t('kt.alarmMore')}</Link></p>
+          </div>
+        </div>
+      ) : null}
       {ownRecovery.map((r) => (
         <div className="k-notice k-notice-danger" role="alert" key={r.id}>
           <Icon name="alert" />

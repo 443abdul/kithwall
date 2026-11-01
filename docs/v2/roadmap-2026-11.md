@@ -36,13 +36,16 @@ minimum metadata.
 
 Ranked by impact for effort. Shipped: 1 (signed member additions, `lib/keys/authority.ts memberVouched`),
 2 (media from non-connections in chats stays inert until tapped), 3 (hybrid X25519 + ML-KEM-768 key
-wrapping, `packages/crypto/src/pq.ts`, seal v2), 6 (Padme padding of every encrypted payload), part of 8
-(Settings → About shows whether the installed app carries Kithwall's signing certificate) and part of 9
-(chat messages written offline send themselves when the connection returns), and since 2026-11-02 the message
-franking part of 10 (`03-franking.md`). Already in place before this
-round: 4 (calls use RTCRtpScriptTransform when available), 5 (passkey PRF unlock), the strict nonce CSP, and
-key-change warnings with a vouched key-change chain (7, short of a public Merkle log). Still open: the
-public key-transparency log, a second non-Cloudflare CDN and bridges (needs owner accounts), and the
+wrapping, `packages/crypto/src/pq.ts`, seal v2), 6 (Padme padding of every encrypted payload), 7 (public
+key-transparency log, 2026-11-02: an RFC 9162 Merkle log of every identity-key publication with salted,
+non-enumerable leaves, consistency and inclusion checks on every device, warnings through the existing
+safety-number notices, and a daily public witness on the `kt-heads` branch; `docs/v2/09-key-transparency.md`),
+part of 8 (Settings → About shows whether the installed app carries Kithwall's signing certificate), part
+of 9 (chat messages written offline send themselves when the connection returns) and since 2026-11-02 the
+message franking part of 10 (`03-franking.md`). Already in place before this round: 4 (calls use
+RTCRtpScriptTransform when available), 5 (passkey PRF unlock), the strict nonce CSP, and key-change warnings
+with a vouched key-change chain. Still open: automatic gossip of key-log heads between contacts and
+VRF-indexed self-monitoring (09 §9), a second non-Cloudflare CDN and bridges (needs owner accounts), and the
 legal review of PECA/SMPRA (10).
 
 1. **Signed circle membership changes.** Clients reject members the server added on its own, and show a
@@ -56,7 +59,8 @@ legal review of PECA/SMPRA (10).
 5. **Passkey PRF** to unlock the account key without typing the passphrase where the authenticator supports
    it (Google Password Manager, iCloud Keychain); the passphrase stays as the fallback.
 6. **Padding** of post/message/push ciphertexts to size buckets.
-7. **Key transparency**: an append-only signed log of identity-key changes, plus key-change warnings.
+7. **Key transparency**: an append-only public log of identity keys, plus key-change warnings (shipped as an
+   unsigned Merkle log with a public witness instead of a server signing key: 09-key-transparency.md).
 8. **Client integrity**: strict CSP and SRI, published hashes per release and per signed APK (fake
    "Kithwall" APKs are a realistic threat), and bundling the web assets inside the Android app instead of
    loading the site remotely.

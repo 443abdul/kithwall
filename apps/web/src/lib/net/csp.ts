@@ -33,6 +33,17 @@ export function netConnectSources(c: NetConfig): string[] {
   return [...out];
 }
 
+/**
+ * connect-src source for the key log's public witness (lib/kt/witness.ts): the https origin of the witnessed
+ * head file, or null when there is no witness. Fetched only when the person presses "Compare with the public
+ * witness"; nothing is sent to it but the request itself.
+ */
+export function witnessConnectSource(headUrl: string | null | undefined): string | null {
+  if (!headUrl || !/^https:\/\//i.test(headUrl)) return null;
+  const o = originOf(headUrl);
+  return o && o !== 'null' ? o : null;
+}
+
 /** Is this request for the onion service? (Host is the .onion name, or the onion proxy says so.) */
 export function isOnionRequest(host: string | null, onionHeader: string | null, c: NetConfig): boolean {
   if (!c.onionOrigin) return false;

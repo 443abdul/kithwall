@@ -1,7 +1,8 @@
 'use client';
 // Public transparency report (/transparency): requests received, what we can and can't hand over, a
 // dated statement the owner re-checks (lib/transparency/facts.ts, docs/v2/03-transparency.md), where the
-// source code lives (open source, AGPL-3.0), and a static version of the data map. Works signed in or out.
+// source code lives (open source, AGPL-3.0), a static version of the data map, and the public key log with
+// its GitHub witness (KeyLogSection). Works signed in or out.
 import Link from 'next/link';
 import { useFormat, useT } from '@/i18n';
 import { Card } from '@/components/ui/Card';
@@ -13,6 +14,7 @@ import { CATEGORIES, STATIC_MAP, TABLES } from '@/lib/transparency/datamap';
 import { TRANSPARENCY_FACTS as F } from '@/lib/transparency/facts';
 import { COMMIT_SHA, REPO_URL, shortCommit, sourceUrl } from '@/lib/source';
 import { OutsideDatabase } from './PrivacyReport';
+import { KeyLogSection } from './KeyLogSection';
 
 export function TransparencyScreen() {
   const t = useT();
@@ -34,6 +36,7 @@ export function TransparencyScreen() {
     { id: 'can', title: t('transparency.page.canTitle') },
     { id: 'map', title: t('transparency.page.mapTitle') },
     { id: 'logs', title: t('transparency.logs.title') },
+    { id: 'key-log', title: t('kt.page.title') },
     { id: 'source', title: t('transparency.page.sourceTitle') },
   ];
   return (
@@ -122,6 +125,8 @@ export function TransparencyScreen() {
           </section>
 
           <div id="logs"><OutsideDatabase /></div>
+
+          <KeyLogSection />
 
           <section id="source" aria-labelledby="source-h" className="k-stack">
             <h2 id="source-h">{t('transparency.page.sourceTitle')}</h2>

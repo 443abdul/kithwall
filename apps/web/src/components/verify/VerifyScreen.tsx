@@ -2,7 +2,8 @@
 // Verify a contact (/u/[handle]/verify): the 60-digit safety number made from both people's identity
 // keys (packages/crypto safety.ts), as twelve groups of five and as a QR code. Two people compare it
 // in person or on a call they trust: scan each other's code, or read the digits aloud / paste them.
-// "Verified" is stored only in my encrypted vault (lib/transparency/verified.ts).
+// "Verified" is stored only in my encrypted vault (lib/transparency/verified.ts). Each visit also checks
+// their current key against Kithwall's public key log (KeyLogState, docs/v2/09-key-transparency.md).
 import { acceptIdentityChange } from '@/lib/keys/pins';
 import { keyring } from '@/lib/keys/keyring';
 import { useQuery } from '@tanstack/react-query';
@@ -27,6 +28,7 @@ import { useFileUrl } from '@/lib/media';
 import { people, usePeopleVersion, usePerson } from '@/lib/people';
 import { clearVerified, markVerified, useRefreshIdentityKey, useSafetyNumber, useVerified } from '@/lib/transparency/verified';
 import { KeyChangeBanner } from './KeyChangeBanner';
+import { KeyLogState } from './KeyLogState';
 import { canScanQr, QrScanner } from './QrScanner';
 
 export function VerifyScreen({ handle }: { handle: string }) {
@@ -140,6 +142,7 @@ function Verify({ id, handle, back }: { id: string; handle: string; back: { href
           </>
         )}
         <VerifiedState status={v.status} at={v.verifiedAt} name={name} />
+        <KeyLogState userId={id} keys={sn.theirKey} name={name} />
         {err ? <Callout tone="danger">{err}</Callout> : null}
         {result ? <ResultCallout r={result} name={name} /> : null}
         <div className="k-row-wrap k-verify-actions">

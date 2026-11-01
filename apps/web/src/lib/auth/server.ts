@@ -20,6 +20,14 @@ export function admin(): SupabaseClient {
   return adminClient;
 }
 
+let publicDb: SupabaseClient | null = null;
+/** A client with no session (the anon role): for data anyone may read, like the public key log. */
+export function publicClient(): SupabaseClient {
+  if (!URL_ || !PUBLISHABLE) throw new Error('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is not configured');
+  publicDb ??= createClient(URL_, PUBLISHABLE, noSession);
+  return publicDb;
+}
+
 /** A client that acts as the signed-in user (RLS and auth.uid() apply). */
 export function asUser(jwt: string): SupabaseClient {
   return createClient(URL_, PUBLISHABLE, { ...noSession, global: { headers: { Authorization: `Bearer ${jwt}` } } });
