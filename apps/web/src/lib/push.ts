@@ -202,6 +202,7 @@ export async function enablePush(userId: string): Promise<void> {
         throw new PushError('settings', 'Turn on notifications for Kithwall in the settings that just opened.');
       }
       if (e instanceof n.NativePushError && e.code === 'declined') throw new PushError('dismissed', 'You didn’t allow notifications.');
+      if (e instanceof n.NativePushError && e.code === 'blocked') throw new PushError('blocked', 'Notifications are off for Kithwall in this phone’s settings.');
       throw e;
     } finally { await nativeRefreshPermission(); }
     rememberEnabled(userId, true);

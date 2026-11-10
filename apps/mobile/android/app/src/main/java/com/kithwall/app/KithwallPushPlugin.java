@@ -6,6 +6,8 @@ import android.net.Uri;
 import android.provider.Settings;
 import android.os.Build;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.app.NotificationManagerCompat;
 
 import com.getcapacitor.JSArray;
@@ -16,7 +18,6 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
-import com.getcapacitor.annotation.PermissionCallback;
 
 import org.json.JSONArray;
 
@@ -34,9 +35,26 @@ public class KithwallPushPlugin extends Plugin {
     /** The running page's plugin instance, for call actions that start outside it (CallActionReceiver). */
     private static volatile java.lang.ref.WeakReference<KithwallPushPlugin> running = new java.lang.ref.WeakReference<>(null);
 
+    /**
+     * Our own launcher for the notification permission. Capacitor's requestPermissionForAlias() looks the
+     * permission up in the @CapacitorPlugin annotation, and in release builds R8 emptied that list: Capacitor
+     * then requested nothing, showed no dialog and never answered the call, so "Turn on notifications" waited
+     * forever (2.0.0 to 2.3.0; debug builds were fine). Nothing here depends on that annotation any more.
+     * Registered in load(), i.e. while the bridge is built in onCreate: Android refuses later registrations.
+     */
+    private ActivityResultLauncher<String> permissionLauncher;
+    private volatile PluginCall pendingPermission;
+    private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+
     @Override
     public void load() {
         running = new java.lang.ref.WeakReference<>(this);
+        try {
+            permissionLauncher = getActivity().registerForActivityResult(
+                    new ActivityResultContracts.RequestPermission(), granted -> permissionAnswered(false));
+        } catch (Exception e) {
+            permissionLauncher = null;   // requestPermission() then answers "blocked": the settings page still works
+        }
     }
 
     /**
@@ -70,13 +88,29 @@ public class KithwallPushPlugin extends Plugin {
         return "prompt";
     }
 
-    /** When the current permission request started (to tell a refusal Android made by itself from the person's). */
-    private long askedAt = 0;
+    /** When the current permission request started, and whether Android wanted a rationale just before it. */
+    private volatile long askedAt = 0;
+    private volatile boolean rationaleBefore = false;
+    /** No human answers a dialog this fast: an answer sooner than this was Android's own. */
     private static final long AUTO_DENY_MS = 700;
+    private static final String PERM_PREFS = "kw_push_perm";
+    private static final String SAW_RATIONALE = "saw_rationale";
+    private static final String UNEXPLAINED = "unexplained_refusals";
+
+    /** Android's "explain before asking again" flag: true only between the first and the second "Don't allow". */
+    private boolean rationale() {
+        android.app.Activity a = getActivity();
+        return a != null && androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(a, Manifest.permission.POST_NOTIFICATIONS);
+    }
+    /** No dialog on screen and no answer after this long: Android showed nothing, stop waiting. */
+    private static final long NO_DIALOG_MS = 5000;
+    /** Told to the page so it knows this build answers every request itself (lib/native/push.ts). */
+    private static final int PERMISSION_API = 2;
 
     private void resolveState(PluginCall call) {
         JSObject r = new JSObject();
         r.put("state", state());
+        r.put("api", PERMISSION_API);
         call.resolve(r);
     }
 
@@ -102,8 +136,69 @@ public class KithwallPushPlugin extends Plugin {
         // Forget Capacitor's cached answer so its bookkeeping can't contradict what Android says now.
         getContext().getSharedPreferences("PluginPermStates", android.content.Context.MODE_PRIVATE).edit()
                 .remove(Manifest.permission.POST_NOTIFICATIONS).apply();
-        askedAt = android.os.SystemClock.elapsedRealtime();
-        requestPermissionForAlias("notifications", call, "permissionDone");
+        PluginCall earlier = pendingPermission;
+        pendingPermission = call;
+        if (earlier != null) answer(earlier, false);   // a second tap while the dialog is up: the first gets the state so far
+        main.post(() -> {
+            if (pendingPermission != call) return;
+            try {
+                rationaleBefore = rationale();
+                askedAt = android.os.SystemClock.elapsedRealtime();
+                if (permissionLauncher == null) throw new IllegalStateException("no launcher");
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
+            } catch (Exception e) {
+                permissionAnswered(true);
+                return;
+            }
+            // Every request gets an answer: if Android neither shows its dialog (the activity would lose focus)
+            // nor reports back, say so instead of leaving the page waiting.
+            main.postDelayed(() -> {
+                if (pendingPermission != call) return;
+                android.app.Activity a = getActivity();
+                if (a != null && a.hasWindowFocus() && MainActivity.isForeground()) permissionAnswered(true);
+            }, NO_DIALOG_MS);
+        });
+    }
+
+    /**
+     * blocked = not granted and Android did not ask the person this time (it stops asking after two "Don't
+     * allow", or notifications were switched off in the settings): only the settings can turn them on, so the
+     * page opens them. Android doesn't say whether it showed its dialog, and neither timing (a slow phone takes
+     * seconds to refuse by itself) nor window focus (lost briefly either way) tells; the rationale flag does:
+     *   false -> true    the first "Don't allow": Android will ask once more        not blocked
+     *   true  -> false   the second "Don't allow", answered in the dialog           not blocked (this time)
+     *   false -> false   Android refused by itself, OR the very first dialog was dismissed without an
+     *                    answer. Blocked if a refusal was seen before, if the answer came faster than a
+     *                    person can tap, or if it happens twice in a row.
+     */
+    private void answer(PluginCall call, boolean noDialog) {
+        String now = state();
+        boolean granted = "granted".equals(now);
+        boolean blocked = false;
+        android.content.SharedPreferences prefs = getContext().getSharedPreferences(PERM_PREFS, android.content.Context.MODE_PRIVATE);
+        if (granted) {
+            prefs.edit().remove(UNEXPLAINED).apply();
+        } else if (noDialog) {
+            blocked = true;
+        } else if (rationale()) {
+            prefs.edit().putBoolean(SAW_RATIONALE, true).remove(UNEXPLAINED).apply();
+        } else if (!rationaleBefore) {
+            int unexplained = prefs.getInt(UNEXPLAINED, 0);
+            blocked = prefs.getBoolean(SAW_RATIONALE, false) || unexplained >= 1
+                    || android.os.SystemClock.elapsedRealtime() - askedAt < AUTO_DENY_MS;
+            prefs.edit().putInt(UNEXPLAINED, unexplained + 1).apply();
+        }
+        JSObject r = new JSObject();
+        r.put("state", now);
+        r.put("blocked", blocked);
+        call.resolve(r);
+    }
+
+    /** Android answered the request (or, noDialog, showed nothing at all). */
+    private void permissionAnswered(boolean noDialog) {
+        PluginCall call = pendingPermission;
+        pendingPermission = null;
+        if (call != null) answer(call, noDialog);
     }
 
     /**
@@ -126,15 +221,6 @@ public class KithwallPushPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("no settings screen", "failed");
         }
-    }
-
-    @PermissionCallback
-    private void permissionDone(PluginCall call) {
-        String now = state();
-        JSObject r = new JSObject();
-        r.put("state", now);
-        r.put("blocked", !"granted".equals(now) && android.os.SystemClock.elapsedRealtime() - askedAt < AUTO_DENY_MS);
-        call.resolve(r);
     }
 
     @PluginMethod

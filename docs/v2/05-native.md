@@ -532,3 +532,45 @@ translation, and there is no cloud fallback.
   aligned (zipalign `-P 16` and ELF LOAD alignment 0x4000 checked on the debug APK).
 - **Not verified on a device yet:** pack download (Wi-Fi only and mobile data), translation quality for Urdu,
   removing a pack, and the telemetry block (network capture).
+
+## 13. Release-only bugs of 2.0.0 to 2.3.0 and the release check (2026-11-11)
+
+Three faults reached testers because every test until then ran a debug build, or a release build that was
+never exercised on a device. All three are reproduced and fixed against a release build on an emulator.
+
+1. **"Turn on notifications" waited forever and never showed Android's dialog.** `KithwallPushPlugin`
+   asked through Capacitor's `requestPermissionForAlias()`, which reads the permission list from the
+   `@CapacitorPlugin(permissions = {@Permission(...)})` annotation. Capacitor's shrink rules keep the
+   annotated classes and methods but not the annotation types, and R8 dropped the nested `@Permission`
+   values in release builds: the list was empty, Capacitor requested nothing and never answered the call
+   (its `checkPermissions()` returned nothing for the same reason). Debug builds were fine. Fixes: the plugin
+   has its own `ActivityResultLauncher` and no longer depends on the annotation; every request is answered
+   (a watchdog covers "no dialog and no result"); `proguard-rules.pro` keeps `com.getcapacitor.annotation.**`;
+   `permission()` reports `api: 2`, and the page never calls `requestPermission()` on older builds (it opens
+   the notification settings instead: `lib/native/push.ts`).
+   "Blocked" (Android refused without asking) is decided from the rationale flag before and after the request,
+   not from timing: on a slow device Android took 3 s to refuse by itself.
+2. **After a lost connection the app went to `http://127.0.0.1:3073` and stayed broken.** `www/offline.html`
+   is generated (`scripts/prepare.mjs`) and git-ignored; a copy generated for `KITHWALL_ENV=local` emulator
+   testing was still there when 2.1.0 to 2.3.0 were built with `cap sync` alone. Its "Try again" link and its
+   `online` handler pointed at the developer address. Fix: `app/build.gradle` now refuses any release build
+   whose bundled `offline.html` / `index.html` is not for the build's own https origin. Always `npm run sync`
+   (never bare `cap sync`) before a release build.
+   Also new: while the offline page is showing, the app health-checks the active origin every 4 s and reloads
+   the page that failed (`KwWebViewClient.watchForConnection`); the page's single `online` retry often fired
+   before the network worked and then never again.
+3. **Play's "Automatic protection" blocks the app wherever Play can't vouch for the install.** Play adds
+   `com.pairip.licensecheck` to the builds it delivers. On a device without a working Play Store, or for an APK
+   downloaded from GitHub Releases and installed by hand, the app shows "Something went wrong. Check that
+   Google Play is enabled on your device…" and never opens. That defeats the direct-download route
+   (docs/v2/08-censorship.md §6). It must be switched off in Play Console (Test and release → App integrity →
+   Automatic protection) before the next upload; it is applied when Play processes a bundle.
+
+### The release check
+
+`scripts/verify-release.mjs <apk>` drives a release APK on an Android 13+ device or emulator through the
+WebView's DevTools socket and `adb`: annotations survived R8, the dialog shows, "Don't allow" twice, the
+silent refusal is reported as blocked, "Allow", a push token is issued, the offline page belongs to the
+build's origin, and the app returns by itself when the connection is back. It needs a release build with
+`android.webContentsDebuggingEnabled: true` patched into the synced `capacitor.config.json` (a test build,
+never uploaded). Run it before every Play upload; a release is not "verified" on a compile check.

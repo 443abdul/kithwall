@@ -52,6 +52,51 @@ class KwWebViewClient extends BridgeWebViewClient {
 
     private final Bridge bridge;
 
+    // ---- back online ---------------------------------------------------------------------------------------
+    // The offline page's own script retries once, when the WebView reports "online". That event often comes
+    // before the network really works (the retry fails and nothing tries again), or not at all (captive
+    // portals, a server outage with the phone online the whole time): people sat on "Kithwall can't connect"
+    // until they tapped the button. So while that page is showing and the app is in front, the active origin
+    // is health-checked every few seconds and the page that failed is loaded again as soon as it answers.
+    private static final long RECONNECT_EVERY_MS = 4000;
+    private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final java.util.concurrent.ExecutorService checker = java.util.concurrent.Executors.newSingleThreadExecutor();
+    private boolean watching = false;
+    private String failedUrl;
+
+    private static boolean onOfflinePage(WebView view) {
+        String url = view.getUrl();
+        return url != null && url.contains("/offline.html");
+    }
+
+    private void watchForConnection(WebView view, String failed) {
+        String origin = bridge.getServerUrl();
+        if (failed != null && origin != null && failed.startsWith(origin.replaceAll("/+$", "") + "/")) failedUrl = failed;
+        if (watching) return;
+        watching = true;
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                android.app.Activity a = bridge.getActivity();
+                if (a == null || a.isDestroyed() || !onOfflinePage(view)) { watching = false; return; }
+                final String server = bridge.getServerUrl();
+                if (!MainActivity.isForeground() || holdNetwork || server == null) { main.postDelayed(this, RECONNECT_EVERY_MS); return; }
+                final Runnable again = this;
+                checker.execute(() -> {
+                    final boolean ok = KwNet.healthy(a, server.replaceAll("/+$", ""));
+                    main.post(() -> {
+                        if (a.isDestroyed() || !onOfflinePage(view)) { watching = false; return; }
+                        if (!ok) { main.postDelayed(again, RECONNECT_EVERY_MS); return; }
+                        watching = false;
+                        String back = failedUrl != null ? failedUrl : bridge.getAppUrl();
+                        failedUrl = null;
+                        view.loadUrl(back);
+                    });
+                });
+            }
+        }, RECONNECT_EVERY_MS);
+    }
+
     KwWebViewClient(Bridge bridge) {
         super(bridge);
         this.bridge = bridge;
@@ -77,6 +122,7 @@ class KwWebViewClient extends BridgeWebViewClient {
         if (isOffline(code, String.valueOf(error.getDescription()))) {
             super.onReceivedError(view, request, error);
             offerOfflineShell(view);
+            watchForConnection(view, String.valueOf(request.getUrl()));
             // Maybe the usual address is blocked here: try the mirrors (KwNet, docs/v2/08-censorship.md).
             if (bridge.getActivity() != null) KwNet.failover(bridge.getActivity());
         }
@@ -90,6 +136,7 @@ class KwWebViewClient extends BridgeWebViewClient {
         if (status == 502 || status == 503 || status == 504) {
             super.onReceivedHttpError(view, request, response);
             offerOfflineShell(view);
+            watchForConnection(view, String.valueOf(request.getUrl()));
             if (bridge.getActivity() != null) KwNet.failover(bridge.getActivity());
         }
     }

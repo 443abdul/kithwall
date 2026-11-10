@@ -109,8 +109,9 @@ export interface NativePushRegistration {
  * 'unavailable' (no Play services / not configured), 'failed'.
  */
 export interface KithwallPushPlugin {
-  permission(): Promise<{ state: 'granted' | 'denied' | 'prompt' }>;
-  /** Asks Android. `blocked` (app 2.2+): Android refused without showing its dialog; only the settings can help. */
+  /** `api` 2 (app 2.4.0+): requestPermission() works and always answers. Absent before: never call it there. */
+  permission(): Promise<{ state: 'granted' | 'denied' | 'prompt'; api?: number }>;
+  /** Asks Android (only with `api` 2). `blocked`: Android refused without showing its dialog; only the settings can help. */
   requestPermission(): Promise<{ state: 'granted' | 'denied' | 'prompt'; blocked?: boolean }>;
   /** Open this app's notification settings (the only way back once the permission was refused). */
   openSettings?(): Promise<void>;

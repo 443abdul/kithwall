@@ -32,6 +32,18 @@ gradle.taskGraph.whenReady { graph ->
     if (!releaseTasks.isEmpty() && capConfig.exists() && capConfig.text.contains('"url": "http://')) {
         throw new GradleException('This release build would load a plain-http (local) origin. Run `npm run sync` (production) or `npm run sync:staging` first.')
     }
+    // The bundled offline page (www/, written by scripts/prepare.mjs and copied by `cap sync`) sends people
+    // back to the origin it was generated for. 2.1.0 to 2.3.0 shipped one left over from KITHWALL_ENV=local
+    // testing: after a lost connection the app went to http://127.0.0.1:3073 and stayed broken until it was
+    // closed. A release build must carry a page for its own origin and nothing else.
+    if (!releaseTasks.isEmpty()) {
+        ['offline.html', 'index.html'].each { name ->
+            def page = file("src/main/assets/public/${name}")
+            if (!page.exists() || page.text.contains('http://') || !page.text.contains("\"https://${kwHost}/\"")) {
+                throw new GradleException("The bundled ${name} is missing or was generated for another origin than https://${kwHost}. Run `npm run sync` (production) or `npm run sync:staging` in apps/mobile first.")
+            }
+        }
+    }
 }
 
 android {
