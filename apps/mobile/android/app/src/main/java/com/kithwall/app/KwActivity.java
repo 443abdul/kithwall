@@ -33,8 +33,14 @@ import com.getcapacitor.WebViewListener;
  *    (or with no history left) sends the app to the background like other Android apps;
  *  - downloads (export, .ics, photos, videos) are saved to Downloads (KwDownloads);
  *  - only network failures show the bundled offline page (KwWebViewClient).
+ *
+ * This class was called MainActivity until 2.5.0. The launcher entries are now activity-aliases that point
+ * here (AndroidManifest.xml, KwIcons): "com.kithwall.app.MainActivity" is still the name of the default one,
+ * so home-screen icons made by earlier versions keep working, and the disguised entries (Calculator, Notes,
+ * Weather) open the very same activity. Every intent filter sits on the aliases; code that opens the app
+ * (notifications, the call service) addresses this class directly, whichever alias is switched on.
  */
-public class MainActivity extends BridgeActivity {
+public class KwActivity extends BridgeActivity {
     private static volatile boolean foreground = false;
     private static final long SPLASH_MAX_MS = 4000;
 
@@ -61,6 +67,9 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         splash.setKeepOnScreenCondition(() -> !firstPaint && SystemClock.uptimeMillis() - started < SPLASH_MAX_MS);
         KithwallShellPlugin.applySecure(this, KithwallShellPlugin.secureScreen(this));
+        // Recent apps shows the name and icon of the launcher entry that is switched on, also when the app
+        // was opened from a notification (which addresses this class, not an alias).
+        KwIcons.applyTaskDescription(this);
         Notifier.ensureChannels(this);
         getOnBackPressedDispatcher().addCallback(this, back);
         pendingPath = pathFrom(getIntent());

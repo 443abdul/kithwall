@@ -81,7 +81,8 @@ at the "reveal hidden chats" prompt counts as a wrong PIN.
 unsubscribe push and delete this device's subscription row → local sign-out (Supabase revokes this
 session's refresh token) → zero the AMK → delete `kithwall-device` (remembered AMK, PIN record,
 counter), `kithwall-sw`, `kw-kitdrop` (Kit Drop outbox and received files), `kw-offline` (what opens the
-account offline, docs/v2/08-censorship.md §5.1) and every other IndexedDB database of the origin → Cache
+account offline, docs/v2/08-censorship.md §5.1), `kw-search` (the on-device search index, §14) and every other
+IndexedDB database of the origin → Cache
 Storage (including the offline shell) → unregister the service worker → clear localStorage and
 sessionStorage. The account and its content on the server are
 untouched; come back with a passkey, the passphrase or the recovery key.
@@ -324,3 +325,110 @@ deletion cascade, execute rights. `apps/web/src/lib/legacy/legacy.test.ts`: mont
 note padding and length limit, sealing (opens for the contact and the owner only, bound to writer and recipient,
 opens after a contact key rotation), reseal detection. `components/activity/activityModel.test.ts`: the legacy
 notices and where they lead.
+
+## 13. Disguised app icon (Android app)
+
+Status: implemented 2026-11-11 · Android side and device test steps: `05-native.md` §14
+
+For people who need to hide that they use Kithwall. Safety centre → App lock → **App icon** (shown only in the
+Android app, 2.5.0 or newer): the app can show on the home screen as **Kithwall** (default), **Calculator**,
+**Notes** or **Weather**. Name and icon both change; opening it is Kithwall as usual, behind the app PIN if one
+is set. Code: `components/safety/AppIcon.tsx`, `lib/native/shell.ts` (`getAppIcon` / `setAppIcon`),
+`KwIcons.java`.
+
+What the screen says, because a disguise is a different icon and not a hidden app:
+
+- The phone's own list of apps (Settings → Apps), the app store and the "app info" screen still say Kithwall.
+- Notifications and the incoming-call screen still carry the Kithwall name and logo. The settings that cover
+  those are linked right there: notifications off on this phone, hidden chats (their notifications don't say
+  who wrote), and "Block screenshots and hide app preview".
+- Switching takes a few seconds, Kithwall usually closes once when the icon changes, and some home screens
+  move the icon or drop it from the home screen (it is then in the list of all apps).
+
+Not changed: the panic wipe and the duress PIN work exactly as before, and neither brings the real icon back
+(Android keeps the choice; a wipe must not undo a disguise). The choice is per phone and is not known to the
+server. Threat model: this protects against someone glancing at the home screen or the app drawer. It does
+not protect against someone who opens the system's app list, sees a notification arrive, inspects the phone
+with a computer, or simply opens the "Calculator" and finds a lock screen.
+
+## 14. Search on your phone
+
+Status: implemented 2026-11-11 · code `lib/search/*`, `components/search/*`
+
+Searching your own chats and posts without the server ever seeing a query or an index: it can't search what
+it can't read, so the device does it, over what it has already decrypted.
+
+- **Index.** `lib/search/store.ts`: one record per message, post or comment this device decrypted (text,
+  author, time, the chat or post it belongs to, when it disappears). Fed by the decrypting code itself
+  (`readMessage`, `readPost`, `readComment` call `noteMessage` / `notePost` / `noteComment`), so it grows as
+  content is seen. **Index older messages** (Settings → Your data) fetches and decrypts what this device
+  hasn't opened yet, in the background, with progress and Stop, text only, slower while Data Saver is on
+  (after asking), waiting while offline (`lib/search/backfill.ts`). At most 30,000 items; the oldest leave first.
+- **Encrypted at rest.** IndexedDB `kw-search`. Each record is an XChaCha20-Poly1305 blob under
+  `HKDF(AMK, "kithwall/v1/search-index")` (`deriveSearchKey`), bound to the account, padded to 64-byte steps.
+  The record's name is `HKDF(searchKey, "kithwall/v1/search-record/<id>")` (16 bytes), so storage holds no
+  message, post or chat id in the clear, and an edit or unsend lands on the same record. A copy of the device
+  shows how many records there are and roughly how long each is, nothing else. The decrypted copy lives in
+  memory only while the app is unlocked (locking reloads the page).
+- **Matching** (`lib/search/text.ts`): a prefix tokeniser over folded text. Folding ignores case and accents,
+  Arabic harakat and tatweel, unifies the letters Arabic, Persian and Urdu keyboards write differently
+  (ي ى ی, ك ک, ه ہ ھ ة, the alef forms), reads Arabic-Indic, Persian, Devanagari, Bengali and full-width
+  digits as the same number, keeps Hindi and Bengali vowel signs but drops the nukta, and drops invisible
+  characters. Every word of the query must start a word of the text; in scripts written without spaces
+  (Chinese, Japanese, Thai…) and in Arabic script (attached articles and prepositions) a query word is found
+  anywhere inside the text. Results are newest first, with the matches marked.
+- **Screens.** Messages: the search field also lists matching messages across chats; inside a chat, "Search in
+  this chat" (header, or Chat details on narrow screens); a result opens the chat at that message
+  (`/messages/<chat>?m=<message>`, older pages are loaded until it is there). Posts and comments:
+  `/you/search` (from Home and You). Explore's account search is a different thing and unchanged.
+- **Rules.** Hidden chats are indexed but left out of every result unless they are revealed right now (the
+  same `useHiddenChats()` rule as the chat list). Disappearing messages and posts carry their expiry and
+  leave when it passes (also swept once a minute). An edit replaces the record; an unsend removes it (live,
+  or the next time that stretch of the chat is fetched: `reconcileMessages`); a deleted post takes its comments
+  along; leaving a chat removes its messages; blocking or disconnecting from someone removes their posts and
+  comments (their chat messages stay, as in the chat). The whole database is deleted on sign-out, by the
+  panic wipe and the duress wipe, by "Delete the search index", and when **Search on this phone** (on by
+  default) is switched off.
+- **Limits.** Like everything decrypted on a device, the index is only as safe as the unlocked device and
+  the account key (§8). Other people's devices keep their own index of what you sent them until they delete
+  it; unsending and expiry remove it there the same way. Not indexed: comments on album photos, stories,
+  time capsules, and text inside pictures.
+- **Tests.** `lib/search/text.test.ts` (15: folding per script, matching rules, highlighting back onto the
+  original text, excerpts), `lib/search/store.test.ts` (10, against an in-memory IndexedDB: nothing readable
+  at rest, padding, the same key and account needed to read it back, edits and unsends, removal rules, expiry,
+  destroy and wipe), `packages/crypto/test/keys.test.ts` (the key and record-name derivation). Browser run
+  (Playwright, system Chrome, local build, 2026-11-11): posts found after being seen, "Index older messages",
+  Arabic-keyboard and unvowelled queries, Hindi without nukta, Chinese inside a sentence, no request or socket
+  frame containing a query, opaque records in IndexedDB, jump to a message from the list and inside a chat,
+  edit and unsend, hidden chat left out until revealed, delete / switch off / sign-out.
+
+## 15. Blur faces before posting
+
+Status: implemented 2026-11-11 · code `lib/photo/*`, `components/photo/BlurEditor.tsx`
+
+In the post composer and on chat attachments, every picked photo has **Blur faces**. Opening it looks for
+faces on the device and covers each one; tapping a face shows it again; dragging on the photo (or "Add a
+box") covers anything else. Number plates, documents, screens and house numbers are **not** found
+automatically, and the screen says so.
+
+- **Destructive.** A covered box is replaced in the pixels by a mosaic of at most 6 cells along its longer
+  side, each filled with its average colour (`lib/photo/blur.ts mosaic`). The result is encoded as a new JPEG
+  on the device and replaces the picked file, so the existing re-encode → encrypt → upload path only ever
+  sees the covered picture; the original never leaves the device.
+- **Detection, on the device only.** The browser's `FaceDetector` where it exists and works; otherwise a
+  self-hosted detector: our own TypeScript implementation of "pico" (pixel-intensity comparisons in decision
+  trees, arXiv:1305.4537) with its trained face cascade (`public/models/pico/facefinder.bin`, 240 kB, MIT,
+  SHA-256 checked before use). It is fetched from the app's own origin only when someone opens the tool. No
+  WebAssembly and no change to the Content-Security-Policy were needed. Alternatives weighed: MediaPipe's
+  runtime is a 14.6 MB WASM file, BlazeFace through TensorFlow.js about 1.5 to 2 MB of code in four packages.
+  The cost of the small detector: it finds faces looking towards the camera; turned, tilted, small or partly
+  hidden faces can be missed. The screen says "check the photo", and the manual boxes cover the rest.
+- **Accessible.** Every box is a button in reading order: a face is a toggle; an own box moves with the arrow
+  keys, resizes with Shift + arrows, and goes with Delete or its Remove button. Works with touch and at 320 px.
+- **Tests.** `lib/photo/blur.test.ts` (15): the mosaic leaves at most cells × cells colours, fills with
+  averages, gives the same result for different originals with equal cell averages, box arithmetic; the
+  cascade file's hash and parse, a face found where it is in a public-domain portrait
+  (`lib/photo/fixtures/portrait-160.grey`) and in its mirror image, nothing found in flat, random and gradient
+  pictures. Browser run (2026-11-11): face found and covered, tap to show, drag / keyboard / Add a box, 320 px,
+  and the photo stored and decrypted again is the covered one (post and chat attachment). Not yet tried in the
+  Android WebView or on a real phone's camera photos.

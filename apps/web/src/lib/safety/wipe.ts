@@ -3,7 +3,8 @@
 //  - push: unsubscribe this browser and remove its subscription row (so no more previews arrive here)
 //  - session: sign this device out (Supabase revokes this session's refresh token)
 //  - keys: the in-memory AMK is zeroed; the device store (remembered AMK, app PIN record, attempts)
-//    and every other IndexedDB database of this origin are deleted
+//    and every other IndexedDB database of this origin are deleted (the Kit Drop outbox, the offline
+//    snapshot, the on-device search index)
 //  - caches: Cache Storage, the service worker registration, localStorage and sessionStorage
 //  - in the Kithwall app (docs/v2/05-native.md §4): the Keystore/Keychain store (remembered AMK, PIN
 //    record, biometric key), the push token and device push key, the hidden-chat mirror, shown
@@ -17,6 +18,7 @@ import { clearSwHidden } from './swmirror';
 import { deleteKitDropDatabase } from '../social/kitdrop';
 import { deleteReelsDatabase } from '../reels/store';
 import { offlineStore } from '../keys/offline';
+import { deleteSearchDatabase } from '../search/store';
 import { isNative } from '../native';
 
 function within<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
@@ -52,6 +54,8 @@ async function dropStorage(): Promise<void> {
   await deleteKitDropDatabase();
   await deleteReelsDatabase(); // what reels learned and the time controls (lib/reels/store)
   await offlineStore.clear();
+  // The on-device search index (lib/search): encrypted at rest, but a wipe leaves nothing behind.
+  await deleteSearchDatabase();
   try {
     const dbs = await indexedDB.databases?.();
     await Promise.all((dbs ?? []).map((d) => d.name ? new Promise<void>((resolve) => {

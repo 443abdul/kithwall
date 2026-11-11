@@ -155,7 +155,7 @@ public class KithwallPushPlugin extends Plugin {
             main.postDelayed(() -> {
                 if (pendingPermission != call) return;
                 android.app.Activity a = getActivity();
-                if (a != null && a.hasWindowFocus() && MainActivity.isForeground()) permissionAnswered(true);
+                if (a != null && a.hasWindowFocus() && KwActivity.isForeground()) permissionAnswered(true);
             }, NO_DIALOG_MS);
         });
     }

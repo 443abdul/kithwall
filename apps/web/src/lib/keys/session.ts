@@ -16,6 +16,7 @@ import { authedPost } from '../auth/api';
 import { people } from '../people';
 import { isOfflineError, OfflineError, setKnownOffline, storedAuthUser } from '../net/offline';
 import { offlineStore, trackOfflineSnapshot } from './offline';
+import { deleteSearchDatabase } from '../search/store';
 
 export type SessionStatus =
   | 'loading'     // checking for an existing session
@@ -443,6 +444,8 @@ export async function signOut(): Promise<void> {
   await deviceStore.clear();
   // Nothing of this account stays for opening it offline (lib/keys/offline).
   await offlineStore.clear();
+  // Nor its on-device search index (lib/search): the listeners below forget the decrypted copy.
+  await deleteSearchDatabase();
   emitLock('sign_out');
   await sb().auth.signOut({ scope: 'local' });
   markOffline(false);

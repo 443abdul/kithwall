@@ -5,6 +5,7 @@
 //    keeps working on the PIN pad).
 //  - Screenshots and app preview: Android FLAG_SECURE (blocks screenshots and recordings, blank preview in
 //    recent apps); iOS covers the app-switcher snapshot (iOS can't block screenshots). Off by default.
+//  - App icon (Android): show on the home screen as Calculator, Notes or Weather (./AppIcon.tsx).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useT } from '@/i18n';
 import { isNative, nativePlatform } from '@/lib/native';
@@ -14,6 +15,7 @@ import { Section } from '@/components/settings/shared';
 import { Callout } from '@/components/ui/Callout';
 import { Switch } from '@/components/ui/Switch';
 import { useToast } from '@/components/ui/Toast';
+import { AppIconSection } from './AppIcon';
 
 const never = () => () => undefined;
 /** false during SSR and hydration, the real answer afterwards. */
@@ -88,6 +90,7 @@ export function NativeProtectionSections() {
     <>
       <BiometricSection />
       <ScreenSection />
+      <AppIconSection />
     </>
   );
 }

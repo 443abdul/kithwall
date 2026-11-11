@@ -102,9 +102,10 @@ the encrypted content).
 | Calendar (events) | No | | | Events are end-to-end encrypted, except events the creator makes public. |
 | Contacts | No | | | The app never reads the phone's contacts. Connections between accounts are under "App activity". |
 | **App activity → Other user-generated content / Other actions** | Yes | Required | App functionality, Security/fraud prevention | Server-visible metadata: connections/friendships, circle and chat membership, timestamps of posts/messages, reactions' existence, notifications, reports filed. |
-| App activity → In-app search history, installed apps, web browsing | No | | | |
+| App activity → In-app search history, installed apps, web browsing | No | | | "Search on your phone" runs on the device; queries and the index never leave it (`03-safety.md` §14). |
 | Web browsing | No | | | |
-| App info and performance → **Crash logs / Diagnostics** | No | | | No crash reporting or analytics SDKs. ML Kit (on-device translation) would log usage metrics; its uploader is removed from the play manifest (`05-native.md` §12), so they are never sent. Re-check with a network capture before answering. |
+| App info and performance → **Crash logs** | Yes | Optional | Analytics (app stability) | **Changed in 2.5.0.** Only if the person turns on "Send crash reports" (off by default): the error's class, a scrubbed message and stack, app version, OS and WebView major version, route pattern, language. Sent to Kithwall's own server, no SDK, no third party; not linked to the account or the device, no IP address stored, deleted after 30 days (`03-transparency.md` §6). Declare as collected, optional, not shared, and not linked to the user; update the Data safety form when 2.5.0 is uploaded. |
+| App info and performance → Diagnostics / Other app performance data | No | | | No analytics SDKs. ML Kit (on-device translation) would log usage metrics; its uploader is removed from the play manifest (`05-native.md` §12), so they are never sent. Re-check with a network capture before answering. |
 | **Device or other IDs** | Yes | Optional | App functionality | Push token (FCM registration token) and the device's push public key, only when notifications are turned on; coarse device label ("Kithwall app on Android"). |
 | **Location** (approximate/precise) | No | | | The optional check-in location is end-to-end encrypted (exempt) and only sent when the person taps to attach it. |
 

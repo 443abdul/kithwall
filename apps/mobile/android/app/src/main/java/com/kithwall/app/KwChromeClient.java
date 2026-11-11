@@ -52,7 +52,7 @@ import com.getcapacitor.BridgeWebChromeClient;
  * Fullscreen video. Capacitor's client answers every fullscreen request (a YouTube/Vimeo embed's button, a
  * <video>'s fullscreen control, element.requestFullscreen) by hiding the view straight away, so nothing
  * could go fullscreen in the app. Here the player's view is laid over the whole window with the system bars
- * hidden, the screen may rotate freely while it is up, and Back (MainActivity) or the player's own button
+ * hidden, the screen may rotate freely while it is up, and Back (KwActivity) or the player's own button
  * leaves it.
  */
 class KwChromeClient extends BridgeWebChromeClient {
@@ -68,7 +68,7 @@ class KwChromeClient extends BridgeWebChromeClient {
     private int savedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private static KwChromeClient current;
 
-    /** MainActivity's Back: leave fullscreen video first. True if it did. */
+    /** KwActivity's Back: leave fullscreen video first. True if it did. */
     static boolean exitFullscreen() {
         KwChromeClient c = current;
         if (c == null || c.fullView == null) return false;

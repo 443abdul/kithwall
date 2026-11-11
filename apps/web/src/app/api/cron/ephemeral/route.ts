@@ -3,6 +3,7 @@
 // expired rows, unsend tombstones, publishing scheduled posts); when a media row goes, its path waits in a
 // private trash list and nobody can read the object any more (kw.can_read_media). This job deletes the
 // ciphertext from the bucket and forgets the paths (supabase/migrations/20261024000100_ephemeral.sql).
+// It also deletes opt-in crash reports older than 30 days (20261112000400_crash_reports.sql).
 // Called by Vercel Cron with "Authorization: Bearer $CRON_SECRET" (see docs/deploy.md), like /api/cron/stories.
 import { timingSafeEqual } from 'node:crypto';
 import { admin, json } from '@/lib/auth/server';
@@ -54,5 +55,9 @@ export async function GET(req: Request) {
     }
     if (paths.length < 500) break;
   }
-  return json({ removed, orphans });
+  // Opt-in crash reports (app/api/crash) are kept for 30 days and then deleted. Folded into this daily job
+  // because the hosting plan allows only a few cron routes (vercel.json).
+  const pruned = await db.rpc('prune_crash_reports');
+  if (pruned.error) return json({ error: pruned.error.message, removed, orphans }, 500);
+  return json({ removed, orphans, crashReports: pruned.data ?? 0 });
 }

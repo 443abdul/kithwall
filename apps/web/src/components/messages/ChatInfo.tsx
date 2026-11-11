@@ -28,11 +28,13 @@ import { GamesPanel } from '@/components/games/GamesPanel';
 
 type Step = 'main' | 'add' | 'rename' | 'leave' | 'timer' | 'games';
 
-export function ChatInfo({ c, open, onClose, title, initialStep = 'main', games, onOpenGame, onNewGame, hasOlder, loadingOlder, onLoadOlder }: {
+export function ChatInfo({ c, open, onClose, title, initialStep = 'main', games, onOpenGame, onNewGame, hasOlder, loadingOlder, onLoadOlder, onSearch }: {
   c: ConversationSummary; open: boolean; onClose: () => void; title: string; initialStep?: 'main' | 'timer' | 'games';
   /** The games found in the messages loaded so far (docs/v2/11-games.md), and how to look further back. */
   games: GameView[]; onOpenGame: (id: string) => void; onNewGame: () => void;
   hasOlder: boolean; loadingOlder: boolean; onLoadOlder: () => void;
+  /** Open the search for this chat (lib/search; the header button is hidden on narrow screens). */
+  onSearch?: () => void;
 }) {
   const t = useT();
   const router = useRouter();
@@ -125,6 +127,7 @@ export function ChatInfo({ c, open, onClose, title, initialStep = 'main', games,
           <p className="k-small k-muted"><Icon name="lock" /> {t('messages.info.sealed')}</p>
         </div>
         <List>
+          {onSearch ? <li><ListItem icon="search" title={t('search.inChat')} chevron={false} onClick={() => { close(); onSearch(); }} /></li> : null}
           <li><ListItem leading={<ChatIcon name="pin" />} title={pinned ? t('messages.info.unpin') : t('messages.info.pin')} chevron={false}
             onClick={() => void run(() => setPinned(c.id, !pinned), pinned ? t('messages.info.unpinned') : t('messages.info.pinned'))} /></li>
           <li><ListItem leading={<ChatIcon name="archive" />} title={t('messages.info.archive')} subtitle={t('messages.info.archiveSub')} chevron={false}

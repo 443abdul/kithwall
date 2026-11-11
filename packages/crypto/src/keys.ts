@@ -11,6 +11,7 @@
  *   identityKey   = HKDF(AMK, "kithwall/v1/identity-key")
  *   vaultKey      = HKDF(AMK, "kithwall/v1/vault")
  *   cacheKey      = HKDF(AMK, "kithwall/v1/cache")
+ *   searchKey     = HKDF(AMK, "kithwall/v1/search-index")   (on-device search index, never uploaded)
  *   rkCommitment  = b64u(SHA-256("kithwall/v1/rk-commitment" ‖ RK))
  *
  * wrap = XChaCha20-Poly1305, packed as b64u(0x01 ‖ nonce ‖ ct).
@@ -81,6 +82,26 @@ export function deriveVaultKey(amk: Uint8Array): Uint8Array {
 export function deriveCacheKey(amk: Uint8Array): Uint8Array {
   assertBytes(amk, 'amk', KEY_LEN);
   return hkdfSha256(amk, 'kithwall/v1/cache');
+}
+
+/**
+ * At-rest key of the on-device search index (apps/web lib/search): its own HKDF label, so the index key
+ * is independent of the vault and cache keys and useless for anything else.
+ */
+export function deriveSearchKey(amk: Uint8Array): Uint8Array {
+  assertBytes(amk, 'amk', KEY_LEN);
+  return hkdfSha256(amk, 'kithwall/v1/search-index');
+}
+
+/**
+ * The name a search-index record is stored under: a keyed, one-way image of the item's id (16 bytes,
+ * b64u), so the device's storage never holds a message, post or chat id in the clear, while the same item
+ * always lands on the same record (updates and deletions need no lookup table).
+ */
+export function searchRecordName(searchKey: Uint8Array, id: string): string {
+  assertBytes(searchKey, 'searchKey', KEY_LEN);
+  assertString(id, 'id', 256);
+  return b64u.encode(hkdfSha256(searchKey, `kithwall/v1/search-record/${id}`, 16));
 }
 
 function identityKey(amk: Uint8Array): Uint8Array {

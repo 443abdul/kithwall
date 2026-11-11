@@ -130,6 +130,9 @@ public class KithwallShellPlugin extends Plugin {
                 deleteTree(new java.io.File(getContext().getCacheDir(), "downloads"));
                 KwKitDrop.clear(getContext());
                 getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(OFFLINE_SHELL).apply();
+                // A recorded crash and the crash-report setting (back to off). The launcher entry (KwIcons) is
+                // deliberately left as it is: a wipe must not bring the real icon back.
+                KwCrash.forget(getContext());
                 call.resolve();
             } catch (Exception e) {
                 call.reject("could not clear web data", e);
@@ -215,6 +218,75 @@ public class KithwallShellPlugin extends Plugin {
         JSObject r = new JSObject();
         r.put("enabled", secureScreen(getContext()));
         call.resolve(r);
+    }
+
+    // ---- disguised app icon (KwIcons, docs/v2/03-safety.md §13) ---------------------------------------------
+
+    private JSObject iconState() {
+        JSObject r = new JSObject();
+        r.put("icon", KwIcons.current(getContext()));
+        com.getcapacitor.JSArray options = new com.getcapacitor.JSArray();
+        for (String id : KwIcons.IDS) options.put(id);
+        r.put("options", options);
+        return r;
+    }
+
+    @PluginMethod
+    public void getAppIcon(PluginCall call) {
+        call.resolve(iconState());
+    }
+
+    /**
+     * Switch the launcher entry. The answer goes out first and the switch happens a moment later: Android
+     * removes the running task when the entry it was started from is disabled, so the page gets to say what
+     * is about to happen before the app closes.
+     */
+    @PluginMethod
+    public void setAppIcon(PluginCall call) {
+        String id = call.getString("icon");
+        if (id == null || !KwIcons.known(id)) { call.reject("unknown icon", "failed"); return; }
+        final Context app = getContext().getApplicationContext();
+        JSObject r = new JSObject();
+        r.put("icon", id);
+        call.resolve(r);
+        if (id.equals(KwIcons.current(app))) return;
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                KwIcons.set(app, id);
+                Activity a = getActivity();
+                if (a != null && !a.isFinishing()) KwIcons.applyTaskDescription(a);
+            } catch (Exception ignored) {
+                // Nothing changed; getAppIcon() reports what is really switched on.
+            }
+        }, 1200);
+    }
+
+    // ---- crash reports, the app's own part (KwCrash; opt-in, off by default) -----------------------------------
+
+    @PluginMethod
+    public void setCrashReports(PluginCall call) {
+        KwCrash.setEnabled(getContext(), Boolean.TRUE.equals(call.getBoolean("enabled", false)));
+        call.resolve();
+    }
+
+    /** The crash recorded before this start: {name, stack, version, build}, or {} when there is none. */
+    @PluginMethod
+    public void pendingCrash(PluginCall call) {
+        JSObject r = new JSObject();
+        org.json.JSONObject c = KwCrash.isEnabled() ? KwCrash.pending(getContext()) : null;
+        if (c != null) {
+            r.put("name", c.optString("name", ""));
+            r.put("stack", c.optString("stack", ""));
+            r.put("version", c.optString("version", ""));
+            r.put("build", c.optString("build", ""));
+        }
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void clearCrash(PluginCall call) {
+        KwCrash.clear(getContext());
+        call.resolve();
     }
 
     private boolean openOutside(Uri uri) {

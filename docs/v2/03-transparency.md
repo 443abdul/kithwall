@@ -147,3 +147,75 @@ browser (Playwright, system Chrome, headless) against the dev server: report + J
 number on both sides for two accounts, verify by digits → badge, simulated key change (SQL) → warning and
 "changed" badge, restored → verified again, `/transparency` at 1280/375 and in Arabic RTL with the Minimal
 dark style, export ZIP contents, passkey account delete. Screenshots: `screens/phase3-trans-*.png`.
+
+## 6. Crash reports (opt-in, 2026-11-11)
+
+To keep the app free of bugs the owner needs to hear about crashes, without tracking anyone. Settings → Your
+data → **Send crash reports**, **off by default**, per device. No third-party service is involved.
+
+**What is caught** (`lib/crash/client.ts`, loaded only while the setting is on): uncaught errors and unhandled
+promise rejections of the page, what React's error boundaries catch (`app/error.tsx`, `app/global-error.tsx`,
+which also give people a "Try again" screen), and in the Android app a crash of the app itself, written down
+by an `UncaughtExceptionHandler` (`KwCrash.java`: class names and stack frames only, never the exception
+message, and only while the setting is on) and sent on the next start. Network failures, aborted requests and
+failed chunk loads are not reported.
+
+**What a report contains** (`lib/crash/report.ts`), and nothing else:
+
+| Field | Example | Note |
+|---|---|---|
+| `id` | random UUID | per report, so a retried upload is stored once; linked to nothing |
+| `kind` | `error` · `rejection` · `react` · `native` | where it was caught |
+| `app` | `{web: "58a235e0c1d2", version: "2.5.0-foss", build: "412"}` | website commit; app version and build |
+| `platform` | `web` · `pwa` · `android` · `ios` | |
+| `os`, `browser` | `Android 14`, `WebView 145` | family and **major** version only, never the user-agent string |
+| `route` | `/messages/[id]` | the route **pattern** (`lib/crash/routes.ts`), never the path or query |
+| `locale` | `ur` | interface language |
+| `name`, `message`, `stack`, `componentStack` | `TypeError`, … | scrubbed, see below |
+
+No account id, no session, no cookie (the request is sent with `credentials: 'omit'` and no `Authorization`
+header or referrer), no device identifier, no time from the device, no content.
+
+**The scrubber** (`lib/crash/scrub.ts`, the privacy boundary, run on the device and again on the server):
+foreign addresses are replaced whole; the app's own pages become their route pattern; query strings and
+fragments go everywhere; UUIDs, long hex strings, tokens (JWTs, base64url blobs), @handles, e-mail and IP
+addresses, file paths, numbers of four or more digits and phone-like strings are replaced; every run of
+non-ASCII text is replaced (the app's own messages are English); the message is cut at the first quoted text
+unless a browser engine is quoting a code name (`(reading 'envelope')`); only real stack frames are kept (the
+stack's header line repeats the message). Caps: message 300 characters, 30 frames, 4,000 characters of stack,
+12 kB per report. Residual limit, stated in the code: an unquoted ASCII word inside an error message can't be
+told from the message itself; the app's own errors don't put user content there. **"See what gets sent"**
+shows the last report exactly as transmitted, or, before there is one, the report the device would send for a
+made-up error.
+
+**Server** (`app/api/crash/route.ts`, migration `20261112000400_crash_reports.sql`):
+
+- Size is limited before and while reading (12 kB); the shape is parsed strictly, unknown fields are dropped,
+  and the text is scrubbed again, so a modified client can't make the server keep more.
+- Rate limit: 12 reports an hour per client, counted under the same keyed, daily-rotating IP tag as the other
+  account-less routes (`kw.anon_rate_events`); the address itself is never written to the database or a log
+  line. The table takes at most 2,000 reports a day in total. Honest footnote: like every request, the POST
+  is in the host's request log (IP and time, 1 hour) without its content.
+- `public.crash_reports`: no account, session, device or address column, no foreign key; `received_at` is kept
+  to the hour. Written only through `crash_report_add()` (service role); readable only by **admins** (RLS,
+  not moderators). `fingerprint` = SHA-256 of the error class and its top six frames without positions and
+  build hashes, to group reports of the same bug.
+- Deleted after **30 days** by `prune_crash_reports()`, called from the existing daily `/api/cron/ephemeral`
+  job (the hosting plan allows few cron routes; no new one was added).
+- `/mod` → Admin → **Crash reports**: one row per fingerprint with the count, first and last hour seen, the
+  builds and platforms, and the newest report as a sample.
+
+**Data map.** `public.crash_reports` is in the map as `system` with no owner predicate ("never about a
+person") and retention "30 days"; every column is classified (`fingerprint` hashed, `received_at` time, the
+rest plaintext). It therefore doesn't appear in a person's live report; "What Kithwall knows about you" has a
+fixed entry under "Outside the database" that says what a report holds and links to the setting, and another
+for the on-device search index (`03-safety.md` §14), which never reaches the server at all. The export README
+says why neither is in the export. The privacy policy has the same (§4.4, §4.5, §7.1, §10).
+
+**Tests.** `lib/crash/scrub.test.ts` (26: addresses, identifiers, numbers, scripts, quoted text incl. nested
+and unterminated quotes, file paths, forged `<app>` marks, V8 / Firefox / Safari / Java frames, caps, a list of
+secrets that must never come out of any sample, idempotence, hostile input and linear running time), `lib/crash/crash.test.ts` (14:
+route patterns incl. a check that every page under `src/app` has its pattern, user-agent reduction, the exact
+field set, the server's strict parsing and re-scrubbing, fingerprints, noise), `supabase/tests/crash_reports.test.sql`
+(40: no column or key that could name a person, server-only writes, retried upload stored once, refused
+malformed values, the daily cap, admin-only reading and grouping, 30-day prune).

@@ -91,7 +91,25 @@ export interface KithwallShellPlugin {
   kitdropRead(opts: { id: string; offset: number }): Promise<{ data: string }>;
   /** Delete the copy (opened, or refused). */
   kitdropDone(opts: { id: string }): Promise<void>;
+  /**
+   * Android, app 2.5.0+: how the app shows on the home screen (docs/v2/03-safety.md §13). `icon` is the
+   * launcher entry that is switched on: 'kithwall' (the default) or a disguise with another name and icon.
+   */
+  getAppIcon?(): Promise<{ icon: AppIconId; options: AppIconId[] }>;
+  /** Switch the launcher entry. The launcher needs a few seconds; some launchers move or drop the old icon. */
+  setAppIcon?(opts: { icon: AppIconId }): Promise<{ icon: AppIconId }>;
+  /**
+   * Android, app 2.5.0+: crash reports (opt-in, lib/crash). While enabled, a crash of the app itself is
+   * written down (exception class and stack frames only, never its message) for the next start.
+   */
+  setCrashReports?(opts: { enabled: boolean }): Promise<void>;
+  /** The crash recorded before this start, if any: {} when there is none. */
+  pendingCrash?(): Promise<{ name?: string; stack?: string; version?: string; build?: string }>;
+  clearCrash?(): Promise<void>;
 }
+
+/** Launcher entries of the Android app (AndroidManifest.xml activity-alias names, lower-cased). */
+export type AppIconId = 'kithwall' | 'calculator' | 'notes' | 'weather';
 
 export type NativePushProvider = 'fcm' | 'apns' | 'unifiedpush';
 export interface NativePushRegistration {

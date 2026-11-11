@@ -13,4 +13,9 @@
     <string name="kw_call_answer">Answer</string>
     <string name="kw_call_decline">Decline</string>
     <string name="kw_kitdrop_not">That isn’t a Kit Drop file</string>
+    <!-- Disguised launcher entries (KwIcons): the name under the icon on the home screen. Translated in
+         values-<language>/strings.xml so the disguise reads like the phone's own apps. -->
+    <string name="kw_icon_calculator">Calculator</string>
+    <string name="kw_icon_notes">Notes</string>
+    <string name="kw_icon_weather">Weather</string>
 </resources>

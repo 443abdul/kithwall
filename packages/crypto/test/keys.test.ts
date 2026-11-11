@@ -7,12 +7,14 @@ import {
   combineRecoveryShares,
   deriveCacheKey,
   deriveFromPassword,
+  deriveSearchKey,
   deriveVaultKey,
   generateIdentity,
   newSymmetricKey,
   recoveryKeyFromPhrase,
   rewrapPassword,
   rotateRecovery,
+  searchRecordName,
   splitRecoveryKey,
   unlockWithPassword,
   unlockWithRecoveryKey,
@@ -43,6 +45,25 @@ describe('vault / cache keys', () => {
     expect(toHex(deriveVaultKey(amk))).not.toBe(toHex(amk));
     expectCode(() => deriveVaultKey(new Uint8Array(16)), 'invalid_input');
     expectCode(() => deriveCacheKey(new Uint8Array(16)), 'invalid_input');
+  });
+});
+
+describe('search index key', () => {
+  it('is its own key, and record names are keyed, stable and opaque', () => {
+    const amk = newSymmetricKey();
+    const k = deriveSearchKey(amk);
+    expect(k.length).toBe(32);
+    expect(deriveSearchKey(amk)).toEqual(k);
+    for (const other of [amk, deriveVaultKey(amk), deriveCacheKey(amk)]) expect(toHex(k)).not.toBe(toHex(other));
+    expectCode(() => deriveSearchKey(new Uint8Array(16)), 'invalid_input');
+    const id = 'm:1b4e28ba-2fa1-11d2-883f-0016d3cca427';
+    const name = searchRecordName(k, id);
+    expect(name).toBe(searchRecordName(k, id));
+    expect(b64u.decode(name).length).toBe(16);
+    expect(name).not.toContain('1b4e28ba');
+    expect(searchRecordName(k, 'm:1b4e28ba-2fa1-11d2-883f-0016d3cca428')).not.toBe(name);
+    expect(searchRecordName(deriveSearchKey(newSymmetricKey()), id)).not.toBe(name);
+    expectCode(() => searchRecordName(new Uint8Array(8), id), 'invalid_input');
   });
 });
 

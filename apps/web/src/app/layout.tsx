@@ -20,6 +20,7 @@ import '../styles/v2/net.css';
 import '../styles/v2/translate.css';
 import '../styles/v2/explore.css';
 import '../styles/v2/games.css';
+import '../styles/v2/extras.css';
 import { Providers } from '@/components/Providers';
 import { CallRoot } from '@/components/calls/CallRoot';
 

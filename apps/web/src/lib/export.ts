@@ -345,6 +345,9 @@ export async function buildExport(progress: Progress = () => undefined): Promise
     `Everything here was decrypted on your own device. Keep this file safe: it is NOT encrypted.\n` +
     `Open index.html in a browser, or use the JSON files in data/. Photos and other files are in media/.\n` +
     `data/what-kithwall-knows.json is what our server holds about your account (counts and readable values only).\n` +
+    `Not in this file, because there is nothing of yours to export: crash reports (if you turned them on, they carry\n` +
+    `no account and can't be traced back to you) and the search index on your phone (a copy, on that device only, of\n` +
+    `text that is already in this export).\n` +
     (skipped ? `\n${skipped} item(s) could not be decrypted or verified and are listed without content.\n` : '') +
     (tooLarge ? `\n${tooLarge} file(s) larger than ${MAX_FILE / 1048576} MB (mostly videos) were left out; download them from Kithwall.\n` : ''));
 

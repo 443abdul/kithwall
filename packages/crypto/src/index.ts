@@ -39,6 +39,8 @@ export {
   recoveryKeyFromPhrase,
   deriveVaultKey,
   deriveCacheKey,
+  deriveSearchKey,
+  searchRecordName,
 } from './keys';
 
 export {

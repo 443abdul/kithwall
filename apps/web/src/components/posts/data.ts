@@ -12,6 +12,7 @@ import type { FileRef, PostPayload, PostRow } from '@/lib/types';
 import type { FeedScope } from '.';
 import { nextCursor } from './logic';
 import { isExpired, isScheduled } from '@/lib/chat/ephemeral';
+import { forgetPost } from '@/lib/search';
 
 export const PAGE_SIZE = 12;
 
@@ -76,9 +77,13 @@ export function isWide(row: PostRow): boolean {
 
 /** Load one post (e.g. after an edit) with its author ready for decryption. */
 export async function refetchPost(id: string): Promise<PostRow | null> {
-  const { data } = await sb().from('posts').select('*').eq('id', id).maybeSingle();
+  const res = await sb().from('posts').select('*').eq('id', id).maybeSingle();
+  const { data } = res;
+  const { error } = res;
   const row = (data as PostRow | null) ?? null;
   if (row) { await preparePosts([row]); await rememberAudienceKinds([row]); }
+  // The server answered and the post isn't there (deleted, expired, or no longer mine to read).
+  else if (!error) forgetPost(id);
   return row;
 }
 
@@ -103,4 +108,5 @@ export async function deletePostFully(row: PostRow, payload: PostPayload | null 
   const mine = row.author_id === me() ? myPayloadPaths(payload, me()) : [];
   if (mine.length) await deleteMedia(mine).catch(() => undefined);
   must(await sb().from('posts').delete().eq('id', row.id));
+  forgetPost(row.id); // and from the on-device search index (lib/search)
 }

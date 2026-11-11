@@ -11,6 +11,7 @@ import { keyring, KeyWaitingError } from './keys/keyring';
 import { people } from './people';
 import type { CommentPayload, CommentPolicy, CommentRow, PostKind, PostPayload, PostRow } from './types';
 import { isOfflineError, knownOffline, OfflineError } from './net/offline';
+import { noteComment, notePost } from './search';
 
 export type Audience =
   | { kind: 'friends' }                 // my friends (or the wall owner's friends when posting on their wall)
@@ -158,6 +159,8 @@ export function readPost(row: PostRow): Decrypted<PostPayload> {
     res = { ok: false, reason: 'unverified' };
   }
   cache.set(cacheKey, res);
+  // Decrypted and verified on this device: searchable on this device (lib/search; never sent anywhere).
+  if (res.ok) notePost(row, res.value);
   return res;
 }
 
@@ -236,6 +239,7 @@ export function readComment(row: CommentRow, parentKey: Uint8Array | null, signP
   if (hit) return hit;
   const res = openComment(row, parentKey, key);
   remember(commentCache, ck, res);
+  if (res.ok) noteComment(row, res.value);
   return res;
 }
 

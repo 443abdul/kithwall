@@ -47,6 +47,7 @@ import { CapsulePicker } from './Capsule';
 import { CAPSULE_MAX_MS, CAPSULE_MIN_MS, sealCapsule } from '@/lib/social/capsule';
 import { flushOutbox, queuePost } from '@/lib/social/kitdrop';
 import { isOfflineError } from '@/lib/net/offline';
+import { BlurEditor } from '@/components/photo/BlurEditor';
 
 // Making a reel (trim, cover, on-device encoder) is its own chunk, loaded when someone asks for it.
 const ReelComposer = dynamic(() => import('@/components/reels/ReelComposer').then((m) => m.ReelComposer), { ssr: false });
@@ -203,6 +204,16 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
   }, []);
   const dropPhoto = (p: Picked) => { URL.revokeObjectURL(p.url); photoUrls.current.delete(p.url); setPhotos((xs) => xs.filter((x) => x.id !== p.id)); };
   const clearPhotos = () => { photos.forEach((p) => { URL.revokeObjectURL(p.url); photoUrls.current.delete(p.url); }); setPhotos([]); };
+  // "Blur faces" (components/photo/BlurEditor): the covered copy takes the picked photo's place, so the
+  // original is never encrypted or uploaded.
+  const [blurring, setBlurring] = useState<Picked | null>(null);
+  const [covered, setCovered] = useState<ReadonlySet<string>>(new Set());
+  function replacePhoto(p: Picked, file: File) {
+    const url = URL.createObjectURL(file);
+    URL.revokeObjectURL(p.url); photoUrls.current.delete(p.url); photoUrls.current.add(url);
+    setPhotos((xs) => xs.map((x) => (x.id === p.id ? { ...x, file, url } : x)));
+    setCovered((s) => new Set(s).add(p.id));
+  }
 
   function removeLink() {
     if (link) skip.current.add(link.preview.url);
@@ -397,6 +408,8 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
                 <img src={p.url} alt="" />
                 <IconButton icon="close" size="sm" variant="soft" label={t('feed.removePhoto', { n: i + 1 })} disabled={busy}
                   onClick={() => dropPhoto(p)} />
+                <IconButton icon="eyeOff" size="sm" variant={covered.has(p.id) ? 'primary' : 'soft'} className="k-blur-open" disabled={busy}
+                  label={t(covered.has(p.id) ? 'blur.openAgain' : 'blur.open', { n: i + 1 })} onClick={() => setBlurring(p)} />
               </li>
             ))}
           </ul>
@@ -467,6 +480,8 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
         </div>
       </form>
 
+      <BlurEditor file={blurring?.file ?? null} onClose={() => setBlurring(null)}
+        onDone={(file) => { if (blurring) replacePhoto(blurring, file); setBlurring(null); }} />
       <PostOptionsDialog open={optionsOpen} value={options} onClose={() => setOptionsOpen(false)} onChange={(v) => { setOptions(v); setErr(null); }} />
       {!fixedAudience ? (
         <Dialog open={picking} onClose={() => setPicking(false)} title={t('feed.audiencePicker')} sheet>
