@@ -18,6 +18,7 @@ import '../styles/v2/install.css';
 import '../styles/v2/gallery.css';
 import '../styles/v2/net.css';
 import '../styles/v2/translate.css';
+import '../styles/v2/games.css';
 import { Providers } from '@/components/Providers';
 import { CallRoot } from '@/components/calls/CallRoot';
 

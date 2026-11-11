@@ -41,8 +41,8 @@ export interface Result {
 export interface TimeState {
   /** Time left per seat (ms) as of `base`; empty without a 'total' clock. */
   left: number[];
-  /** Server time the running turn started: the last move, or the start of the game. Null before the start. */
-  base: string | null;
+  /** Server time (ms) the running turn started: the last move, or the start of the game. Null before the start. */
+  base: number | null;
   /** Set by a message that ends a turn: this seat's clock ran from `base` until that message's own time. */
   tick: Seat | null;
 }
@@ -80,8 +80,8 @@ export interface Match {
   left: Seat[];
   /** The earlier game this one is a rematch of, or null. */
   from: string | null;
-  /** Server time of the invite (known from the second message on). */
-  t0: string | null;
+  /** Server time (ms) of the invite (known from the second message on). */
+  t0: number | null;
   /** Moves played. */
   moves: number;
   /** The seat that sent this message. */
@@ -113,9 +113,9 @@ export interface StepCtx {
   /** Number of the message being applied. */
   n: number;
   sender: string;
-  /** Hash of the game message before this one, and the server time it was stored. */
+  /** Hash of the game message before this one, and the server time (ms) it was stored. */
   link: string;
-  prevAt: string;
+  prevAt: number;
   /** Server time of this message in ms (an estimate while it is still being sent). */
   at: number;
 }
@@ -128,7 +128,11 @@ const B64_32 = /^[A-Za-z0-9_-]{43}$/;
 const NONCE = /^[A-Za-z0-9_-]{22}$/;
 const ILLEGAL: StepResult = { ok: false, why: 'illegal' };
 
-const isTime = (x: unknown): x is string => typeof x === 'string' && x.length <= 40 && Number.isFinite(Date.parse(x));
+// Server times are kept as whole milliseconds since 1970, not as the text the database returned: the same
+// instant must give the same match on every device however a timestamp happened to be formatted.
+const isTime = (x: unknown): x is number => isInt(x, 0, 8_640_000_000_000_000);
+/** A message's server time (`created_at`) in ms. */
+export const stamp = (at: string): number => Date.parse(at);
 
 // ---------------------------------------------------------------------------------------------
 // Clocks
@@ -137,13 +141,13 @@ const isTime = (x: unknown): x is string => typeof x === 'string' && x.length <=
  * The clock as of the moment the message that carries match `m` was stored (`at`): the mover's time is
  * taken off, and the next turn starts at `at`.
  */
-export function settle(m: Match, at: string): TimeState {
+export function settle(m: Match, at: number): TimeState {
   const t = m.time;
   if (m.status !== 'active') return { left: [...t.left], base: t.base, tick: null };
   if (t.base === null) return { left: [...t.left], base: at, tick: null }; // the game starts with this message
   if (t.tick === null) return { left: [...t.left], base: t.base, tick: null };
   const left = [...t.left];
-  if (m.clock?.k === 'total') left[t.tick] = Math.max(0, (left[t.tick] ?? 0) - Math.max(0, Date.parse(at) - Date.parse(t.base)));
+  if (m.clock?.k === 'total') left[t.tick] = Math.max(0, (left[t.tick] ?? 0) - Math.max(0, at - t.base));
   return { left, base: at, tick: null };
 }
 
@@ -158,14 +162,14 @@ function limitFor(m: Match, t: TimeState, seat: Seat): number | null {
  * Time the player to move has left at server time `now` (ms), for the match carried by a message stored
  * at `at`. Null when no limit applies or nobody is to move. Zero or less: the others may claim.
  */
-export function timeLeft(m: Match, at: string, now: number): { seat: Seat; ms: number } | null {
+export function timeLeft(m: Match, at: number, now: number): { seat: Seat; ms: number } | null {
   if (m.status !== 'active') return null;
   const seat = engineOf(m.kind).turn(m.state);
   if (seat === null) return null;
   const t = settle(m, at);
   const limit = limitFor(m, t, seat);
   if (limit === null || t.base === null) return null;
-  return { seat, ms: limit - (now - Date.parse(t.base)) };
+  return { seat, ms: limit - (now - t.base) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -335,7 +339,7 @@ export function step(prev: Match, ctx: StepCtx, a: Action): StepResult {
       if (toMove === null || toMove === seat || time.base === null) return ILLEGAL;
       const limit = limitFor(prev, time, toMove);
       if (limit === null) return ILLEGAL;
-      if (ctx.at - Date.parse(time.base) < limit) return { ok: false, why: 'early' };
+      if (ctx.at - time.base < limit) return { ok: false, why: 'early' };
       if (others(prev) === 2) return { ok: true, match: { ...base, status: 'over', offer: null, result: { winner: seat, why: 'time' } } };
       return { ok: true, match: dropSeat(engine, prev, { ...base, time: { ...time, tick: toMove } }, toMove, 'time') };
     }
@@ -350,7 +354,13 @@ export function step(prev: Match, ctx: StepCtx, a: Action): StepResult {
 /** A game message as a device sees it: the event, its hash, and when the server stored it. */
 export interface Head { ev: GameEvent; link: string; at: string }
 
-export const linkOf = (ev: GameEvent): string => gameLink(ev);
+const links = new WeakMap<GameEvent, string>();
+/** The chain value of a game message (cached: events are never changed once read or written). */
+export function linkOf(ev: GameEvent): string {
+  let l = links.get(ev);
+  if (!l) { l = gameLink(ev); links.set(ev, l); }
+  return l;
+}
 
 /**
  * The roll the player to move gets next (dice games), worked out from their own secret: what the "Roll"
@@ -388,7 +398,7 @@ export function nextEvent(head: Head, sender: string, a: Action, secrets: Secret
   if (seat < 0) return ILLEGAL as { ok: false; why: 'illegal' };
   const action = withDice(head, seat, a, secrets);
   const n = head.ev.n + 1;
-  const res = step(head.ev.s, { g: head.ev.g, n, sender, link: head.link, prevAt: head.at, at: now }, action);
+  const res = step(head.ev.s, { g: head.ev.g, n, sender, link: head.link, prevAt: stamp(head.at), at: now }, action);
   if (!res.ok) return res;
   return { ok: true, ev: { v: 1, g: head.ev.g, n, p: head.link, r: newGameNonce(), a: action, s: res.match } };
 }

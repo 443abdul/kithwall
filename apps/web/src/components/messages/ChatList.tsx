@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useFormat, useT } from '@/i18n';
+import { gameOf } from '@/lib/games/play';
+import { gamePreview } from '@/components/games/labels';
 import { useSession } from '@/lib/keys/session';
 import { useKeyringVersion } from '@/lib/hooks';
 import { usePeopleVersion } from '@/lib/people';
@@ -49,6 +51,7 @@ function useTimeLabel() {
 
 function Row({ c, active, pinned, filter }: { c: ConversationSummary; active: boolean; pinned: boolean; filter: string }) {
   const t = useT();
+  const f = useFormat();
   const { userId } = useSession();
   const title = useConversationTitle(c);
   const nameOf = useNameOf();
@@ -59,8 +62,11 @@ function Row({ c, active, pinned, filter }: { c: ConversationSummary; active: bo
   if (c.last) {
     const d = readMessage(c, c.last);
     const ev = d.ok ? d.value.event : undefined;
+    // A game message says where the game stands ("Chess: your move"), whoever sent it.
+    const game = d.ok ? gameOf(d.value) : null;
     const body = ev?.kind === 'call' ? t(ev.video ? 'calls.videoCall' : 'calls.voiceCall') : ev ? t('messages.preview.event') : previewText(d, t);
-    preview = c.last.sender_id === userId ? t('messages.preview.you', { text: body })
+    preview = game ? (game === 'bad' ? t('messages.preview.event') : gamePreview(game.s, userId, nameOf, t, (xs) => f.list(xs)))
+      : c.last.sender_id === userId ? t('messages.preview.you', { text: body })
       : c.isDm || c.members.length <= 2 ? body : t('messages.preview.from', { name: nameOf(c.last.sender_id).split(' ')[0] ?? '', text: body });
   } else preview = t('messages.preview.empty');
   if (!matches(filter, title, preview)) return null;

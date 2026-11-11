@@ -219,7 +219,7 @@ export async function buildExport(progress: Progress = () => undefined): Promise
   // Messages in conversations I'm part of, with reactions ------------------------------------------------------------
   progress('messages');
   const convs: ConversationSummary[] = await listConversations(1000);
-  type OutMsg = { id: string; at: string; from: string; text: string | null; status: string; edited_at?: string | null; attachments?: { file: string | null; skipped?: string }[]; reactions?: { from: string; emoji: string }[]; event?: unknown };
+  type OutMsg = { id: string; at: string; from: string; text: string | null; status: string; edited_at?: string | null; attachments?: { file: string | null; skipped?: string }[]; reactions?: { from: string; emoji: string }[]; event?: unknown; game?: unknown };
   const conversations: { id: string; name: string | null; with: string[]; messages: OutMsg[] }[] = [];
   const myMessageReactions: { conversation: string; message: string; emoji: string; at: string }[] = [];
   let ci = 0;
@@ -244,6 +244,7 @@ export async function buildExport(progress: Progress = () => undefined): Promise
       if (!d.ok) skipped++;
       const out: OutMsg = { id: r.id, at: r.created_at, from: nameOf(r.sender_id), text: d.ok ? d.value.text : null, status: d.ok ? 'ok' : d.reason, edited_at: (r.edited_at as string | null | undefined) ?? null };
       if (d.ok && d.value.event) out.event = d.value.event;
+      if (d.ok && d.value.game !== undefined) out.game = d.value.game;
       if (d.ok && d.value.attachments?.length) {
         out.attachments = [];
         let i = 0;

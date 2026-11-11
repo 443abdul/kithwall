@@ -15,7 +15,7 @@
 //
 // Pure: no React, no network.
 import { canonicalJson } from '@kithwall/crypto';
-import { linkOf, step, validInvite, type GameEvent, type Head, type Match } from './match';
+import { linkOf, stamp, step, validInvite, type GameEvent, type Head, type Match } from './match';
 
 export interface GameItem {
   /** The chat message: id, sender, server time, and whether it was edited after it was sent. */
@@ -46,19 +46,28 @@ export interface GameView {
   pending: boolean;
   /** Messages that were refused: "X sent a move that isn't allowed". */
   refused: { id: string; sender: string; at: string }[];
+  /**
+   * Stored messages that lost the race for their place in the game to the message that is now the head (two
+   * people accepting at once, a move against a draw offer). The device that sent one sends it again.
+   */
+  dropped: GameItem[];
   /** Every chat message of this game (the thread shows one card for all of them). */
   rows: string[];
   /** The stored message the card stands in for (the newest one of the chain); null while only pending. */
   cardRow: string | null;
 }
 
+/** The digits after the milliseconds of a Postgres timestamp ("…12.345678+00:00" → 678), 0 when absent. */
+function micros(at: string): number {
+  const frac = /\.(\d+)/.exec(at)?.[1] ?? '';
+  return Number((frac + '000000').slice(3, 6));
+}
+
 function byTime(a: GameItem, b: GameItem): number {
   if (!!a.pending !== !!b.pending) return a.pending ? 1 : -1;
   if (a.pending) return 0; // keep the order they were written in
-  const d = Date.parse(a.at) - Date.parse(b.at);
-  if (d) return d;
-  // Same millisecond: Postgres timestamps carry microseconds and compare as text.
-  return a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  // Server time to the microsecond (read from the digits, so the text format doesn't matter), then the id.
+  return stamp(a.at) - stamp(b.at) || micros(a.at) - micros(b.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 const tipOf = (n: GameNode) => { let x = n; while (x.child) x = x.child; return x; };
@@ -68,6 +77,7 @@ function reduce(g: string, items: GameItem[], me: string | null, waiting: boolea
   const byLink = new Map<string, GameNode>();
   const roots: GameNode[] = [];
   const refused: { item: GameItem; order: number }[] = [];
+  const dropped: GameItem[] = [];
   const add = (it: GameItem, order: number, parent: GameNode | null, invite: boolean) => {
     const link = linkOf(it.ev);
     if (byLink.has(link)) return; // the very same event sent twice
@@ -85,8 +95,8 @@ function reduce(g: string, items: GameItem[], me: string | null, waiting: boolea
     }
     const parent = byLink.get(ev.p);
     if (parent && parent.ev.n + 1 === ev.n) {
-      if (parent.child) return; // this place in the game was taken first by another message
-      const res = step(parent.ev.s, { g, n: ev.n, sender: it.sender, link: parent.link, prevAt: parent.at, at: Date.parse(it.at) }, ev.a);
+      if (parent.child) { if (!it.pending) dropped.push(it); return; } // this place was taken first by another message
+      const res = step(parent.ev.s, { g, n: ev.n, sender: it.sender, link: parent.link, prevAt: stamp(parent.at), at: stamp(it.at) }, ev.a);
       if (res.ok && canonicalJson(res.match) === canonicalJson(ev.s)) add(it, order, parent, false);
       else if (res.ok || res.why === 'illegal') refused.push({ item: it, order });
       return;
@@ -118,7 +128,8 @@ function reduce(g: string, items: GameItem[], me: string | null, waiting: boolea
     refused: [
       ...refused.filter((r) => r.order > root.order).map((r) => r.item),
       ...strays.map((r) => ({ id: r.id, sender: r.sender, at: r.at })),
-    ].map(({ id, sender, at }) => ({ id, sender, at })).sort((a, b) => (a.at < b.at ? -1 : 1)),
+    ].map(({ id, sender, at }) => ({ id, sender, at })).sort((a, b) => stamp(a.at) - stamp(b.at)),
+    dropped: dropped.filter((it) => it.ev.n === head.ev.n && it.ev.p === head.ev.p && it.id !== head.id),
     rows: items.filter((it) => !it.pending).map((it) => it.id),
     cardRow: stored?.id ?? null,
   };
@@ -140,7 +151,7 @@ export function buildGames(items: GameItem[], me: string | null, waiting = false
     const v = reduce(g, xs, me, waiting);
     if (v) out.push(v);
   }
-  const when = (v: GameView) => (v.head.pending ? Number.MAX_SAFE_INTEGER : Date.parse(v.head.at));
+  const when = (v: GameView) => (v.head.pending ? Number.MAX_SAFE_INTEGER : stamp(v.head.at));
   return out.sort((a, b) => when(a) - when(b) || (a.id < b.id ? -1 : 1));
 }
 

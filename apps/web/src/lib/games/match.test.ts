@@ -21,7 +21,7 @@ describe('starting a game', () => {
     v = chat.view(ANN);
     expect(v.match.status).toBe('active');
     expect(v.match.players).toEqual([BEN, ANN]); // Ann chose to let Ben start
-    expect(v.match.t0).toBe(chat.rows[0]!.at);
+    expect(v.match.t0).toBe(Date.parse(chat.rows[0]!.at));
     expect(v.refused).toEqual([]);
   });
 
@@ -89,7 +89,7 @@ describe('playing', () => {
   it('refuses a move out of turn, an illegal move and a move by someone who is not playing', () => {
     const { chat, g } = ttt();
     const head = chat.view(ANN).head;
-    const ctx = (sender: string) => ({ g, n: head.ev.n + 1, sender, link: head.link, prevAt: head.at, at: chat.now + 1 });
+    const ctx = (sender: string) => ({ g, n: head.ev.n + 1, sender, link: head.link, prevAt: Date.parse(head.at), at: chat.now + 1 });
     expect(step(head.ev.s, ctx(BEN), { t: 'move', m: { c: 4 } })).toEqual({ ok: false, why: 'illegal' });
     expect(step(head.ev.s, ctx(CAT), { t: 'move', m: { c: 4 } })).toEqual({ ok: false, why: 'illegal' });
     expect(step(head.ev.s, ctx(ANN), { t: 'move', m: { c: 9 } })).toEqual({ ok: false, why: 'illegal' });
@@ -175,7 +175,7 @@ describe('clocks', () => {
     chat.act(BEN, g, { t: 'accept' });
     return { chat, g };
   }
-  const left = (chat: Chat, at = chat.now) => { const h = chat.view(null).head; return timeLeft(h.ev.s, h.at, at); };
+  const left = (chat: Chat, at = chat.now) => { const h = chat.view(null).head; return timeLeft(h.ev.s, Date.parse(h.at), at); };
 
   it('time for the whole game runs on the server times of the moves', () => {
     const { chat, g } = timed({ k: 'total', ms: 60_000 });
@@ -286,7 +286,7 @@ describe('dice (Ludo)', () => {
     const head = chat.view(ANN, g).head;
     const roll = nextRoll(head, 0, secretsOf(ANN, g))!;
     const legal = ludo.moves(head.ev.s.state as LudoState, roll)[0]!;
-    const ctx = { g, n: head.ev.n + 1, sender: ANN, link: head.link, prevAt: head.at, at: chat.now + 1 };
+    const ctx = { g, n: head.ev.n + 1, sender: ANN, link: head.link, prevAt: Date.parse(head.at), at: chat.now + 1 };
     const real = nextEvent(head, ANN, { t: 'move', m: legal }, secretsOf(ANN, g), chat.now + 1);
     expect(real.ok).toBe(true);
     const a = (real as { ev: GameEvent }).ev.a as { t: 'move'; m: unknown; x: string; c: string };

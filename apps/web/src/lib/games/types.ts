@@ -33,6 +33,10 @@ export interface GameEngine<S = unknown, M = unknown> {
   play(s: S, m: M, roll?: number): S | null;
   /** The result once the game is over, else null. */
   outcome(s: S): Outcome | null;
+  /** Dice games: the move to send without asking when the roll leaves nothing to choose (a pass). */
+  forced?(moves: M[]): M | null;
+  /** Dice games: the last roll and who made it, for showing the die. */
+  rolled?(s: S): { seat: Seat; roll: number } | null;
   /** Games for more than two: take a player out (they resigned or ran out of time) and carry on. */
   drop?(s: S, seat: Seat): S;
 }

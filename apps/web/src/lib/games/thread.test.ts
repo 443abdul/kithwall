@@ -57,9 +57,14 @@ describe('games from chat messages', () => {
     for (const me of [ANN, BEN, CAT]) {
       expect(board(chat, me)).toBe('0........');
       expect(chat.view(me).refused).toEqual([]);
+      // The loser is known as long as nothing else has happened (the device that sent it may send it again).
+      expect(chat.view(me).dropped.map((d) => d.ev.a)).toEqual([{ t: 'move', m: { c: 4 } }]);
     }
+    chat.move(BEN, g, { c: 8 });
+    expect(chat.view(ANN).dropped).toEqual([]);
+    chat.move(ANN, g, { c: 1 });
     // A move written offline that arrives after the other player resigned: the game was already over.
-    const late = chat.compose(BEN, g, { t: 'move', m: { c: 8 } });
+    const late = chat.compose(BEN, g, { t: 'move', m: { c: 7 } });
     chat.act(ANN, g, { t: 'resign' });
     chat.store(BEN, late);
     expect(chat.view(BEN).match.result).toEqual({ winner: 1, why: 'resign' });
@@ -191,6 +196,24 @@ describe('games from chat messages', () => {
     const row = { ...fresh.rows[0]!, pending: true };
     const only = buildGames([row], ANN)[0]!;
     expect([only.id, only.cardRow, only.pending]).toEqual([inviteOnly, null, true]);
+  });
+
+  it('the format of a timestamp does not matter, only the instant (to the microsecond)', () => {
+    const { chat, g } = started();
+    chat.move(ANN, g, { c: 4 });
+    const want = chat.view(BEN).match;
+    // The same rows as another API might hand them over: "Z" instead of "+00:00", or with microseconds.
+    const z = chat.rows.map((r) => ({ ...r, at: r.at.replace('Z', '+00:00') }));
+    const micro = chat.rows.map((r) => ({ ...r, at: r.at.replace('Z', '000+00:00') }));
+    expect(buildGames(z, BEN)[0]!.match).toEqual(want);
+    expect(buildGames(micro, BEN)[0]!.match).toEqual(want);
+    // Two messages in the same millisecond are ordered by their microseconds: the earlier one wins the place.
+    const phone = chat.compose(BEN, g, { t: 'move', m: { c: 0 } });
+    const laptop = chat.compose(BEN, g, { t: 'move', m: { c: 8 } });
+    const rows = [...chat.rows,
+      { id: newId(), sender: BEN, at: '2026-11-11T11:00:00.123900+00:00', edited: false, ev: phone },
+      { id: newId(), sender: BEN, at: '2026-11-11T11:00:00.123456+00:00', edited: false, ev: laptop }];
+    expect((buildGames(rows, ANN)[0]!.match.state as TttState).b).toBe('....0...1');
   });
 
   it('several games in one chat are kept apart', () => {

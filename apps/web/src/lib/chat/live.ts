@@ -12,6 +12,7 @@ import { invalidateSoon } from '../invalidate';
 import { getSession } from '../keys/session';
 import type { MessageRow } from '../types';
 import { rotateConversation, type ConversationSummary } from '../messages';
+import { noteServerTime } from '../games/play';
 
 type Listener = (m: MessageRow) => void;
 
@@ -28,6 +29,7 @@ export const live = {
     channel = sb().channel(`chat-live:${uid}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (p) => {
         const m = p.new as MessageRow;
+        noteServerTime(m?.created_at); // game clocks (lib/games/play.ts)
         if (!m?.id || m.sender_id === userId) return;
         listeners.forEach((l) => l(m));
         if (typeof document !== 'undefined' && document.visibilityState === 'hidden') titleFlash.start();

@@ -1,0 +1,299 @@
+/* Kithwall 2: games inside chats (docs/v2/11-games.md). The card in the conversation, the game screen, and
+   the boards and pieces. Layout uses the design tokens and logical properties like everything else.
+
+   Boards and pieces keep their own colours in every style: a chess board has light and dark squares and
+   white and black men whatever the theme. They are set once here (a calmer set for dark mode), and every
+   piece has an outline in the opposite tone so it stands out on any square. Boards are never mirrored in
+   right-to-left languages (dir="ltr" on the board), only the screen around them. */
+
+.kw {
+  --gm-sq-light: #ecdcbe; --gm-sq-dark: #b98b5e; --gm-felt: #2f7d5b; --gm-well: #2b5fa8; --gm-wood: #e3bd7c;
+  --gm-ink: #23211e; --gm-paper: #fbf7ee;
+  --gm-white: #fbf6ea; --gm-black: #2a2a30;
+  --gm-red: #d24a43; --gm-yellow: #e9b631; --gm-green: #3f9a5b; --gm-blue: #3d7dd0;
+  --gm-mark: #f4c542; --gm-hit: #e2574c;
+}
+:root[data-mode="dark"] .kw {
+  --gm-sq-light: #a89c86; --gm-sq-dark: #6b5a45; --gm-felt: #245f46; --gm-well: #23487f; --gm-wood: #a8894f;
+  --gm-paper: #33312e; --gm-ink: #17161a;
+}
+
+/* --- The card in the conversation ---------------------------------------------------------------- */
+.kw .k-gm-line { max-inline-size: none; inline-size: 100%; display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
+.kw .k-gm-refused { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--danger); }
+.kw .k-gm-refused .k-icon { inline-size: 14px; block-size: 14px; }
+.kw .k-gm-card {
+  inline-size: min(100%, 22rem); display: flex; flex-direction: column; text-align: start;
+  border: var(--border-width) solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--card-shadow);
+  font-size: var(--text-sm); color: var(--text); overflow: hidden;
+}
+.kw .k-gm-card.is-mine { border-color: var(--accent); }
+.kw .k-gm-card-main {
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 0; background: none; color: inherit;
+  font: inherit; text-align: start; cursor: pointer; min-block-size: 64px;
+}
+.kw .k-gm-card-main:hover { background: var(--surface-2); }
+.kw .k-gm-card-main:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: calc(-1 * var(--focus-width)); }
+.kw .k-gm-card-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 2px; }
+.kw .k-gm-card-title { font-weight: var(--weight-bold); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.kw .k-gm-card-clock { display: inline-flex; align-items: center; gap: 2px; font-weight: var(--weight-regular); font-size: var(--text-xs); color: var(--text-muted); }
+.kw .k-gm-card-clock .k-icon { inline-size: 14px; block-size: 14px; }
+.kw .k-gm-card-who { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw .k-gm-card-status { font-weight: var(--weight-medium); }
+.kw .k-gm-card.is-mine .k-gm-card-status { color: var(--accent-text); }
+.kw .k-gm-card-why { font-weight: var(--weight-regular); color: var(--text-muted); }
+.kw .k-gm-card-sending { font-size: var(--text-xs); color: var(--text-muted); }
+.kw .k-gm-card-actions { display: flex; gap: var(--space-2); padding: 0 var(--space-3) var(--space-3); }
+.kw .k-gm-thumb { flex: none; inline-size: 72px; display: block; }
+.kw .k-gm-thumb.is-small { inline-size: 44px; }
+
+/* --- The game screen ------------------------------------------------------------------------------ */
+.kw .k-gm-dialog { inline-size: min(100vw, 34rem); }
+.kw .k-gm-play { display: flex; flex-direction: column; gap: var(--space-3); }
+.kw .k-gm-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.kw .k-gm-players { margin: 0; font-weight: var(--weight-medium); }
+.kw .k-gm-clocks { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-muted); }
+.kw .k-gm-clocks .k-icon { inline-size: 16px; block-size: 16px; }
+.kw .k-gm-clock { padding: 2px var(--space-2); border-radius: var(--radius-pill); background: var(--surface-2); }
+.kw .k-gm-clock b { font-variant-numeric: tabular-nums; color: var(--text); }
+.kw .k-gm-clock.is-running { background: var(--accent-soft); color: var(--text); }
+.kw .k-gm-clock.is-out { background: var(--danger-soft); }
+.kw .k-gm-clock.is-out b { color: var(--danger); }
+.kw .k-gm-status { margin: 0; font-weight: var(--weight-bold); }
+.kw .k-gm-status.is-mine { color: var(--accent-text); }
+.kw .k-gm-note { margin: 0; color: var(--text-muted); text-align: center; }
+.kw .k-gm-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.kw .k-gm-row-text { flex: 1 1 12rem; }
+.kw .k-gm-rules { margin: 0; padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); }
+.kw .k-gm-moves ol { list-style: none; margin: 0; padding: 0; max-block-size: 9rem; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 2px var(--space-3); font-variant-numeric: tabular-nums; }
+.kw .k-gm-moves li { display: grid; grid-template-columns: 2.2em 1fr 1fr; gap: var(--space-1); }
+.kw .k-gm-moves-n { color: var(--text-muted); }
+.kw .k-gm-dice { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-block-size: 56px; }
+.kw .k-gm-dice-die { flex: none; inline-size: 52px; }
+.kw .k-gm-dice-die.is-fresh { animation: k-gm-roll var(--dur-3) var(--ease-emphasized); }
+@keyframes k-gm-roll { from { transform: rotate(-200deg) scale(0.6); opacity: 0.4; } }
+.kw .k-gm-score { inline-size: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.kw .k-gm-score th, .kw .k-gm-score td { padding: var(--space-1) var(--space-2); text-align: start; border-block-end: var(--border-width) solid var(--border); }
+.kw .k-gm-score td, .kw .k-gm-score thead th:not(:first-child) { text-align: end; font-variant-numeric: tabular-nums; }
+.kw .k-gm-score thead th { color: var(--text-muted); font-weight: var(--weight-medium); }
+.kw .k-gm-with { margin: 0; display: flex; align-items: center; gap: var(--space-2); }
+
+/* the "Play a game" picker and the composer's plus menu */
+.kw .k-gm-picker { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.kw .k-gm-pick {
+  inline-size: 100%; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2); border: 0; border-radius: var(--radius-md);
+  background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; min-block-size: 56px;
+}
+.kw .k-gm-pick:hover { background: var(--surface-2); }
+.kw .k-gm-pick:focus-visible { outline: var(--focus-width) solid var(--focus); }
+.kw .k-gm-pick .k-gm-thumb { inline-size: 48px; }
+.kw .k-gm-pick-text { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
+.kw .k-gm-pick-title { font-weight: var(--weight-medium); }
+.kw .k-gm-pick > .k-icon { flex: none; color: var(--text-muted); }
+.kw .k-chat-more { position: relative; flex: none; display: inline-flex; }
+.kw .k-chat-more-menu {
+  position: absolute; inset-block-end: calc(100% + var(--space-2)); inset-inline-start: 0; z-index: 5; min-inline-size: 14rem;
+  display: flex; flex-direction: column; padding: var(--space-1); border-radius: var(--radius-md);
+  background: var(--surface); border: var(--border-width) solid var(--border); box-shadow: var(--shadow-2);
+}
+.kw .k-chat-more-menu button {
+  display: flex; align-items: center; gap: var(--space-3); min-block-size: 44px; padding: var(--space-2) var(--space-3); border: 0;
+  border-radius: var(--radius-sm); background: none; color: var(--text); font: inherit; text-align: start; cursor: pointer;
+}
+.kw .k-chat-more-menu button:hover:not(:disabled) { background: var(--surface-2); }
+.kw .k-chat-more-menu button:focus-visible { outline: var(--focus-width) solid var(--focus); }
+.kw .k-chat-more-menu button:disabled { color: var(--text-muted); cursor: default; }
+.kw .k-chat-more-menu .k-icon { inline-size: 22px; block-size: 22px; flex: none; }
+
+/* --- Grid boards ------------------------------------------------------------------------------------ */
+.kw .k-gm-boardwrap { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); }
+.kw .k-gm-grid {
+  inline-size: min(100%, 30rem); margin-inline: auto; display: grid; grid-template-columns: repeat(var(--gm-cols), minmax(0, 1fr));
+  border-radius: var(--radius-xs); overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  border: 2px solid var(--gm-ink); background: var(--gm-paper);
+}
+.kw .k-gm-cell {
+  position: relative; aspect-ratio: 1; display: grid; place-items: center; padding: 0; margin: 0; border: 0; border-radius: 0;
+  background: none; color: var(--gm-ink); font: inherit; min-inline-size: 0;
+}
+.kw button.k-gm-cell { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.kw button.k-gm-cell:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; z-index: 1; }
+.kw .k-gm-cell > svg { inline-size: 86%; block-size: 86%; pointer-events: none; }
+.kw .k-gm-cell.is-light { background: var(--gm-sq-light); }
+.kw .k-gm-cell.is-dark { background: var(--gm-sq-dark); }
+.kw .k-gm-cell.is-last { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--gm-mark) 45%, transparent); }
+.kw .k-gm-cell.is-sel { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--gm-mark) 70%, transparent); }
+.kw .k-gm-cell.is-win { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--gm-mark) 60%, transparent); }
+.kw .k-gm-cell.is-alert { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--gm-hit) 60%, transparent); }
+.kw .k-gm-dot { position: absolute; inline-size: 30%; block-size: 30%; border-radius: 50%; background: color-mix(in srgb, var(--gm-ink) 35%, transparent); pointer-events: none; }
+.kw .k-gm-cell > svg + .k-gm-dot, .kw .k-gm-cell > svg ~ .k-gm-dot { inline-size: 92%; block-size: 92%; background: none; border: 3px solid color-mix(in srgb, var(--gm-hit) 80%, transparent); }
+.kw .k-gm-rank, .kw .k-gm-file { position: absolute; font-size: 0.6rem; line-height: 1; font-weight: var(--weight-bold); opacity: 0.75; pointer-events: none; }
+.kw .k-gm-rank { inset-block-start: 2px; left: 2px; }
+.kw .k-gm-file { inset-block-end: 1px; right: 2px; }
+.kw .k-gm-choice { display: flex; align-items: center; gap: var(--space-2); }
+.kw .k-gm-choice-btn {
+  inline-size: 48px; block-size: 48px; padding: 4px; border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--gm-sq-light); cursor: pointer;
+}
+.kw .k-gm-choice-btn:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: 2px; }
+
+/* looks */
+.kw .k-gm-grid.is-paper { background: var(--gm-paper); gap: 3px; border: 0; background-color: var(--gm-ink); border-radius: 0; inline-size: min(100%, 18rem); }
+.kw .k-gm-grid.is-paper .k-gm-cell { background: var(--gm-paper); }
+.kw .k-gm-grid.is-felt { background: var(--gm-ink); gap: 1px; }
+.kw .k-gm-grid.is-felt .k-gm-cell { background: var(--gm-felt); }
+.kw .k-gm-grid.is-well { background: var(--gm-well); padding: 3%; gap: 2%; border-radius: var(--radius-sm); border-color: var(--gm-well); }
+.kw .k-gm-grid.is-well .k-gm-cell { border-radius: 50%; background: var(--gm-paper); box-shadow: inset 0 2px 4px color-mix(in srgb, var(--gm-ink) 40%, transparent); }
+.kw .k-gm-grid.is-well .k-gm-cell > svg { inline-size: 100%; block-size: 100%; }
+.kw .k-gm-grid.is-well .k-gm-cell.is-last, .kw .k-gm-grid.is-well .k-gm-cell.is-win { box-shadow: 0 0 0 3px var(--gm-mark); }
+.kw .k-gm-grid.is-goban { background: var(--gm-wood); border-color: var(--gm-ink); min-inline-size: 22.5rem; }
+/* each point is the crossing of two lines drawn through the middle of its cell */
+.kw .k-gm-grid.is-goban .k-gm-cell {
+  background:
+    linear-gradient(var(--gm-ink), var(--gm-ink)) center / 100% 1px no-repeat,
+    linear-gradient(var(--gm-ink), var(--gm-ink)) center / 1px 100% no-repeat;
+}
+.kw .k-gm-grid.is-goban .k-gm-cell > svg { inline-size: 92%; block-size: 92%; }
+.kw .k-gm-boardwrap:has(.is-goban) { align-items: stretch; overflow-x: auto; }
+
+/* mini boards: a picture, nothing to tap */
+.kw .k-gm-grid.is-mini { inline-size: 100%; min-inline-size: 0; border-width: 1px; pointer-events: none; }
+.kw .k-gm-grid.is-mini.is-paper { gap: 2px; }
+.kw .k-gm-grid.is-mini .k-gm-cell.is-last, .kw .k-gm-grid.is-mini .k-gm-cell.is-sel { box-shadow: none; }
+
+/* --- Pieces -------------------------------------------------------------------------------------------- */
+.kw .k-gm-piece { stroke-width: 4; stroke-linejoin: round; stroke-linecap: round; overflow: visible; }
+.kw .k-gm-piece.is-w { fill: var(--gm-white); stroke: var(--gm-black); }
+.kw .k-gm-piece.is-b { fill: var(--gm-black); stroke: var(--gm-white); stroke-width: 2.5; }
+.kw .k-gm-piece .k-gm-cut { fill: none; stroke-width: 3.5; }
+.kw .k-gm-piece.is-w .k-gm-eye { fill: var(--gm-black); stroke: none; }
+.kw .k-gm-piece.is-b .k-gm-eye { fill: var(--gm-white); stroke: none; }
+
+.kw .k-gm-disc circle:first-child { stroke-width: 4; }
+.kw .k-gm-disc .k-gm-mark { fill: none; stroke-width: 4; opacity: 0.55; }
+.kw .k-gm-disc .k-gm-crown { stroke: none; }
+.kw .k-gm-disc.is-stone.is-0 circle:first-child, .kw .k-gm-disc.is-man.is-0 circle:first-child { fill: var(--gm-black); stroke: var(--gm-white); }
+.kw .k-gm-disc.is-stone.is-1 circle:first-child, .kw .k-gm-disc.is-man.is-1 circle:first-child { fill: var(--gm-white); stroke: var(--gm-black); }
+.kw .k-gm-disc.is-man.is-0 .k-gm-mark { stroke: var(--gm-white); }
+.kw .k-gm-disc.is-man.is-1 .k-gm-mark { stroke: var(--gm-black); }
+.kw .k-gm-disc.is-man.is-0 .k-gm-crown { fill: var(--gm-mark); }
+.kw .k-gm-disc.is-man.is-1 .k-gm-crown { fill: var(--gm-hit); }
+.kw .k-gm-disc.is-drop.is-0 circle:first-child { fill: var(--gm-red); stroke: var(--gm-ink); }
+.kw .k-gm-disc.is-drop.is-1 circle:first-child { fill: var(--gm-yellow); stroke: var(--gm-ink); }
+.kw .k-gm-disc.is-drop .k-gm-mark { stroke: var(--gm-ink); }
+.kw .k-gm-ttt { fill: none; stroke-width: 12; stroke-linecap: round; }
+.kw .k-gm-ttt.is-0 { stroke: var(--gm-blue); }
+.kw .k-gm-ttt.is-1 { stroke: var(--gm-red); }
+.kw .k-gm-die rect { fill: var(--gm-white); stroke: var(--gm-black); stroke-width: 4; }
+.kw .k-gm-die .k-gm-pip { fill: var(--gm-black); }
+.kw .k-gm-star { fill: color-mix(in srgb, var(--gm-ink) 40%, transparent); }
+
+/* --- Dots and Boxes ---------------------------------------------------------------------------------- */
+.kw .k-gm-dots {
+  --dot: 14px;
+  inline-size: min(100%, 24rem); aspect-ratio: 1; margin-inline: auto; display: grid;
+  grid-template-columns: repeat(5, var(--dot) minmax(0, 1fr)) var(--dot); grid-template-rows: repeat(5, var(--dot) minmax(0, 1fr)) var(--dot);
+  padding: var(--space-2); border-radius: var(--radius-sm); background: var(--gm-paper); border: 2px solid var(--gm-ink); touch-action: manipulation;
+}
+.kw .k-gm-dots-dot { border-radius: 50%; background: var(--gm-ink); z-index: 1; }
+.kw .k-gm-dots-line { position: relative; padding: 0; border: 0; background: none; min-inline-size: 0; min-block-size: 0; }
+.kw .k-gm-dots-line::before { content: ""; position: absolute; border-radius: 3px; background: color-mix(in srgb, var(--gm-ink) 14%, transparent); }
+.kw .k-gm-dots-line.is-h::before { inset: 4px 2px; }
+.kw .k-gm-dots-line.is-v::before { inset: 2px 4px; }
+.kw .k-gm-dots-line.is-0::before { background: var(--gm-blue); }
+.kw .k-gm-dots-line.is-1::before { background: var(--gm-red); }
+.kw .k-gm-dots-line.is-last::before { box-shadow: 0 0 0 2px var(--gm-mark); }
+/* a tap target larger than the line itself: it reaches into the boxes on both sides */
+.kw button.k-gm-dots-line { cursor: pointer; }
+.kw button.k-gm-dots-line::after { content: ""; position: absolute; }
+.kw button.k-gm-dots-line.is-h::after { inset: -10px 2px; }
+.kw button.k-gm-dots-line.is-v::after { inset: 2px -10px; }
+.kw button.k-gm-dots-line.is-open:hover::before { background: color-mix(in srgb, var(--gm-ink) 45%, transparent); }
+.kw button.k-gm-dots-line:focus-visible { outline: 0; }
+.kw button.k-gm-dots-line:focus-visible::before { outline: 3px solid var(--focus); outline-offset: 2px; background: color-mix(in srgb, var(--gm-ink) 45%, transparent); }
+.kw .k-gm-dots-box { display: grid; place-items: center; font-weight: var(--weight-bold); color: var(--gm-white); border-radius: 3px; margin: 2px; }
+.kw .k-gm-dots-box.is-0 { background: var(--gm-blue); }
+.kw .k-gm-dots-box.is-1 { background: var(--gm-red); }
+.kw .k-gm-dots.is-mini { --dot: 4px; inline-size: 100%; padding: 2px; border-width: 1px; pointer-events: none; }
+.kw .k-gm-dots.is-mini .k-gm-dots-line.is-h::before { inset: 1px 0; }
+.kw .k-gm-dots.is-mini .k-gm-dots-line.is-v::before { inset: 0 1px; }
+.kw .k-gm-dots.is-mini .k-gm-dots-box { margin: 0; }
+
+/* --- Mancala --------------------------------------------------------------------------------------------- */
+.kw .k-gm-mancala {
+  inline-size: min(100%, 32rem); margin-inline: auto; display: grid; grid-template-columns: minmax(36px, 1fr) 6fr minmax(36px, 1fr); gap: var(--space-2);
+  padding: var(--space-2); border-radius: var(--radius-lg); background: var(--gm-wood); border: 2px solid var(--gm-ink); color: var(--gm-ink); touch-action: manipulation;
+}
+.kw .k-gm-pits { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-1); }
+.kw .k-gm-pit, .kw .k-gm-store {
+  position: relative; display: grid; place-items: center; padding: 0; border: 2px solid color-mix(in srgb, var(--gm-ink) 55%, transparent);
+  border-radius: 999px; background: color-mix(in srgb, var(--gm-ink) 16%, var(--gm-wood)); color: var(--gm-ink); font: inherit;
+}
+.kw .k-gm-pit { aspect-ratio: 3 / 4; min-block-size: 44px; }
+.kw .k-gm-pit b, .kw .k-gm-store b { position: relative; z-index: 1; font-variant-numeric: tabular-nums; padding: 0 4px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--gm-paper) 82%, transparent); color: var(--text); }
+.kw button.k-gm-pit { cursor: pointer; }
+.kw .k-gm-pit.is-next { border-color: var(--gm-ink); box-shadow: 0 0 0 2px var(--gm-mark); }
+.kw .k-gm-pit.is-last { box-shadow: 0 0 0 2px var(--gm-hit); }
+.kw button.k-gm-pit:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: 2px; }
+.kw .k-gm-seeds { position: absolute; inset: 14%; display: flex; flex-wrap: wrap; align-content: center; justify-content: center; gap: 2px; }
+.kw .k-gm-seeds i { inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--gm-white); border: 1px solid var(--gm-ink); }
+.kw .k-gm-pit.is-0 .k-gm-seeds i { background: var(--gm-blue); }
+.kw .k-gm-pit.is-1 .k-gm-seeds i { background: var(--gm-red); }
+.kw .k-gm-store.is-0 { border-color: var(--gm-blue); }
+.kw .k-gm-store.is-1 { border-color: var(--gm-red); }
+.kw .k-gm-mancala.is-mini { inline-size: 100%; padding: 2px; gap: 2px; border-width: 1px; border-radius: 6px; grid-template-columns: 1fr 6fr 1fr; pointer-events: none; font-size: 0; }
+.kw .k-gm-mancala.is-mini .k-gm-pits { gap: 1px; }
+.kw .k-gm-mancala.is-mini .k-gm-pit { min-block-size: 0; aspect-ratio: 1; border-width: 1px; }
+.kw .k-gm-mancala.is-mini .k-gm-store { border-width: 1px; }
+.kw .k-gm-mancala.is-mini b { display: none; }
+
+/* --- Ludo ------------------------------------------------------------------------------------------------ */
+.kw .k-gm-ludo-board { position: relative; inline-size: min(100%, 30rem); aspect-ratio: 1; margin-inline: auto; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.kw .k-gm-ludo-art { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; }
+.kw .k-gm-ludo-bg { fill: var(--gm-paper); stroke: var(--gm-ink); stroke-width: 0.08; }
+.kw .k-gm-ludo-sq { fill: var(--gm-white); stroke: var(--gm-ink); stroke-width: 0.04; }
+.kw .k-gm-ludo-pad { fill: var(--gm-white); stroke: var(--gm-ink); stroke-width: 0.04; }
+.kw .k-gm-ludo-yard, .kw .k-gm-ludo-tri { stroke: var(--gm-ink); stroke-width: 0.04; }
+.kw .is-c0 .k-gm-ludo-yard, .kw .k-gm-ludo-sq.is-c0, .kw .k-gm-ludo-tri.is-c0, .kw .k-gm-ludo.is-c0 path:first-child { fill: var(--gm-red); }
+.kw .is-c1 .k-gm-ludo-yard, .kw .k-gm-ludo-sq.is-c1, .kw .k-gm-ludo-tri.is-c1, .kw .k-gm-ludo.is-c1 path:first-child { fill: var(--gm-green); }
+.kw .is-c2 .k-gm-ludo-yard, .kw .k-gm-ludo-sq.is-c2, .kw .k-gm-ludo-tri.is-c2, .kw .k-gm-ludo.is-c2 path:first-child { fill: var(--gm-yellow); }
+.kw .is-c3 .k-gm-ludo-yard, .kw .k-gm-ludo-sq.is-c3, .kw .k-gm-ludo-tri.is-c3, .kw .k-gm-ludo.is-c3 path:first-child { fill: var(--gm-blue); }
+.kw .is-off .k-gm-ludo-yard { opacity: 0.25; }
+.kw .k-gm-ludo path:first-child { stroke: var(--gm-ink); stroke-width: 5; }
+.kw .k-gm-ludo .k-gm-mark { fill: var(--gm-white); stroke: var(--gm-ink); stroke-width: 3; }
+.kw .k-gm-ludo .k-gm-mark.is-ring { fill: none; stroke: var(--gm-white); stroke-width: 6; }
+.kw .k-gm-ludo .k-gm-mark.is-line { fill: none; stroke: var(--gm-white); stroke-width: 7; stroke-linecap: round; }
+.kw .k-gm-ludo-star, .kw .k-gm-ludo-tok {
+  position: absolute; inline-size: calc(100% / 15); block-size: calc(100% / 15);
+  top: calc(var(--r) * 100% / 15); left: calc(var(--c) * 100% / 15);
+}
+.kw .k-gm-ludo-star { display: grid; place-items: center; pointer-events: none; }
+.kw .k-gm-ludo-star > svg { inline-size: 72%; block-size: 72%; }
+.kw .k-gm-ludo-tok { display: grid; place-items: center; padding: 0; border: 0; background: none; z-index: 1; }
+.kw .k-gm-ludo-tok > svg { inline-size: 96%; block-size: 96%; overflow: visible; pointer-events: none; filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--gm-ink) 50%, transparent)); }
+/* pieces sharing a square: smaller, fanned out from the middle */
+.kw .k-gm-ludo-tok.is-crowd > svg { inline-size: 66%; block-size: 66%; transform: translate(calc((var(--n) - (var(--of) - 1) / 2) * 34%), calc((var(--n) - (var(--of) - 1) / 2) * 12%)); }
+.kw button.k-gm-ludo-tok { cursor: pointer; z-index: 2; }
+/* the tap target is bigger than the square */
+.kw button.k-gm-ludo-tok::after { content: ""; position: absolute; inset: -22%; border-radius: 50%; border: 3px solid var(--gm-mark); background: color-mix(in srgb, var(--gm-mark) 25%, transparent); animation: k-gm-pulse 1.4s var(--ease-standard) infinite; }
+.kw button.k-gm-ludo-tok:focus-visible { outline: 0; }
+.kw button.k-gm-ludo-tok:focus-visible::after { border-color: var(--focus); box-shadow: 0 0 0 3px var(--focus); }
+.kw .k-gm-ludo-tok.is-last > svg { filter: drop-shadow(0 0 2px var(--gm-hit)) drop-shadow(0 0 2px var(--gm-hit)); }
+@keyframes k-gm-pulse { 50% { transform: scale(1.12); } }
+.kw .k-gm-ludo-board.is-mini { inline-size: 100%; pointer-events: none; }
+.kw .k-gm-ludo-board.is-mini .k-gm-ludo-tok > svg { filter: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .kw .k-gm-dice-die.is-fresh, .kw button.k-gm-ludo-tok::after { animation: none; }
+}
+
+/* Small phones (320 px): tighter screen padding so boards get the width; chess squares stay 34 px or more. */
+@media (max-width: 420px) {
+  .kw .k-gm-dialog .k-dialog-body { padding-inline: var(--space-3); }
+  .kw .k-gm-card { inline-size: 100%; }
+  .kw .k-gm-thumb { inline-size: 60px; }
+  .kw .k-gm-dots { --dot: 12px; padding: var(--space-1); }
+  .kw .k-gm-mancala { gap: var(--space-1); padding: var(--space-1); }
+  .kw .k-gm-pits { gap: 2px; }
+  .kw .k-gm-seeds { display: none; }
+}

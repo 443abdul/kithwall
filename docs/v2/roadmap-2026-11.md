@@ -104,3 +104,24 @@ content or makes the anonymity set public. Local (on-device) search of decrypted
   imitates one of your connections (homoglyph-aware, `lib/social/lookalike.ts`).
 - Next from the research: Data Saver mode, offline "Kit Drop" bundles for shutdowns, on-device translation,
   legacy contact.
+
+## Round 4 (2026-11-11): games inside chats
+
+- **New: games in any chat** (`11-games.md`). Tic-tac-toe, chess with the full rules, checkers (English
+  draughts), Connect Four, Reversi, Ludo for 2–4 with fair dice, Five in a Row, Dots and Boxes and Mancala.
+  A game is made of ordinary end-to-end encrypted chat messages (a new payload kind, covered by franking),
+  so it can be played at the players' own pace, survives bad connections through the chat's send queue,
+  and needs **no database change**: no table, column, RPC or setting. The conversation shows one card per
+  game that updates in place; the conversation list says "Chess: your move"; the chat's info screen lists
+  games and the score, counted on the device.
+- **Every device checks every move** with the same rule engine: an illegal or out-of-turn move from a
+  changed app is ignored everywhere and shown as "X sent a move that isn't allowed".
+- **Fair dice** by commit-reveal threaded through the turn messages: no player and not the server can
+  choose or predict a roll, every device verifies every roll, and there is no waiting beyond normal turns.
+  Protocol, security argument and limits in `11-games.md` §5.
+- **Clocks** (optional) run on the server's `created_at` of the move messages, never on a device's clock;
+  the other player claims a win on time and every device checks the claim.
+- **Disappearing messages:** every game message carries the whole position, so a game goes on after its
+  first messages have expired (`11-games.md` §7).
+- Not included: Battleship (needs hidden boards kept across devices and a reveal-and-audit phase; left
+  out rather than shipped half-checked), a computer opponent, ratings.

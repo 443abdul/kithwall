@@ -135,6 +135,8 @@ export const ludo: GameEngine<LudoState, LudoMove> = {
     };
   },
   outcome,
+  forced: (moves) => (moves.length === 1 && moves[0]!.k === -1 ? moves[0]! : null),
+  rolled: (s) => (s.last ? { seat: s.last.s, roll: s.last.r } : null),
   drop(s, seat) {
     if (s.out.includes(seat) || !isInt(seat, 0, s.n - 1)) return s;
     const out = [...s.out, seat].sort((a, b) => a - b);

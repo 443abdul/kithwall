@@ -254,6 +254,15 @@ describe('whole games', () => {
     expect(s.san).toContain('cxd8=N');
     expect(s.san).toContain('bxa1=Q');
   });
+  it('en passant, two promotions, castling and mate in eleven moves (the game played end to end in the browser)', () => {
+    const s = playAll(chess.init(2), 'e2e4 a7a6 e4e5 f7f5 e5f6 a6a5 f6g7 a5a4 g7h8q a4a3 h8g8 a3b2 g1f3 b2a1q f1d3 a1b1 e1g1 h7h6 f3e5 h6h5 g8f7');
+    expect(s.san.join(' ')).toBe('e4 a6 e5 f5 exf6 a5 fxg7 a4 gxh8=Q a3 Qxg8 axb2 Nf3 bxa1=Q Bd3 Qxb1 O-O h6 Ne5 h5 Qf7#');
+    expect(chess.outcome(s)).toEqual({ winner: 0, why: 'checkmate' });
+    // With the black queen on a2 instead, Qf7 is only check: the queen takes back along the diagonal.
+    const t = playAll(chess.init(2), 'e2e4 a7a6 e4e5 f7f5 e5f6 a6a5 f6g7 a5a4 g7h8q a4a3 h8g8 a3b2 g1f3 b2a1q f1d3 a1a2 e1g1 h7h6 f3e5 h6h5 g8f7');
+    expect(t.san[t.san.length - 1]).toBe('Qf7+');
+    expect(chess.moves(t).map((m) => chessSquare(m.f) + chessSquare(m.t))).toEqual(['a2f7']);
+  });
   it('states are plain JSON and survive a round trip at every move', () => {
     let s = chess.init(2);
     for (const san of 'e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7'.split(' ')) {

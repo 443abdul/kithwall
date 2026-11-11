@@ -12,6 +12,7 @@ import { uploadPreparedImage, type LinkDraft } from '@/lib/feed/linkPreview';
 import { KeyWaitingError, markRead, MAX_MESSAGE_CHARS, sendMessage, type ChatPayload, type ConversationRow } from '@/lib/messages';
 import type { FileRef } from '@/lib/types';
 import { MAX_VOICE_BYTES, MAX_VOICE_SECS, voiceMeta, type VoiceDraft } from '@/lib/chat/voice';
+import type { GameEvent } from '@/lib/games/match';
 
 export { MAX_ATTACHMENTS };
 export const MAX_CHAT_VIDEO_BYTES = MAX_VIDEO_BYTES;
@@ -23,6 +24,9 @@ export interface Draft {
   link?: LinkDraft | null;
   /** A recorded voice note (sent on its own, without text or other files). */
   voice?: VoiceDraft;
+  /** A game message (sent on its own): an invitation, a move… It goes through the same queue as any other
+   *  message, so a move made offline is sent when the connection is back. */
+  game?: GameEvent;
   /** The message id, fixed when the draft is first sent: a retry reuses it, so a send that actually
    *  reached the server before the connection dropped is never stored twice. */
   id?: string;
@@ -101,7 +105,7 @@ export async function sendDraft(conv: ConversationRow, draft: Draft, onProgress?
     if (draft.link?.image) preview = await uploadPreparedImage(draft.link.image);
     const id = draft.id ?? crypto.randomUUID();
     const p = draft.link?.preview;
-    const payload: ChatPayload = {
+    const payload: ChatPayload = draft.game ? { text: '', game: draft.game } : {
       text,
       ...(refs.length ? { attachments: refs } : {}),
       ...(voice ? { voice: voiceMeta(voice) } : {}),
