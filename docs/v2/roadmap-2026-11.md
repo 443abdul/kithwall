@@ -104,3 +104,29 @@ content or makes the anonymity set public. Local (on-device) search of decrypted
   imitates one of your connections (homoglyph-aware, `lib/social/lookalike.ts`).
 - Next from the research: Data Saver mode, offline "Kit Drop" bundles for shutdowns, on-device translation,
   legacy contact.
+
+## Round 4 (2026-11-11): four smaller features
+
+Built on a branch; the web parts were checked in a browser against a local build, the Android parts are
+compiled only and wait for the device check in `05-native.md` §14.3.
+
+- **Disguised app icon** (Android app). Safety centre → App lock → App icon: show on the home screen as
+  Kithwall, Calculator, Notes or Weather (name and icon). Launcher entries are activity-aliases; the default
+  one keeps the old component name, so existing home-screen icons survive the update. The screen says what a
+  disguise doesn't hide (the system's app list, notifications, calls). `03-safety.md` §13, `05-native.md` §14.
+- **Blur faces before posting.** In the composer and on chat attachments: faces are found on the device and
+  covered with a destructive mosaic, tap a face to show it, drag to cover anything else; the covered copy
+  replaces the picked photo before it is re-encoded, encrypted and uploaded. Browser `FaceDetector` where it
+  exists, otherwise a 240 kB self-hosted detector (no WASM, no CSP change). `03-safety.md` §15.
+- **Search on your phone.** The substitute for server-side search named under "Not recommended" above: an
+  index of the text this device has decrypted, encrypted at rest under a key derived from the account key,
+  searched on the device; in Messages (across chats and inside one, jumping to the message) and for posts
+  (`/you/search`). Works across the app's scripts (Urdu, Arabic, Persian, Hindi, Bengali, Chinese…). Follows
+  hidden chats, disappearing messages, edits, unsends and blocks; deleted on sign-out and by both wipes.
+  `03-safety.md` §14.
+- **Crash reports, opt-in.** Off by default. A scrubbed technical report to Kithwall's own server (no account,
+  no IP stored, no content), grouped by fingerprint under `/mod` → Admin, deleted after 30 days; "See what gets
+  sent" shows the exact report. Includes crashes of the Android app itself. `03-transparency.md` §6.
+- Still open from this round: the device check of the Android parts; translating the new strings; a stronger
+  face detector if the small one proves too weak in practice (the seam is `lib/photo/faces.ts`); search in
+  album photo comments and stories (not indexed).

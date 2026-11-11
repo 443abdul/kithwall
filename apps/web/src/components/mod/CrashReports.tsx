@@ -3,7 +3,7 @@
 // of reports with the same fingerprint: how many, the first and last hour seen, the builds it happened in,
 // and the newest report as a sample. Admins only (the database refuses everyone else). There is nothing
 // here about who sent a report, because the reports don't hold it (lib/crash/scrub.ts).
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useFormat, useT } from '@/i18n';
 import { sb, must } from '@/lib/supabase';
 import { Button } from '@/components/ui/Button';
@@ -26,13 +26,16 @@ export function CrashReports() {
   const f = useFormat();
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [err, setErr] = useState(false);
+  // Bumped by "Refresh": the list is read again.
+  const [round, setRound] = useState(0);
 
-  const load = useCallback(async () => {
-    setErr(false);
-    try { setGroups(must(await sb().rpc('crash_report_groups', { p_limit: 100 })) as Group[]); }
-    catch { setErr(true); }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve(sb().rpc('crash_report_groups', { p_limit: 100 }))
+      .then((res) => { if (live) { setGroups(must(res) as Group[]); setErr(false); } })
+      .catch(() => { if (live) setErr(true); });
+    return () => { live = false; };
+  }, [round]);
 
   const when = (iso: string) => f.date(new Date(iso), { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -69,7 +72,7 @@ export function CrashReports() {
             ))}
           </ul>
         ) : null}
-        <div><Button size="sm" variant="ghost" icon="refresh" onClick={() => void load()}>{t('mod.crash.refresh')}</Button></div>
+        <div><Button size="sm" variant="ghost" icon="refresh" onClick={() => setRound((n) => n + 1)}>{t('mod.crash.refresh')}</Button></div>
       </Card>
     </section>
   );

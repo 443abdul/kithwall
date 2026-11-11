@@ -273,6 +273,21 @@ describe('scrubCrash as a whole', () => {
     }
   });
 
+  it('removes an over-long e-mail address whole', () => {
+    const local = 'a.very.long.local.part.'.repeat(6);
+    expect(msg(`mail to ${local}@example.org bounced`)).toBe('mail to <email> bounced');
+  });
+
+  it('takes linear time on long runs of letters (no quadratic patterns)', () => {
+    // 2,000 lines of 1,000 letters: with an unbounded "name+" before "@" or ".js:" this takes many seconds.
+    const line = `    at ${'a'.repeat(990)}`;
+    const t0 = performance.now();
+    scrubStack(Array.from({ length: 400 }, () => line).join('\n'), ctx);
+    scrubMessage('a'.repeat(16_000), ctx);
+    scrubMessage(`${'a.'.repeat(8000)}`, ctx);
+    expect(performance.now() - t0).toBeLessThan(1500);
+  });
+
   it('survives hostile input quickly', () => {
     const big = `${'a'.repeat(50_000)} ${'"'.repeat(20_000)} ${'1'.repeat(30_000)} ${"'x' ".repeat(10_000)}`;
     const t0 = Date.now();

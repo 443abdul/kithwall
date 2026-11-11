@@ -56,13 +56,13 @@ only carry ciphertext, screen protection and screenshot notices.
 
 ### App frame (what a browser does that a bare WebView doesn't)
 
-Native side: `MainActivity`, `KwWebViewClient`, `KwChromeClient`, `KwDownloads`, `KwCallService`,
-`KithwallShellPlugin`. Web side: `lib/native/runtime.ts`, started by `components/native/NativeRuntime.tsx` (app
+Native side: `KwActivity` (called `MainActivity` until 2.5.0; that name is now the default launcher alias,
+§14), `KwWebViewClient`, `KwChromeClient`, `KwDownloads`, `KwCallService`, `KithwallShellPlugin`. Web side: `lib/native/runtime.ts`, started by `components/native/NativeRuntime.tsx` (app
 only, its own chunk; browsers never load it).
 
 | Area | Behaviour |
 |---|---|
-| Launch | Android 12+ system splash (back-ported to 9–11 by core-splashscreen): the mark on an accent disc over the page colour (light/dark), held until the first page paints (at most 4 s). Window and WebView are painted in the page colour from the first frame: no white or black flash. No full-screen splash bitmaps any more. |
+| Launch | Android 12+ system splash: the icon of the launcher entry the app was opened from (the Kithwall mark, or a disguise's icon: §14) over the page colour (light/dark); Android 9–11 (core-splashscreen, drawn from the theme alone, which can't know the entry): the page colour with no mark. Held until the first page paints (at most 4 s). Window and WebView are painted in the page colour from the first frame: no white or black flash. No splash bitmaps. |
 | Edge-to-edge | Forced by target SDK 36. Capacitor's `SystemBars` turns the insets into the page's `env(safe-area-inset-*)` (WebView 140+; `--safe-area-inset-*` plus decor padding before); `initialViewportFitValueHint: 'cover'` avoids a layout jump. Status-bar icons follow the page's own light/dark mode (`data-mode`, which can differ from the system's). Pages without a top bar (sign-in, help, legal) get a page-coloured strip behind the status bar while scrolled. |
 | Keyboard | The WebView is resized above the keyboard (SystemBars pads the IME inset); an open chat that was at the bottom stays there, so the newest messages stay above the composer. |
 | Back | Closes the top `<dialog>` / sheet / menu / viewer first (same as Esc), then goes back in history; on Home, the signed-out start pages and during a call the app goes to the background (task kept: the call goes on, keys stay unlocked behind the app lock). A deep link with no history goes Home first. `enableOnBackInvokedCallback` is on (predictive back). |
@@ -574,3 +574,128 @@ silent refusal is reported as blocked, "Allow", a push token is issued, the offl
 build's origin, and the app returns by itself when the connection is back. It needs a release build with
 `android.webContentsDebuggingEnabled: true` patched into the synced `capacitor.config.json` (a test build,
 never uploaded). Run it before every Play upload; a release is not "verified" on a compile check.
+
+## 14. Disguised app icon and the app's own crash reports (2026-11-11, app 2.5.0)
+
+Web side and the wording people see: `03-safety.md` §13 (icon), `03-transparency.md` §6 (crash reports).
+**Compiled here (`compilePlayDebugJavaWithJavac`, `compileFossDebugJavaWithJavac`, resources and manifest
+merged for both flavours); not run on a device yet.** The steps at the end of this section are the device check.
+
+### 14.1 Launcher entries
+
+The activity class is now **`KwActivity`** and has no intent filter of its own. The launcher entries are
+`<activity-alias>` elements that point at it (`AndroidManifest.xml`, `KwIcons.java`):
+
+| Web id | Component | Label | Icon | In the manifest |
+|---|---|---|---|---|
+| `kithwall` | `com.kithwall.app.MainActivity` | Kithwall | `@mipmap/ic_launcher` | enabled |
+| `calculator` | `com.kithwall.app.IconCalculator` | Calculator | `@mipmap/ic_alt_calculator` | disabled |
+| `notes` | `com.kithwall.app.IconNotes` | Notes | `@mipmap/ic_alt_notes` | disabled |
+| `weather` | `com.kithwall.app.IconWeather` | Weather | `@mipmap/ic_alt_weather` | disabled |
+
+- **Existing icons survive the update.** Every home-screen icon made by 2.0.0 to 2.4.x points at the
+  component `com.kithwall.app.MainActivity`. That name is kept, as the default alias, enabled. It must never
+  be renamed or disabled in the manifest.
+- **Every alias carries all the filters**: launcher, the verified app links (`autoVerify`, `${kwHost}`), and
+  the Kit Drop "Open with" / share filters. So links, Kit Drop files and share targets work whichever entry
+  is switched on, and a chooser shows that entry's name and icon. `KwActivity.pathFrom()` is unchanged (it
+  reads the intent, not the component).
+- **Code that opens the app addresses the class**, not an alias: `Notifier.openActivityIntent` (notification
+  taps, the Answer button of `IncomingCallActivity`), `KwCallService` ("tap to return to the call"). They
+  work whichever alias is enabled. `KwActivity` stays exported as `MainActivity` was (the per-install intent
+  token of security review L15 still guards `kw_url`). The passkey plugin, `CallActionReceiver`, the push
+  services and `KwKitDrop` never named the activity class. `KithwallPushPlugin` and `KwWebViewClient` use
+  `KwActivity.isForeground()`.
+- **Switching** (`KithwallShell.getAppIcon` / `setAppIcon`, `KwIcons.set`): the chosen alias is enabled and
+  the others disabled with `PackageManager.DONT_KILL_APP` (one `setComponentEnabledSettings` call on Android
+  13+). The plugin answers first and switches 1.2 s later, because Android removes the running task when the
+  alias it was started from is disabled: the app usually closes once. Android itself remembers the choice:
+  it survives app updates, restarts and the panic wipe (`clearWebData` deliberately leaves it alone).
+- **Recent apps** shows the chosen entry's name and icon however the task was started
+  (`KwIcons.applyTaskDescription` in `KwActivity.onCreate` and after a switch).
+- **Splash.** See the Launch row in §1: on Android 12+ `android:windowSplashScreenAnimatedIcon` is `@null`
+  (`res/values-v31/styles.xml`), so the system draws the tapped entry's icon; on 9–11 the splash shows no
+  mark. Before this, a disguised entry would have opened with the Kithwall mark for up to 4 seconds.
+- **Icons and names.** `scripts/gen-assets.mjs` draws the three disguises (original glyphs; legacy, round,
+  adaptive foreground and monochrome layers; background colours in `values/ic_launcher_background.xml`).
+  The labels are translated in `res/values-<language>/strings.xml` for the app's 11 other languages
+  (machine-drafted, the usual names of such apps).
+- **What still says Kithwall**: Settings → Apps and the app-info screen (the application label), the
+  notification header and small icon, the "call in progress" notification, the incoming-call screen while
+  the phone is locked, the UnifiedPush dialog of the foss build. The web screen states the first two groups.
+- **R8.** Nothing here is found by reflection: the aliases and `KwApp` are named in the manifest (AAPT keeps
+  them), the new plugin methods are `@PluginMethod`s (Capacitor's rules keep them). No keep rule was needed
+  for the icon. `cap doctor` now reports "Missing main `<activity>`" because it only looks for a launcher
+  filter on an `<activity>`; `cap sync`, `npm run sync` and the Gradle build are not affected.
+
+### 14.2 The app's own crashes
+
+`KwApp` (the new `Application` class) installs `KwCrash` before anything else runs. While the person has
+"Send crash reports" on (the page tells the app through `KithwallShell.setCrashReports`; off by default),
+an uncaught Java exception on any thread is written to `files/kw-crash.json`: the exception's class name,
+its stack frames and those of its root cause, and the app version. **Never the exception message.** The
+previous handler then runs, so the app still stops as Android expects. On the next start the page fetches it
+(`pendingCrash`), builds a report of kind `native`, scrubs it like every other report, sends it and calls
+`clearCrash`. The panic wipe removes the file and the setting (`KwCrash.forget`).
+
+**R8:** `proguard-rules.pro` now has `-keepattributes SourceFile,LineNumberTable` and
+`-keepnames class com.kithwall.app.** { *; }`, so a release build's stack names the app's own classes,
+methods and lines (the app is open source; shrinking and optimisation stay on, libraries are still renamed).
+Without these two rules a release crash report would be unreadable; they are the only rules this feature needs.
+
+### 14.3 Device check (run on an emulator or phone; not done yet)
+
+Build and install as in §7 "Testing on the emulator" (foss debug against a local build), signed in with a
+test account. For the release check, repeat steps 1 to 9 and 14 to 16 with a release build (`assembleFossRelease`
+with `KITHWALL_ALLOW_DEBUG_SIGNING=true`, production origin).
+
+Upgrade and default entry
+1. Install the **previous** build (2.4.x), put its icon on the home screen, sign in. Install the new build
+   over it (`adb install -r`). Expect: the same home-screen icon is still there and opens the app; still signed in.
+2. `adb shell cmd package query-activities -a android.intent.action.MAIN -c android.intent.category.LAUNCHER --components com.kithwall.app`
+   Expect exactly one line: `com.kithwall.app/.MainActivity`.
+
+Switching
+3. Kithwall → You → Safety centre → App lock → scroll to **App icon**. Expect four choices, "Kithwall" marked
+   "In use", and the "What this does not hide" box.
+4. Tap **Calculator** → **Change icon**. Expect: a toast, then within a few seconds the app closes (or stays;
+   both are fine) and the launcher shows a slate icon with a calculator named "Calculator"; no Kithwall icon.
+   Some launchers remove the home-screen shortcut: then find "Calculator" in the app drawer.
+5. Repeat the command of step 2. Expect exactly `com.kithwall.app/.IconCalculator`.
+6. Open "Calculator". Expect on Android 12+: the splash shows the calculator icon on the page colour (never
+   the Kithwall mark); then Kithwall opens (app PIN first if set). Recent apps shows "Calculator" with the
+   calculator icon.
+7. App lock → App icon shows "Calculator" as "In use". Switch to **Notes**, then **Weather**, then back to
+   **Kithwall**; after each, steps 5 and 6 with the matching name. Back on Kithwall: `.MainActivity` again.
+
+Everything else still works while disguised (do these with **Notes** switched on)
+8. Notification tap: from another account send a message; tap the notification. Expect the chat opens (in the
+   running app without a reload; from a cold start after the PIN). The notification itself still says Kithwall.
+9. Deep link: `adb shell am start -a android.intent.action.VIEW -d "https://www.kithwall.com/you/safety"`
+   (production build with verified links; on a local debug build use the host of that build). Expect Kithwall
+   opens that page, or the chooser lists "Notes" with the notes icon.
+10. Kit Drop "Open with": save a `.kwd` file from You → Kit Drop, then open it from the Files app. Expect "Notes"
+    is offered and the Kit Drop page opens with the file. Then share a `.kwd` from Files → share sheet → "Notes".
+11. Incoming call from a second account with the phone locked: the call screen shows, Answer unlocks and opens
+    the call. Decline works from the notification.
+12. During a call, switch to another app and tap the "call in progress" notification. Expect back in the call.
+13. Passkey sign-in (only on a build whose signing key is in assetlinks.json): unchanged.
+
+Wipe and duress
+14. With **Calculator** on: Safety centre → **Wipe this device**. Expect the usual wipe; the launcher still
+    shows "Calculator" (not Kithwall); opening it shows the signed-out start page.
+15. Set an app PIN and a duress PIN with "wipe this device"; lock; enter the duress PIN. Expect the decoy, the
+    device wiped behind it, and the launcher icon unchanged.
+
+The app's own crash report
+16. Settings → Your data → turn **Send crash reports** on. Then `adb shell am crash com.kithwall.app`.
+    Expect the app stops. `adb shell run-as com.kithwall.app ls files` (debug build) lists `kw-crash.json`;
+    `adb shell run-as com.kithwall.app cat files/kw-crash.json` shows a class name and `at …` frames and
+    **no message text**.
+17. Open the app again. Expect within a few seconds one new row in `/mod` → Admin → Crash reports with kind
+    `native`, platform `android`, the app's version and frames like
+    `at android.app.ActivityThread…` / `at com.kithwall.app…`; and `kw-crash.json` is gone. Settings → Your
+    data → "See what gets sent" shows that report.
+18. Turn the setting off, crash again (`am crash`), reopen. Expect no `kw-crash.json` and no new row.
+19. Release build only: the frames of step 17 name `com.kithwall.app.*` classes with file and line (the two
+    R8 rules of §14.2 worked).

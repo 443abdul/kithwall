@@ -59,12 +59,16 @@ class Held {
 const URL_RE = /\b(?:blob:|data:)[^\s"'`<>)\]]+|\b[a-z][a-z0-9+.-]{1,24}:\/\/(?:[^\s"'`<>()[\]]|\([^\s"'`<>()]*\)|\[[^\s"'`<>[\]]*\])*/gi;
 const CODE_SCHEMES = new Set(['webpack-internal:', 'webpack:', 'turbopack:', 'node:']);
 /** "file.js:12:345", "<anonymous>:1:2", "MainActivity.java:88": a code location, kept as it is. */
-const LOCATION_RE = /(?:<anonymous>|[\w$-]+(?:\.[\w$-]+)*\.(?:m?js|jsx|tsx?|java|kt)):\d{1,7}(?::\d{1,7})?/g;
+// (Every repetition in these patterns is bounded: the server runs them on text anyone can send, and an
+// unbounded "name+" in front of a required character costs quadratic time on a long run of letters.)
+const LOCATION_RE = /(?:<anonymous>|[\w$-]{1,80}(?:\.[\w$-]{1,40}){0,6}\.(?:m?js|jsx|tsx?|java|kt)):\d{1,7}(?::\d{1,7})?/g;
 /** A file of this app's own build output, already without its origin ("/_next/static/chunks/1a2b.js:1:99"). */
 const CODE_PATH_RE = /\/_next\/[\w./()[\]~@%+-]{1,200}?\.(?:m?js|css)(?::\d{1,7}){0,2}(?![\w.])/g;
 const codePath = (pathname: string): string => (/^\/_next\/[\w./()[\]~@%+-]{1,200}?\.(?:m?js|css)$/.test(pathname) ? pathname : '/_next/<path>');
 
-const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi;
+const EMAIL_RE = /[a-z0-9._%+-]{1,64}@[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){1,8}/gi;
+/** The rest of an over-long local part left in front of a replaced address. */
+const EMAIL_HEAD_RE = /[a-z0-9._%+-]{1,256}<email>/gi;
 const HANDLE_RE = /(^|[^\w/.@-])@[a-z0-9_][a-z0-9_.-]{1,31}/gi;
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const JWT_RE = /\beyJ[\w-]{4,}\.[\w-]{4,}\.[\w-]*/g;
@@ -85,7 +89,7 @@ function scrubPath(path: string): string {
     let s: string;
     try { s = decodeURIComponent(seg); } catch { s = seg; }
     if (s.length > 80) return '<id>';
-    s = s.replace(NON_ASCII_RE, '<text>').replace(EMAIL_RE, '<email>').replace(UUID_RE, '<id>').replace(JWT_RE, '<token>')
+    s = s.replace(NON_ASCII_RE, '<text>').replace(EMAIL_RE, '<email>').replace(EMAIL_HEAD_RE, '<email>').replace(UUID_RE, '<id>').replace(JWT_RE, '<token>')
       .replace(HEX_RE, '<hex>').replace(WORDISH_RE, tokenish).replace(DIGITS_RE, '<n>');
     return s.replace(/[^\w.<>@()[\]~+-]/g, '_');
   }).join('/');
@@ -135,7 +139,7 @@ function protect(s: string, ctx: ScrubContext, held: Held): string {
 /** The generic rules, for text that may contain anything. */
 function rules(input: string): string {
   return input.replace(NON_ASCII_RE, '<text>')
-    .replace(EMAIL_RE, '<email>')
+    .replace(EMAIL_RE, '<email>').replace(EMAIL_HEAD_RE, '<email>')
     .replace(HANDLE_RE, '$1<handle>')
     .replace(UUID_RE, '<id>')
     .replace(JWT_RE, '<token>')
@@ -191,7 +195,8 @@ function cutAtQuotedText(s: string): string {
 }
 
 export function scrubMessage(message: unknown, ctx: ScrubContext): string {
-  let s = str(message).replace(/\s+/g, ' ').trim();
+  // Only 300 characters are kept in the end; what lies far beyond them is never looked at.
+  let s = str(message).slice(0, 2000).replace(/\s+/g, ' ').trim();
   if (!s) return '';
   // Addresses first, so the quote rule can't cut one in half (a quoted address is dropped with its quotes).
   const held = new Held();
