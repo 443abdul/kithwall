@@ -302,28 +302,32 @@ describe('dice (Ludo)', () => {
   });
 
   it('claiming a roll that was not rolled is refused by every device', () => {
-    const chat = new Chat();
-    const g = chat.invite(ANN, 'ludo', [ANN, BEN]);
-    chat.act(BEN, g, { t: 'accept' });
-    // Find a turn where the real roll isn't a six, then claim a piece left the yard anyway.
-    for (let i = 0; i < 50; i++) {
-      const v = chat.view(null, g);
-      const state = v.match.state as LudoState;
-      const who = v.match.players[state.t]!;
-      const roll = nextRoll(chat.view(who, g).head, state.t, secretsOf(who, g))!;
-      if (roll === 6 || state.tok[state.t]!.some((p) => p >= 0)) { turn(chat, g); continue; }
-      const honest = chat.compose(who, g, { t: 'move', m: { k: -1 } });
-      const forged = clone(honest);
-      forged.a = { ...(honest.a as object), m: { k: 0 } } as GameEvent['a'];
-      (forged.s.state as LudoState).tok[state.t]![0] = 0;
-      (forged.s.state as LudoState).last = { s: state.t, r: 6, k: 0, hit: [] };
-      const bad = chat.store(who, forged);
-      const seen = chat.view(who === ANN ? BEN : ANN, g);
-      expect(seen.refused.map((r) => r.id)).toEqual([bad.id]);
-      expect((seen.match.state as LudoState).tok).toEqual(state.tok);
-      return;
+    // Find a turn where the real roll isn't a six and the player has nothing out, then claim a piece left the
+    // yard anyway. When both players roll an early six there is no such turn for a long time (about one game
+    // in thirty): start a fresh game instead of giving up.
+    for (let game = 0; game < 200; game++) {
+      const chat = new Chat();
+      const g = chat.invite(ANN, 'ludo', [ANN, BEN]);
+      chat.act(BEN, g, { t: 'accept' });
+      for (let i = 0; i < 4; i++) {
+        const v = chat.view(null, g);
+        const state = v.match.state as LudoState;
+        const who = v.match.players[state.t]!;
+        const roll = nextRoll(chat.view(who, g).head, state.t, secretsOf(who, g))!;
+        if (roll === 6 || state.tok[state.t]!.some((p) => p >= 0)) { turn(chat, g); continue; }
+        const honest = chat.compose(who, g, { t: 'move', m: { k: -1 } });
+        const forged = clone(honest);
+        forged.a = { ...(honest.a as object), m: { k: 0 } } as GameEvent['a'];
+        (forged.s.state as LudoState).tok[state.t]![0] = 0;
+        (forged.s.state as LudoState).last = { s: state.t, r: 6, k: 0, hit: [] };
+        const bad = chat.store(who, forged);
+        const seen = chat.view(who === ANN ? BEN : ANN, g);
+        expect(seen.refused.map((r) => r.id)).toEqual([bad.id]);
+        expect((seen.match.state as LudoState).tok).toEqual(state.tok);
+        return;
+      }
     }
-    throw new Error('no such turn in 50');
+    throw new Error('no such turn in 200 games');
   });
 
   it('a six rolls again from the same seed; the next turn needs a fresh reveal', () => {
