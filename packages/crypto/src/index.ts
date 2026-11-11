@@ -110,3 +110,5 @@ export {
 } from './merkle';
 
 export { type KtEntry, KT_SALT_LEN, ktCommitment, ktLeafData, ktLeafHash } from './kt';
+
+export { gameLink, newGameNonce, deriveGameKey, diceSecret, diceCommit, diceOpens, diceSeed, diceRoll } from './games';

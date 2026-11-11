@@ -3,6 +3,8 @@
 // videos, link cards, reactions), optimistic sending, optional typing and read receipts, composer.
 // Phase 3: disappearing messages (timer in the header, expired messages leave the screen at once, timer
 // notices inline, a one-time suggestion in older chats), edits ("edited") and live unsend.
+// Games (docs/v2/11-games.md): a game's messages show as ONE card that updates in place; a move goes through
+// the same send queue as any message, so one made offline is sent when the connection is back.
 import { VerifiedBadge } from '@/lib/transparency/verified';
 import { isHiddenChat } from '@/lib/safety/hidden';
 import Link from 'next/link';
@@ -41,6 +43,13 @@ import { OldChatSuggestion, TimerHint } from './Ephemeral';
 import { CallButtons } from '@/components/calls/CallButtons';
 import { ChatKeyNotices } from '@/components/verify/ChatKeyNotices';
 import { Translatable } from '@/components/translate/Translatable';
+import { useToast } from '@/components/ui/Toast';
+import { inviteEvent, nextEvent, type Action, type NewGame } from '@/lib/games/match';
+import { buildGames, type GameView } from '@/lib/games/thread';
+import { gameItems, gameOf, secretsFor, serverNow } from '@/lib/games/play';
+import { GameCard, type SendState } from '@/components/games/GameCard';
+import { GameDialog } from '@/components/games/GameDialog';
+import { NewGameDialog } from '@/components/games/NewGame';
 
 interface Line extends ChatLine { row: MessageRow; payload: ChatPayload | null }
 /** 'queued': failed because the device is offline; it is sent again by itself when the connection is back. */
@@ -92,6 +101,7 @@ function Thread({ c }: { c: ConversationSummary }) {
   const f = useFormat();
   const qc = useQueryClient();
   const { userId } = useSession();
+  const toast = useToast();
   const s = useSettings();
   const pv = usePeopleVersion();
   const kv = useKeyringVersion();
@@ -112,7 +122,9 @@ function Thread({ c }: { c: ConversationSummary }) {
   const [reply, setReply] = useState<ReplyTarget | null>(null);
   const [focusKey, setFocusKey] = useState(0);
   const [acting, setActing] = useState<Line | null>(null);
-  const [info, setInfo] = useState<false | 'main' | 'timer'>(false);
+  const [info, setInfo] = useState<false | 'main' | 'timer' | 'games'>(false);
+  const [game, setGame] = useState<string | null>(null);
+  const [newGame, setNewGame] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [newBelow, setNewBelow] = useState(false);
   useVisualViewportHeight(root);
@@ -134,12 +146,25 @@ function Thread({ c }: { c: ConversationSummary }) {
 
   const lines: Line[] = useMemo(() => msgs.rows.map((row) => {
     const d = readMessage(c, row);
-    return { id: row.id, sender: row.sender_id, at: row.created_at, event: d.ok && !!d.value.event, row, payload: d.ok ? d.value : null };
+    // Game messages are never bubbles: one of them carries the game's card, the rest stay out of sight.
+    return { id: row.id, sender: row.sender_id, at: row.created_at, event: d.ok && (!!d.value.event || d.value.game !== undefined), row, payload: d.ok ? d.value : null };
     // kv / pv: re-read when keys or people arrive ("waiting for a key" results are not cached)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [msgs.rows, c, kv, pv]);
   const byId = useMemo(() => new Map(lines.map((l) => [l.id, l])), [lines]);
-  const items = useMemo(() => buildThread(lines), [lines]);
+  // The games in these messages, with my own moves that are still being sent applied on top.
+  const games = useMemo(() => {
+    const found = gameItems(lines);
+    for (const p of pending) {
+      if (p.draft.game && p.draft.id && userId) found.push({ id: p.draft.id, sender: userId, at: new Date(serverNow()).toISOString(), edited: false, ev: p.draft.game, pending: true });
+    }
+    // A message that can't be opened yet may be a game message: its neighbours are not called made up.
+    return buildGames(found, userId, lines.some((l) => !l.payload));
+  }, [lines, pending, userId]);
+  const cards = useMemo(() => new Map(games.filter((v) => v.cardRow).map((v) => [v.cardRow!, v])), [games]);
+  const refused = useMemo(() => new Set(games.flatMap((v) => v.refused.map((r) => r.id))), [games]);
+  const shown = useMemo(() => lines.filter((l) => l.payload?.game === undefined || cards.has(l.id) || refused.has(l.id) || gameOf(l.payload) === 'bad'), [lines, cards, refused]);
+  const items = useMemo(() => buildThread(shown), [shown]);
   const ids = useMemo(() => lines.map((l) => l.id), [lines]);
   const reactions = useReactions(c.id, ids);
   const newest = lines[lines.length - 1]?.id;
@@ -221,6 +246,57 @@ function Thread({ c }: { c: ConversationSummary }) {
     void run();
   }, [c, qc, t, setPending]);
 
+  // Games: every action (accept, move, resign…) is written by the same rule book that checks it on the
+  // other devices, then sent like any message. `sentHere`: the game messages this device sent.
+  const sentHere = useRef(new Set<string>());
+  const resent = useRef(new Set<string>());
+  const playGame = useCallback((view: GameView, a: Action) => {
+    if (!userId) return;
+    const res = nextEvent(view.head, userId, a, secretsFor(view.id), serverNow());
+    if (!res.ok) { toast({ message: t(res.why === 'early' ? 'games.error.early' : 'games.error.illegal'), tone: 'danger' }); return; }
+    const id = crypto.randomUUID();
+    sentHere.current.add(id);
+    send({ text: '', files: [], game: res.ev, id });
+  }, [userId, send, toast, t]);
+  const startGame = useCallback((g: NewGame) => {
+    // The invitation's message id is the game's id.
+    const gid = crypto.randomUUID();
+    const ev = inviteEvent(gid, g, secretsFor(gid));
+    if (!ev) { toast({ message: t('games.error.illegal'), tone: 'danger' }); return; }
+    send({ text: '', files: [], game: ev, id: gid });
+  }, [send, toast, t]);
+  // A game message of mine that lost a race for its place (two people accepted at the same moment; I moved
+  // just as the other player offered a draw) is sent again on top of the message that won, once, if it is
+  // still allowed there. Only messages this device sent, and only while nothing else has happened since.
+  useEffect(() => {
+    if (!userId) return;
+    for (const v of games) {
+      if (v.pending) continue;
+      for (const d of v.dropped) {
+        if (d.sender !== userId || !sentHere.current.has(d.id) || resent.current.has(d.id)) continue;
+        resent.current.add(d.id);
+        const a = d.ev.a;
+        const res = nextEvent(v.head, userId, a.t === 'move' ? { t: 'move', m: a.m } : { t: a.t }, secretsFor(v.id), serverNow());
+        if (!res.ok) continue;
+        const id = crypto.randomUUID();
+        sentHere.current.add(id);
+        // After this render pass, like a tap would.
+        queueMicrotask(() => send({ text: '', files: [], game: res.ev, id }));
+      }
+    }
+  }, [games, userId, send]);
+  const sendingOf = (view: GameView): SendState => pending.find((p) => p.draft.game?.g === view.id)?.status ?? null;
+  const openView = game ? games.find((v) => v.id === game) ?? null : null;
+  // An open game whose first messages aren't loaded yet: page back until its invitation is there (or until
+  // everything left in the chat is newer than it, when it has disappeared).
+  const oldestAt = lines[0]?.at;
+  const { hasOlder, isFetchingNextPage, loadOlder } = msgs;
+  useEffect(() => {
+    if (!openView || openView.complete || !hasOlder || isFetchingNextPage) return;
+    if (openView.match.t0 && oldestAt && Date.parse(oldestAt) < openView.match.t0) return;
+    void loadOlder();
+  }, [openView, oldestAt, hasOlder, isFetchingNextPage, loadOlder]);
+
   const retry = (p: Pending) => { setPending((xs) => xs.filter((q) => q.tempId !== p.tempId)); send(p.draft); };
   // Back online: send everything that waited for the connection, in the order it was written.
   const pendingRef = useRef(pending);
@@ -297,6 +373,17 @@ function Thread({ c }: { c: ConversationSummary }) {
           {items.map((it) => {
             if (it.kind === 'day') return <li key={it.key} className="k-chat-day"><span>{dayLabel(it.at)}</span></li>;
             const l = it.line;
+            if (it.kind === 'event' && l.payload?.game !== undefined) {
+              const view = cards.get(l.id);
+              return view ? (
+                <li key={it.key} className="k-chat-event k-gm-line" id={`m-${l.id}`}>
+                  <GameCard view={view} me={userId} sending={sendingOf(view)} onOpen={() => setGame(view.id)} onAct={(a) => playGame(view, a)} />
+                </li>
+              ) : (
+                // Refused by this device's own check of the rules: it changes nothing in the game.
+                <li key={it.key} className="k-chat-event k-gm-refused" id={`m-${l.id}`}><Icon name="alert" /> {t('games.refused', { name: nameOf(l.sender) })}</li>
+              );
+            }
             if (it.kind === 'event') {
               const actor = l.sender === userId ? t('messages.you') : nameOf(l.sender);
               const txt = l.payload ? eventLine(l.payload, actor, nameOf, list, t) : null;
@@ -317,7 +404,27 @@ function Thread({ c }: { c: ConversationSummary }) {
                 onAct={() => setActing(l)} onReply={() => startReply(l)} onJump={jumpTo} />
             );
           })}
-          {pending.map((p) => (
+          {pending.map((p) => {
+            if (!p.draft.game) return null;
+            // A move on its way shows on the game's card. Here: a new game that has no stored message to
+            // stand on yet, and what to do with a game message that could not be sent.
+            const view = games.find((v) => v.id === p.draft.game!.g);
+            const lone = !!view && !view.cardRow;
+            if (!lone && p.status === 'sending') return null;
+            return (
+              <li key={p.tempId} className="k-chat-event k-gm-line">
+                {lone && view ? <GameCard view={view} me={userId} sending={p.status} onOpen={() => setGame(view.id)} onAct={(a) => playGame(view, a)} /> : null}
+                {p.status !== 'sending' ? (
+                  <span className={p.status === 'queued' ? 'k-chat-queued' : 'k-chat-failed'} role={p.status === 'queued' ? 'status' : 'alert'}>
+                    <Icon name={p.status === 'queued' ? 'clock' : 'alert'} /> {p.status === 'queued' ? t('games.queuedLong') : t('games.failedLong')}
+                    <button type="button" className="k-chat-linkbtn" onClick={() => retry(p)}>{t('messages.retry')}</button>
+                    <button type="button" className="k-chat-linkbtn" onClick={() => discard(p)}>{t('messages.discard')}</button>
+                  </span>
+                ) : null}
+              </li>
+            );
+          })}
+          {pending.filter((p) => !p.draft.game).map((p) => (
             <li key={p.tempId} className="k-chat-msg is-mine is-first is-last is-pending">
               <div className="k-chat-stack">
                 <div className="k-chat-bubble">
@@ -350,7 +457,8 @@ function Thread({ c }: { c: ConversationSummary }) {
       {newBelow ? <button type="button" className="k-chat-jump" onClick={toBottom}><Icon name="down" /> {t('messages.newBelow')}</button> : null}
 
       <OldChatSuggestion c={c} onChoose={() => setInfo('timer')} />
-      <ChatComposer convId={c.id} members={c.members} disabled={disabled} reply={reply} onCancelReply={() => setReply(null)} onSend={send} focusKey={focusKey} />
+      <ChatComposer convId={c.id} members={c.members} disabled={disabled} reply={reply} onCancelReply={() => setReply(null)} onSend={send} focusKey={focusKey}
+        onPlay={() => setNewGame(true)} />
 
       {acting ? (
         <MessageActions c={c} line={acting} mine={acting.sender === userId}
@@ -358,7 +466,14 @@ function Thread({ c }: { c: ConversationSummary }) {
           onReply={() => { const l = acting; setActing(null); startReply(l); }}
           onClose={() => setActing(null)} />
       ) : null}
-      <ChatInfo c={c} open={!!info} initialStep={info || 'main'} onClose={() => setInfo(false)} title={title} />
+      <ChatInfo c={c} open={!!info} initialStep={info || 'main'} onClose={() => setInfo(false)} title={title}
+        games={games} onOpenGame={(gid) => { setInfo(false); setGame(gid); }} onNewGame={() => { setInfo(false); setNewGame(true); }}
+        hasOlder={!!hasOlder} loadingOlder={isFetchingNextPage} onLoadOlder={() => void loadOlder()} />
+      {openView ? (
+        <GameDialog view={openView} me={userId} sending={sendingOf(openView)} onClose={() => setGame(null)}
+          onAct={(a) => playGame(openView, a)} onStart={startGame} />
+      ) : null}
+      {userId ? <NewGameDialog members={c.members} me={userId} open={newGame} onClose={() => setNewGame(false)} onStart={startGame} /> : null}
     </div>
   );
 }

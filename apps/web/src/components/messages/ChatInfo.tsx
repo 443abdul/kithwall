@@ -23,11 +23,16 @@ import { ConversationAvatar, PersonAvatar, useNameOf } from './look';
 import { PeoplePicker } from './PeoplePicker';
 import { ChatIcon } from './ChatIcon';
 import { TimerPanel } from './Ephemeral';
+import type { GameView } from '@/lib/games/thread';
+import { GamesPanel } from '@/components/games/GamesPanel';
 
-type Step = 'main' | 'add' | 'rename' | 'leave' | 'timer';
+type Step = 'main' | 'add' | 'rename' | 'leave' | 'timer' | 'games';
 
-export function ChatInfo({ c, open, onClose, title, initialStep = 'main' }: {
-  c: ConversationSummary; open: boolean; onClose: () => void; title: string; initialStep?: 'main' | 'timer';
+export function ChatInfo({ c, open, onClose, title, initialStep = 'main', games, onOpenGame, onNewGame, hasOlder, loadingOlder, onLoadOlder }: {
+  c: ConversationSummary; open: boolean; onClose: () => void; title: string; initialStep?: 'main' | 'timer' | 'games';
+  /** The games found in the messages loaded so far (docs/v2/11-games.md), and how to look further back. */
+  games: GameView[]; onOpenGame: (id: string) => void; onNewGame: () => void;
+  hasOlder: boolean; loadingOlder: boolean; onLoadOlder: () => void;
 }) {
   const t = useT();
   const router = useRouter();
@@ -93,6 +98,14 @@ export function ChatInfo({ c, open, onClose, title, initialStep = 'main' }: {
       </Dialog>
     );
   }
+  if (step === 'games') {
+    return (
+      <Dialog open={open} onClose={close} title={t('games.title')} sheet
+        footer={<Button variant="ghost" onClick={() => (initialStep === 'games' ? close() : setStep('main'))}>{initialStep === 'games' ? t('common.done') : t('common.back')}</Button>}>
+        <GamesPanel views={games} me={userId} onOpen={onOpenGame} onNew={onNewGame} hasOlder={hasOlder} loadingOlder={loadingOlder} onLoadOlder={onLoadOlder} />
+      </Dialog>
+    );
+  }
   if (step === 'leave') {
     return (
       <Dialog open={open} onClose={close} title={t('messages.info.leaveTitle')} dismissible={!busy}
@@ -119,6 +132,7 @@ export function ChatInfo({ c, open, onClose, title, initialStep = 'main' }: {
           <li><ListItem icon="clock" title={t('ephemeral.chat.title')} chevron
             subtitle={c.disappear_secs ? t('ephemeral.chat.sub', { duration: t(durationKey(c.disappear_secs)) }) : t('ephemeral.chat.subOff')}
             onClick={() => setStep('timer')} /></li>
+          <li><ListItem leading={<ChatIcon name="game" />} title={t('games.title')} subtitle={t('games.info.sub')} chevron onClick={() => setStep('games')} /></li>
           {c.isDm && otherPerson?.username ? (
             <li><ListItem icon="shield" title={t('messages.info.verifySafety')} subtitle={t('messages.info.verifySafetySub', { name: otherPerson.name })}
               href={`/u/${otherPerson.username}/verify`} /></li>

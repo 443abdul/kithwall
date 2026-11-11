@@ -3,6 +3,7 @@
 // on devices with a keyboard (Shift+Enter = new line; on touch screens Enter is a new line), photos and
 // videos, reply-to, and a link preview made by our no-log proxy (encrypted with the message).
 // Phase 4: voice notes — the mic replaces the send button while the box is empty (VoiceRecorder.tsx).
+// The plus button opens a small menu: photos and videos, or "Play a game" (docs/v2/11-games.md).
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useT } from '@/i18n';
 import { useSettings } from '@/lib/settings';
@@ -42,7 +43,7 @@ function FileChip({ file, onRemove }: { file: File; onRemove: () => void }) {
   );
 }
 
-export function ChatComposer({ convId, members, disabled, reply, onCancelReply, onSend, focusKey }: {
+export function ChatComposer({ convId, members, disabled, reply, onCancelReply, onSend, focusKey, onPlay }: {
   convId: string;
   members: string[];
   disabled: string | null;
@@ -50,6 +51,8 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
   onCancelReply: () => void;
   onSend: (d: Draft) => void;
   focusKey: number;
+  /** Open the "Play a game" picker. */
+  onPlay: () => void;
 }) {
   const t = useT();
   const toast = useToast();
@@ -66,6 +69,24 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
   const voice = useVoiceRecorder(voiceError);
   const [drag, setDrag] = useState(0);
   const recording = voice.state !== 'idle';
+  // The plus menu closes on a tap elsewhere and on Escape; arrow keys move between its entries.
+  const [menu, setMenu] = useState(false);
+  const more = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: Event) => { if (!more.current?.contains(e.target as Node)) setMenu(false); };
+    const esc = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') { setMenu(false); more.current?.querySelector('button')?.focus(); } };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc); };
+  }, [menu]);
+  function menuKey(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    e.preventDefault();
+    items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+  }
 
   // Refocus after a send / when a reply is chosen (keeps the on-screen keyboard up).
   useEffect(() => { if (focusKey) area.current?.focus({ preventScroll: true }); }, [focusKey]);
@@ -182,10 +203,22 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
       ) : null}
       <div className="k-chat-composer-row">
         {recording ? <VoicePanel rec={voice} drag={drag} onSend={sendVoice} /> : <>
-        <button type="button" className="k-iconbtn" aria-label={t('messages.composer.attach')} title={t('messages.composer.attach')}
-          disabled={!!disabled || files.length >= MAX_ATTACHMENTS} onClick={() => picker.current?.click()}>
-          <ChatIcon name="attach" />
-        </button>
+        <div className="k-chat-more" ref={more}>
+          <button type="button" className="k-iconbtn" aria-label={t('games.composer.more')} title={t('games.composer.more')}
+            aria-haspopup="menu" aria-expanded={menu} disabled={!!disabled} onClick={() => setMenu(!menu)}>
+            <ChatIcon name="more" />
+          </button>
+          {menu ? (
+            <div className="k-chat-more-menu" role="menu" aria-label={t('games.composer.more')} onKeyDown={menuKey}>
+              <button type="button" role="menuitem" autoFocus disabled={files.length >= MAX_ATTACHMENTS} onClick={() => { setMenu(false); picker.current?.click(); }}>
+                <ChatIcon name="attach" /> {t('messages.composer.attach')}
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setMenu(false); onPlay(); }}>
+                <ChatIcon name="game" /> {t('games.play')}
+              </button>
+            </div>
+          ) : null}
+        </div>
         <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
         <label htmlFor={`k-chat-input-${convId}`} className="k-sr-only">{t('messages.composer.placeholder')}</label>
         <textarea

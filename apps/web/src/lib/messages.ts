@@ -18,6 +18,7 @@ import type { AudienceRow, FileRef, MessagePayload, MessageRow } from './types';
 import type { Decrypted } from './content';
 import type { VoiceMeta } from './chat/voice';
 import { checkFrank, frankPayload } from './chat/franking';
+import { noteServerTime } from './games/play';
 
 export interface ConversationRow {
   id: string; audience_id: string; created_by: string; dm_key: string | null; last_message_at: string; created_at: string;
@@ -72,6 +73,9 @@ export interface ChatPayload extends MessagePayload {
   voice?: VoiceMeta;
   /** A reply to (or reaction on) one of the recipient's stories: whose story it was. */
   story?: { author: string };
+  /** A game event (lib/games/match.ts): an invitation, a move, a resignation… One card in the thread stands for
+   *  all the messages of a game. Read it with `gameOf` (lib/games/play.ts), which checks its shape. */
+  game?: unknown;
   /** Franking key (lib/chat/franking.ts): fresh for every message and edit; it opens the commitment in
    *  messages.frank_commit, and only leaves the chat if someone reports this message. */
   fk?: string;
@@ -270,6 +274,7 @@ export async function sendMessage(conv: ConversationRow, payload: ChatPayload, i
     if (res.error.code === '42501') throw new Error('You can\'t send messages in this conversation.');
     throw new Error(res.error.message);
   }
+  noteServerTime((res.data as MessageRow).created_at);
   return res.data as MessageRow;
 }
 
@@ -297,7 +302,8 @@ export async function editMessage(conv: Pick<ConversationRow, 'audience_id'>, ro
   if (row.sender_id !== me()) throw new Error('You can only edit your own messages.');
   if (text.length > MAX_MESSAGE_CHARS) throw new Error('That message is too long.');
   const cur = readMessage(conv, row);
-  if (!cur.ok || cur.value.event) throw new Error("This message can't be edited.");
+  // A game message is a move: it can't be reworded (an edited one is refused by every device, lib/games/thread.ts).
+  if (!cur.ok || cur.value.event || cur.value.game !== undefined) throw new Error("This message can't be edited.");
   const next: ChatPayload = { ...cur.value, text: text.trim() };
   if (!next.text && !next.attachments?.length) throw new Error("A message can't be empty.");
   let key = keyring.get(conv.audience_id, row.epoch);

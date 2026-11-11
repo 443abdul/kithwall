@@ -15,6 +15,8 @@ const P = {
   archive: <><rect x="3.5" y="4.5" width="17" height="4.5" rx="1.5" /><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4" /></>,
   doubleCheck: <path d="M2.5 12.5l4 4L15 8M10.5 15.5l1 1L21 7.5" />,
   download: <><path d="M12 4v11.5M7.5 11l4.5 4.5 4.5-4.5" /><path d="M5 19.5h14" /></>,
+  more: <><circle cx="12" cy="12" r="8.5" /><path d="M12 8v8M8 12h8" /></>,
+  game: <><rect x="4" y="4" width="16" height="16" rx="4" /><path d="M8.5 8.5v.01M15.5 8.5v.01M12 12v.01M8.5 15.5v.01M15.5 15.5v.01" /></>,
 } satisfies Record<string, ReactElement>;
 
 export type ChatIconName = keyof typeof P;
