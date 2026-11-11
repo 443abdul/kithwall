@@ -2,6 +2,7 @@
 // Composer options (phase 3): a disappearing-post timer (off / 1 day / 1 week / 1 month) and a publish time
 // for scheduled posts, picked in the user's own time zone. The post is still sealed on this device at once;
 // the server only shows it to its audience from the chosen time and deletes it when its timer runs out.
+// Also who can comment on this one post (docs/v2/10-follow-public.md §6): the database enforces it.
 import { useState } from 'react';
 import { useFormat, useT } from '@/i18n';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -13,8 +14,33 @@ import {
   checkSchedule, defaultScheduleTime, durationKey, fromLocalInput, MAX_SCHEDULE_MS, MIN_SCHEDULE_MS, POST_TIMERS,
   toLocalInput, type PostTimer, type ScheduleProblem,
 } from '@/lib/chat/ephemeral';
+import type { CommentPolicy } from '@/lib/types';
+import type { MessageKey } from '@/i18n';
 
-export interface PostOptionsValue { disappear: PostTimer; schedule: Date | null }
+/** `comments`: who can comment on this post; null/undefined = my account setting. */
+export interface PostOptionsValue { disappear: PostTimer; schedule: Date | null; comments?: CommentPolicy | null }
+
+export const COMMENT_POLICIES: readonly CommentPolicy[] = ['everyone', 'followers', 'connections', 'nobody'];
+export const commentPolicyKey = (p: CommentPolicy) => `comments.policy.${p}` as MessageKey;
+
+/** "Who can comment": my account setting, or one of the four choices. */
+export function CommentPolicySelect({ value, onChange, label, allowDefault = true, disabled, everyone }: {
+  value: CommentPolicy | null; onChange: (v: CommentPolicy | null) => void; label: string; allowDefault?: boolean; disabled?: boolean;
+  /** Wording of the widest choice when the question isn't about a post ("Who can mention me": Everyone). */
+  everyone?: string;
+}) {
+  const t = useT();
+  return (
+    <label className="k-stack-sm">
+      <span className="k-label">{label}</span>
+      <select className="k-control" value={value ?? ''} disabled={disabled}
+        onChange={(e) => onChange(e.target.value ? (e.target.value as CommentPolicy) : null)}>
+        {allowDefault ? <option value="">{t('comments.policy.default')}</option> : null}
+        {COMMENT_POLICIES.map((p) => <option key={p} value={p}>{p === 'everyone' && everyone ? everyone : t(commentPolicyKey(p))}</option>)}
+      </select>
+    </label>
+  );
+}
 
 /** "Tue 24 Oct, 17:30" in the user's language and time zone. */
 export function useWhen() {
@@ -50,13 +76,14 @@ export function PostOptionsDialog({ open, value, onClose, onChange }: {
   const [when, setWhen] = useState(() => toLocalInput(value.schedule ?? defaultScheduleTime()));
   const [problem, setProblem] = useState<ScheduleProblem | null>(null);
   const [disappear, setDisappear] = useState<PostTimer>(value.disappear);
+  const [comments, setComments] = useState<CommentPolicy | null>(value.comments ?? null);
   // Re-sync each time the sheet opens.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
       setLater(!!value.schedule); setWhen(toLocalInput(value.schedule ?? defaultScheduleTime()));
-      setDisappear(value.disappear); setProblem(null);
+      setDisappear(value.disappear); setProblem(null); setComments(value.comments ?? null);
     }
   }
 
@@ -65,9 +92,9 @@ export function PostOptionsDialog({ open, value, onClose, onChange }: {
       const d = fromLocalInput(when);
       const p = checkSchedule(d);
       if (p) { setProblem(p); return; }
-      onChange({ disappear, schedule: d });
+      onChange({ disappear, schedule: d, comments });
     } else {
-      onChange({ disappear, schedule: null });
+      onChange({ disappear, schedule: null, comments });
     }
     onClose();
   }
@@ -95,6 +122,10 @@ export function PostOptionsDialog({ open, value, onClose, onChange }: {
             </>
           ) : null}
         </section>
+        <section className="k-stack-sm" aria-labelledby="k-po-com">
+          <h3 id="k-po-com" className="k-eph-h"><Icon name="comment" /> {t('comments.policy.title')}</h3>
+          <CommentPolicySelect label={t('comments.policy.thisPost')} value={comments} onChange={setComments} />
+        </section>
       </div>
     </Dialog>
   );
@@ -106,9 +137,17 @@ export function PostOptionChips({ value, disabled, onChange, onOpen }: {
 }) {
   const t = useT();
   const when = useWhen();
-  if (!value.disappear && !value.schedule) return null;
+  if (!value.disappear && !value.schedule && !value.comments) return null;
   return (
     <ul className="k-eph-chips" role="list">
+      {value.comments ? (
+        <li className="k-eph-chip">
+          <button type="button" className="k-eph-chip-main" onClick={onOpen} disabled={disabled}>
+            <Icon name="comment" /><span>{t('comments.policy.chip', { who: t(commentPolicyKey(value.comments)) })}</span>
+          </button>
+          <IconButton icon="close" size="sm" label={t('comments.policy.default')} disabled={disabled} onClick={() => onChange({ ...value, comments: null })} />
+        </li>
+      ) : null}
       {value.schedule ? (
         <li className="k-eph-chip">
           <button type="button" className="k-eph-chip-main" onClick={onOpen} disabled={disabled}>

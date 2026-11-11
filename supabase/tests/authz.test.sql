@@ -149,7 +149,7 @@ select lives_ok($$ insert into public.notifications (recipient_id, actor_id, typ
 -- D3: profile listing
 -- =============================================================================================
 select pg_temp.login('cal');
-select is((select count(*)::int from public.profiles where id <> pg_temp.uid('cal') and not discoverable), 0,
+select is((select count(*)::int from public.profiles where id <> pg_temp.uid('cal') and not discoverable and not follow_enabled), 0,
   'D3: a stranger cannot list profiles');
 select is((select count(*)::int from public.profiles where id = pg_temp.uid('ann')), 0, 'D3: nor read one by id');
 select is((select count(*)::int from public.profiles where id = pg_temp.uid('gus')), 1, 'discoverable profiles stay findable');

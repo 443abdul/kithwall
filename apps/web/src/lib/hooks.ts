@@ -48,7 +48,7 @@ export function useConversations() {
   return useQuery({ queryKey: ['conversations'], enabled: ready, queryFn: () => listConversations() });
 }
 
-export function useAppSetting(key: 'public_audience_enabled' | 'signups_enabled') {
+export function useAppSetting(key: 'public_audience_enabled' | 'signups_enabled' | 'public_posts_enabled') {
   return useQuery({
     queryKey: ['setting', key], staleTime: 5 * 60_000,
     queryFn: async () => {
@@ -56,6 +56,19 @@ export function useAppSetting(key: 'public_audience_enabled' | 'signups_enabled'
       return data?.value === true;
     },
   });
+}
+
+/** A numeric operator setting (the fallback until it is read, or when it is missing). */
+export function useAppNumber(key: 'public_post_min_age_hours' | 'public_report_hide_threshold', fallback: number): number {
+  const ready = useReady();
+  const q = useQuery({
+    queryKey: ['setting', key], staleTime: 5 * 60_000, enabled: ready,
+    queryFn: async () => {
+      const { data } = await sb().from('app_settings').select('value').eq('key', key).maybeSingle();
+      return typeof data?.value === 'number' ? data.value : null;
+    },
+  });
+  return q.data ?? fallback;
 }
 
 export function useIsStaff() {

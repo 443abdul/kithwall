@@ -12,7 +12,10 @@ export type ComposerAudience =
   | { kind: 'circle'; circleId: string }
   | { kind: 'event'; eventId: string }
   | { kind: 'only_me' }
-  | { kind: 'close' };                         // my close friends list (lib/social/closeFriends)
+  | { kind: 'close' }                          // my close friends list (lib/social/closeFriends)
+  // Only for accounts that let people follow them (docs/v2/10-follow-public.md):
+  | { kind: 'followers' }                      // everyone who follows me and my connections: still encrypted
+  | { kind: 'public' };                        // anyone, also without an account: signed, NOT encrypted
 
 export interface FeedProps {
   scope: FeedScope;

@@ -15,7 +15,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { prefetchEngagement } from '@/lib/feed/feed';
 import { useSession } from '@/lib/keys/session';
 import type { FeedProps } from '.';
-import { feedKey, fetchScopePage, refetchPost } from './data';
+import { feedKey, fetchScopePage, isWide, refetchPost } from './data';
 import { dedupeById } from './logic';
 import { PostCard, PostCardSkeleton } from './PostCard';
 import { usePostsLive } from './live';
@@ -42,7 +42,7 @@ export function Feed({ scope, empty }: FeedProps) {
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const page = await fetchScopePage(scope, pageParam);
-      await prefetchEngagement(qc, page.rows).catch(() => undefined);
+      await prefetchEngagement(qc, page.rows, isWide).catch(() => undefined);
       return page;
     },
     getNextPageParam: (last) => last.cursor,

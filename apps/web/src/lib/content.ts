@@ -9,14 +9,15 @@ import { sb, must } from './supabase';
 import { identity, me, onLock } from './keys/session';
 import { keyring, KeyWaitingError } from './keys/keyring';
 import { people } from './people';
-import type { CommentPayload, CommentRow, PostKind, PostPayload, PostRow } from './types';
+import type { CommentPayload, CommentPolicy, CommentRow, PostKind, PostPayload, PostRow } from './types';
 import { isOfflineError, knownOffline, OfflineError } from './net/offline';
 
 export type Audience =
   | { kind: 'friends' }                 // my friends (or the wall owner's friends when posting on their wall)
   | { kind: 'self' }                    // only me
   | { kind: 'audience'; id: string }    // a friend list, group, or event audience
-  | { kind: 'public' };                 // only when the operator enabled Public
+  | { kind: 'followers' }               // everyone who follows me (and my connections): still end-to-end encrypted
+  | { kind: 'public' };                 // signed, not encrypted: anyone can read it (docs/v2/10-follow-public.md)
 
 export function postHeader(p: Pick<PostRow, 'id' | 'author_id' | 'wall_owner_id' | 'group_id' | 'event_id' | 'kind' | 'is_public' | 'audience_id' | 'epoch'>): EnvelopeHeader {
   const wall = p.wall_owner_id ?? p.group_id ?? p.event_id ?? undefined;
@@ -38,6 +39,8 @@ export interface CreatePostArgs {
   publishAt?: string | null;
   /** Disappearing post (phase 3): seconds after it goes out (the server computes expires_at). */
   disappearSecs?: number | null;
+  /** Who can comment on this post; unset = my account setting (Settings → Following and public posts). */
+  commentPolicy?: CommentPolicy | null;
 }
 
 /** Resolve which audience (and key) a new post uses. */
@@ -48,6 +51,7 @@ async function resolveAudience(args: CreatePostArgs): Promise<{ audienceId: stri
   let audienceId: string;
   if (a.kind === 'audience') audienceId = a.id;
   else if (a.kind === 'self') audienceId = keyring.selfAudience!.id;
+  else if (a.kind === 'followers') audienceId = (keyring.followersAudience ?? await keyring.ensureFollowersAudience()).id;
   else if (args.wallOwnerId && args.wallOwnerId !== me()) {
     const row = must(await sb().from('audiences').select('id').eq('owner_id', args.wallOwnerId).eq('kind', 'friends').single()) as { id: string };
     audienceId = row.id;
@@ -94,6 +98,7 @@ export async function sealPost(args: CreatePostArgs): Promise<SealedPost> {
   const extra = {
     ...(args.publishAt ? { publish_at: args.publishAt } : {}),
     ...(args.disappearSecs ? { disappear_secs: args.disappearSecs } : {}),
+    ...(args.commentPolicy ? { comment_policy: args.commentPolicy } : {}),
   };
   return { ...row, ...extra, envelope } as SealedPost;
 }
@@ -119,6 +124,22 @@ const cache = new Map<string, Decrypted<PostPayload>>();
 
 export async function preparePosts(rows: PostRow[]): Promise<void> {
   await people.ensure(rows.flatMap((r) => [r.author_id, r.wall_owner_id ?? '']).filter(Boolean));
+}
+
+/**
+ * Open a Public post with a signing key that came with it (Explore and the shareable link, where the reader
+ * may have no account and no people directory): the signature is checked against the key the server gave for
+ * the author, which shows the post was not altered on the way but cannot rule out a server that lies about
+ * the key. A key this device already trusts for the author always wins.
+ */
+export function readPublicPost(row: PostRow, signPub: string): Decrypted<PostPayload> {
+  if (!row.is_public) return { ok: false, reason: 'unverified' };
+  try {
+    const key = people.get(row.author_id)?.sign_pub ?? signPub;
+    return { ok: true, value: openEnvelope<PostPayload>({ header: postHeader(row), envelope: row.envelope, signPub: b64u.decode(key) }) };
+  } catch {
+    return { ok: false, reason: 'unverified' };
+  }
 }
 
 /** Decrypt and verify a post. Call preparePosts() first so authors' keys are loaded. */
@@ -201,13 +222,19 @@ export async function editComment(row: CommentRow, parentKey: Uint8Array | null,
   if (!res.data?.length) throw new Error("This comment can't be edited any more.");
 }
 
-export function readComment(row: CommentRow, parentKey: Uint8Array | null): Decrypted<CommentPayload> {
-  const author = people.get(row.author_id);
-  if (!author) return { ok: false, reason: 'waiting' };
-  const ck = `${row.id}|${row.edited_at ?? ''}|${sigOf(row.envelope)}|${author.sign_pub}|${parentKey ? keyId(parentKey) : 'public'}`;
+/**
+ * `signPub`: the author's signing key when it does not come from my own people directory. Followers of the
+ * same account are strangers to each other, so on Followers and Public posts the keys of commenters I don't
+ * know come with the comments (public.comment_authors / public.public_comments). A key this device already
+ * trusts for that person always wins.
+ */
+export function readComment(row: CommentRow, parentKey: Uint8Array | null, signPub?: string | null): Decrypted<CommentPayload> {
+  const key = people.get(row.author_id)?.sign_pub ?? signPub;
+  if (!key) return { ok: false, reason: 'waiting' };
+  const ck = `${row.id}|${row.edited_at ?? ''}|${sigOf(row.envelope)}|${key}|${parentKey ? keyId(parentKey) : 'public'}`;
   const hit = commentCache.get(ck);
   if (hit) return hit;
-  const res = openComment(row, parentKey, author.sign_pub);
+  const res = openComment(row, parentKey, key);
   remember(commentCache, ck, res);
   return res;
 }

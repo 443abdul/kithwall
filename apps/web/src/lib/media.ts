@@ -305,7 +305,9 @@ export async function downloadFile(ref: FileRef, opts: { onProgress?: ProgressFn
     || !Number.isSafeInteger(ref.bytes) || ref.bytes < 0 || ref.bytes > 512 * 1024 * 1024) {
     throw new Error('This file couldn’t be verified.');
   }
-  const token = await accessToken();
+  // Without an account (a public post opened from its link) the request goes out with the app's public key:
+  // storage then serves only the files of live public posts (docs/v2/10-follow-public.md §4).
+  const token = await accessToken().catch(() => SUPABASE_PUBLISHABLE_KEY);
   const expected = cipherSize(ref.bytes);
   const chunks: Uint8Array[] = [];
   let got = 0;

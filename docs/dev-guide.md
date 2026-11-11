@@ -39,6 +39,11 @@ supabase/migrations       schema + RLS;  supabase/tests  pgTAP RLS tests
 2. **Public** content is only possible when `app_settings.public_audience_enabled` is true
    (`useAppSetting('public_audience_enabled')`). Default is friends-only. Show a globe + "Public — not
    encrypted" label whenever something is public; show a padlock for encrypted audiences.
+   Kithwall 2 adds one more public path, **Public posts on the profile of an account that let people follow
+   it** (`docs/v2/10-follow-public.md`): gated by `profiles.follow_enabled`, `public_posts_enabled` and the
+   account's age, read through `lib/public/posts.ts` (signature checked before display), always labelled
+   Public. Followers posts are NOT public: they use the owner's `followers` audience key like any other
+   encrypted audience.
 3. No `dangerouslySetInnerHTML`, no `eval`, no third-party scripts, fonts, images or iframes.
    Production CSP enforces Trusted Types. Inline `style={{}}` is fine.
 4. User links: only `http:`/`https:`, rendered with `rel="noopener noreferrer nofollow"` and `target="_blank"`.

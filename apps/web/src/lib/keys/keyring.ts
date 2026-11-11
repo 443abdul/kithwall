@@ -28,7 +28,7 @@ import { sb, must } from '../supabase';
 import type { AudienceRow } from '../types';
 import { people } from '../people';
 import {
-  judgeIncoming, isKeyAuthority, memberVouched, provenBySealer, recordIsValid, verifiedAdmins,
+  implicitMembers, judgeIncoming, isKeyAuthority, memberVouched, provenBySealer, recordIsValid, verifiedAdmins,
   type AudienceMeta, type EpochRecordRow, type GrantRow, type MemberAddRow, type Roster, type TrustedSigner,
 } from './authority';
 import { onPinsChanged, resolveSigners, sealGate } from './pins';
@@ -45,7 +45,7 @@ const k = (aud: string, epoch: number) => `${aud}:${epoch}`;
 export interface KeyConflict { audienceId: string; epoch: number; sealedBy: string; at: string; reason: 'conflict' | 'identity' }
 
 /** Adopted keys ("<audience>:<epoch>" → b64u key) and my default audiences, for opening offline. */
-export interface KeyringSnapshot { keys: [string, string][]; friends: AudienceRow; self: AudienceRow }
+export interface KeyringSnapshot { keys: [string, string][]; friends: AudienceRow; self: AudienceRow; followers?: AudienceRow | null }
 
 const EMPTY_ROSTER: Roster = { admins: new Set(), members: new Set() };
 
@@ -62,6 +62,8 @@ class Keyring {
   private conflictListeners = new Set<() => void>();
   friendsAudience: AudienceRow | null = null;
   selfAudience: AudienceRow | null = null;
+  /** My followers audience (docs/v2/10-follow-public.md): exists once I turned "Let people follow me" on. */
+  followersAudience: AudienceRow | null = null;
   version = 0;
   /** True once start() has loaded our keys and default audiences (writers need them; see whenReady). */
   ready = false;
@@ -116,6 +118,7 @@ class Keyring {
     await this.load();
     await this.ensureOwn(this.friendsAudience!);
     await this.ensureOwn(this.selfAudience!);
+    if (this.followersAudience) await this.ensureOwn(this.followersAudience).catch((e) => console.warn('followers key', e));
     this.setReady(true);
     await this.publishPq().catch((e) => console.warn('pq key', e));
     await this.deliverPending().catch((e) => console.warn('key delivery', e));
@@ -123,6 +126,9 @@ class Keyring {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audience_keys', filter: `recipient_id=eq.${userId}` },
         (p) => { void this.ingest([p.new as KeyRow]).then(() => this.bump()); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' },
+        () => { void this.deliverPending().catch(() => undefined); })
+      // Someone started following me: hand them my followers key right away while this device is open.
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'follows', filter: `followee_id=eq.${userId}` },
         () => { void this.deliverPending().catch(() => undefined); })
       .subscribe();
     // Safety net: deliver keys (and retry keys we couldn't judge yet) periodically while the app is open.
@@ -136,7 +142,7 @@ class Keyring {
   /** The adopted keys and my default audiences, for the offline snapshot (lib/keys/offline). Null until ready. */
   snapshot(): KeyringSnapshot | null {
     if (!this.ready || !this.friendsAudience || !this.selfAudience) return null;
-    return { keys: [...this.keys].map(([id, key]) => [id, b64u.encode(key)]), friends: this.friendsAudience, self: this.selfAudience };
+    return { keys: [...this.keys].map(([id, key]) => [id, b64u.encode(key)]), friends: this.friendsAudience, self: this.selfAudience, followers: this.followersAudience };
   }
 
   /**
@@ -154,6 +160,7 @@ class Keyring {
     }
     this.friendsAudience = snap.friends;
     this.selfAudience = snap.self;
+    this.followersAudience = snap.followers ?? null;
     this.setReady(true);
     this.bump();
   }
@@ -176,7 +183,7 @@ class Keyring {
       const key = `${r.audience_id}|${r.recipient_id}`;
       const row = cx.members.get(key);
       const roster = cx.rosters.get(r.audience_id) ?? empty;
-      const ok = aud.kind === 'friends' || aud.kind === 'self' || r.recipient_id === aud.owner_id || (!!row && memberVouched(aud, roster, row, (by, sig) => {
+      const ok = implicitMembers(aud.kind) || r.recipient_id === aud.owner_id || (!!row && memberVouched(aud, roster, row, (by, sig) => {
         const pub = trustedPub(by);
         return !!pub && verifyMemberAdd(b64u.decode(pub), { audienceId: r.audience_id, memberId: r.recipient_id, addedBy: by }, sig);
       }));
@@ -240,15 +247,32 @@ class Keyring {
     this.unpin?.(); this.unpin = null;
     void people.setTrustResolver(null);
     this.channel = null; this.timer = null; this.keys.clear(); this.waiting.clear(); this.u = null; this.userId = null;
-    this.friendsAudience = null; this.selfAudience = null;
+    this.friendsAudience = null; this.selfAudience = null; this.followersAudience = null;
     if (this.conflictList.length) { this.conflictList = []; this.conflictListeners.forEach((l) => l()); }
   }
 
   private async loadMyAudiences() {
-    const rows = must(await sb().from('audiences').select('*').eq('owner_id', this.userId!).in('kind', ['friends', 'self'])) as AudienceRow[];
+    const rows = must(await sb().from('audiences').select('*').eq('owner_id', this.userId!).in('kind', ['friends', 'self', 'followers'])) as AudienceRow[];
     this.friendsAudience = rows.find((r) => r.kind === 'friends') ?? null;
     this.selfAudience = rows.find((r) => r.kind === 'self') ?? null;
+    this.followersAudience = rows.find((r) => r.kind === 'followers') ?? null;
     if (!this.friendsAudience || !this.selfAudience) throw new Error('Default audiences missing');
+  }
+
+  /**
+   * My followers audience with its first key, right after "Let people follow me" was turned on (the database
+   * creates the row with the switch). Connections count as followers, so the key goes out to them at once.
+   */
+  async ensureFollowersAudience(): Promise<AudienceRow> {
+    await this.whenReady();
+    if (!this.followersAudience) {
+      const row = (await sb().from('audiences').select('*').eq('owner_id', this.userId!).eq('kind', 'followers').maybeSingle()).data as AudienceRow | null;
+      if (!row) throw new Error('Followers audience missing');
+      this.followersAudience = row;
+    }
+    await this.ensureOwn(this.followersAudience);
+    void this.deliverPending().catch(() => undefined);
+    return this.followersAudience;
   }
 
   /** Load every sealed key addressed to us (paged). */
@@ -473,7 +497,14 @@ class Keyring {
         } catch { /* malformed keys: classic box */ }
       }
     }
-    const allowed = await sealGate([...profs].map(([id, p]) => ({ id, ...p })));
+    // People who only follow me are strangers: there is no earlier key of theirs to hold them to, and pinning
+    // every follower would grow the vault without bound (docs/v2/10-follow-public.md §3). Anyone I already
+    // know (a pin exists) is held to that pin and to the public key log as usual.
+    const followers = this.followersAudience?.id;
+    const strict = new Set(rows.filter((r) => r.audience_id !== followers).map((r) => r.recipient_id));
+    const entries = [...profs].map(([id, p]) => ({ id, ...p }));
+    const allowed = await sealGate(entries.filter((e) => strict.has(e.id)));
+    for (const id of await sealGate(entries.filter((e) => !strict.has(e.id)), { pinNew: false })) allowed.add(id);
     const vouched = await this.vouchedMembers(rows);
     let n = 0;
     for (const r of rows) {
@@ -625,6 +656,31 @@ class Keyring {
     await this.advance(aud, row.current_epoch);
     await this.deliverPending();
     this.bump();
+  }
+
+  /**
+   * Someone stopped being my follower because of something I did (I removed them, ended the connection or
+   * blocked them). If they hold my current followers key and are entitled to it no longer, rotate it, so
+   * nothing I share with followers from now on can be opened with the key they have. (Someone who leaves by
+   * themselves is simply refused new posts by the server; no rotation, as it would cost a new key for
+   * every remaining follower each time anyone unfollows.)
+   */
+  async afterFollowerRemoved(userId: string): Promise<void> {
+    const mine = this.followersAudience;
+    if (!mine || !this.userId) return;
+    const self = this.userId;
+    const row = (await sb().from('audiences').select('*').eq('id', mine.id).maybeSingle()).data as AudienceRow | null;
+    if (!row) return;
+    const held = await sb().from('audience_keys').select('recipient_id')
+      .match({ audience_id: row.id, epoch: row.current_epoch, recipient_id: userId, sealed_by: self }).maybeSingle();
+    if (!held.data) return;
+    const [follows, friend] = await Promise.all([
+      sb().from('follows').select('follower_id').match({ follower_id: userId, followee_id: self }).maybeSingle(),
+      sb().from('friendships').select('status').match(self < userId ? { user_a: self, user_b: userId } : { user_a: userId, user_b: self }).maybeSingle(),
+    ]);
+    if (follows.data || (friend.data as { status?: string } | null)?.status === 'accepted') return;
+    await this.rotate(row.id);
+    this.followersAudience = (await sb().from('audiences').select('*').eq('id', row.id).maybeSingle()).data as AudienceRow | null ?? this.followersAudience;
   }
 
   /** Create a new audience we own (list, group, event, conversation) with its first key. */

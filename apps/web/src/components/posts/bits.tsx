@@ -105,6 +105,7 @@ export function AudienceTag({ audience }: { audience: AudienceBadge }) {
     case 'some': label = t('feed.audienceSome'); break;
     case 'only_me': icon = 'lock'; label = t('feed.audienceOnlyMe'); break;
     case 'public': icon = 'globe'; label = t('feed.audiencePublic'); break;
+    case 'followers': icon = 'userCheck'; label = t('follow.aud.followers'); break;
     case 'event': icon = 'calendar'; label = t('feed.audienceEvent'); break;
     case 'circle': icon = 'circles'; label = circle ?? t('feed.audienceCircle'); break;
   }

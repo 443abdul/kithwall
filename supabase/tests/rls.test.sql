@@ -77,7 +77,8 @@ select throws_ok($$ update public.posts set author_id = pg_temp.uid('bob') where
   'P0001', null, 'post identity is immutable');
 
 select pg_temp.login('carol');
-select is((select count(*)::int from public.posts), 0, 'stranger reads no posts');
+-- (Posts their authors made Public are for everyone: follow_public.test.sql. A shared database may hold some.)
+select is((select count(*)::int from public.posts where not is_public), 0, 'stranger reads no posts');
 select throws_ok($$ insert into public.posts (id, author_id, wall_owner_id, kind, audience_id, epoch, envelope)
   values ('10000000-0000-0000-0000-000000000006', pg_temp.uid('carol'), pg_temp.uid('alice'), 'status',
           pg_temp.friends_aud('alice'), 1, '{"v":1}') $$, '42501', null, 'stranger cannot write on Alice''s wall');
@@ -98,7 +99,7 @@ select pg_temp.login('carol');
 select throws_ok($$ insert into public.comments (id, post_id, author_id, envelope)
   values ('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', pg_temp.uid('carol'), '{"v":1}') $$,
   '42501', null, 'stranger cannot comment');
-select is((select count(*)::int from public.comments), 0, 'stranger reads no comments');
+select is((select count(*)::int from public.comments c where not exists (select 1 from public.posts p where p.id = c.post_id and p.is_public)), 0, 'stranger reads no comments');
 select is((select count(*)::int from public.likes), 0, 'stranger sees no likes');
 
 -- ---------------------------------------------------------------------------
@@ -206,7 +207,7 @@ select lives_ok($$ insert into public.reports (reporter_id, target_kind, target_
 select pg_temp.login('mod');
 select ok((select stored_envelope is not null and target_owner_id = pg_temp.uid('alice') from public.reports where reporter_id = pg_temp.uid('bob') limit 1),
   'report snapshots ciphertext and owner for moderators');
-select is((select count(*)::int from public.posts), 0, 'moderators do not get blanket read access to posts');
+select is((select count(*)::int from public.posts where not is_public), 0, 'moderators do not get blanket read access to posts');
 select throws_ok($$ select public.grant_staff_role(pg_temp.uid('carol'), 'moderator') $$, '42501', null, 'moderators cannot appoint staff');
 update public.app_settings set value = 'true' where key = 'public_audience_enabled';
 select is((select value::text from public.app_settings where key = 'public_audience_enabled'), 'false',

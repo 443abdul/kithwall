@@ -76,8 +76,10 @@ legal review of PECA/SMPRA (10).
 
 ## Not recommended
 
-Server-side search and trending, marketplace, live streaming and federation: each needs the server to read
-content or makes the anonymity set public. Local (on-device) search of decrypted posts is the substitute.
+Server-side search and trending **of encrypted content**, marketplace, live streaming and federation: each
+needs the server to read content or makes the anonymity set public. Local (on-device) search of decrypted
+posts is the substitute. (Round 4 adds search and a popular list for what people explicitly made public:
+accounts that let people follow them, and Public posts. Nothing encrypted is searched or ranked.)
 
 ## Round 3 (2026-11-01): review fixes, notifications, new features
 
@@ -104,3 +106,31 @@ content or makes the anonymity set public. Local (on-device) search of decrypted
   imitates one of your connections (homoglyph-aware, `lib/social/lookalike.ts`).
 - Next from the research: Data Saver mode, offline "Kit Drop" bundles for shutdowns, on-device translation,
   legacy contact.
+
+## Round 4 (2026-11-11): follow, Followers and Public posts, Explore
+
+The owner's ask: Kithwall should also work for the general public, without giving up the privacy promise.
+Design, threat model and production steps: `10-follow-public.md`. In short:
+
+- **Follow** is opt-in per account ("Let people follow me", off by default). Following is instant; the
+  account can remove or block followers; connections count as followers. People who never turn it on keep
+  the connections-only Kithwall unchanged.
+- **Followers posts are still end-to-end encrypted**: a per-account followers audience whose key the owner's
+  own devices mint, sign and hand to each follower (the same machinery as the connections key, hybrid
+  post-quantum wraps included). A new follower reads nothing until one of those devices has been online, and
+  the app says so. Removing or blocking a follower rotates the key.
+- **Public posts** are signed plaintext, labelled Public everywhere, explained once before the first one,
+  open without an account through `/p/<id>` (noindex unless the author opts in), with photos, videos,
+  comments and reactions.
+- **Explore**: popular and newest public posts (ranked from public likes, comments and age only; nothing
+  about what anyone views is recorded), search that returns only follow-enabled accounts, and suggested
+  accounts computed on the device from who one's connections follow.
+- **Comment controls**: who can comment (per account and per post), who can mention me, authors remove
+  comments, restrict, and a hidden-words list kept in the encrypted vault.
+- **Safety**: public content is reportable and reaches moderators as verified plain text; a public post is
+  hidden after reports from 5 accounts until a moderator reviews it; rate limits on follows and public posts;
+  a 24-hour wait for new accounts.
+- Left as a seam for a short-video feed: `fetchPublicPosts({ kinds: ['video'] })`, `<PublicFeed>`,
+  `EXPLORE_TABS` (10-follow-public.md §5).
+- Next: a public picture and bio for follow-enabled accounts, reposting to followers, batched key delivery
+  for very large accounts (10-follow-public.md §9).

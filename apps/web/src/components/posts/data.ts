@@ -51,7 +51,7 @@ export async function rememberAudienceKinds(rows: PostRow[]) {
 }
 
 export type AudienceBadge =
-  | { kind: 'connections' } | { kind: 'some' } | { kind: 'only_me' } | { kind: 'public' }
+  | { kind: 'connections' } | { kind: 'some' } | { kind: 'only_me' } | { kind: 'public' } | { kind: 'followers' }
   | { kind: 'circle'; circleId: string } | { kind: 'event'; eventId: string };
 
 export function audienceOf(row: PostRow): AudienceBadge {
@@ -61,7 +61,17 @@ export function audienceOf(row: PostRow): AudienceBadge {
   const k = row.audience_id ? kinds.get(row.audience_id) : undefined;
   if (k === 'self') return { kind: 'only_me' };
   if (k === 'list') return { kind: 'some' };
+  if (k === 'followers') return { kind: 'followers' };
   return { kind: 'connections' };
+}
+
+/**
+ * A Followers or Public post on someone's profile (docs/v2/10-follow-public.md): the people who like and
+ * comment on it may be strangers to me and to each other.
+ */
+export function isWide(row: PostRow): boolean {
+  if (!row.wall_owner_id) return false;
+  return row.is_public || (!!row.audience_id && kinds.get(row.audience_id) === 'followers');
 }
 
 /** Load one post (e.g. after an edit) with its author ready for decryption. */

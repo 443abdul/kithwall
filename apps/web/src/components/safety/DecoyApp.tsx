@@ -49,6 +49,7 @@ function DecoyShell({ info }: { info: DecoyInfo }) {
   let screen;
   if (path.startsWith('/you/settings')) screen = <DecoySettings />;
   else if (active === 'you') screen = <DecoyYou name={name} handle={info.handle} />;
+  else if (active === 'explore') screen = <DecoyEmpty title={t('nav.explore')} icon="compass" heading={t('explore.emptyTitle')} body={t('explore.emptyBody')} />;
   else if (active === 'circles') screen = <DecoyEmpty title={t('nav.circles')} icon="circles" heading={t('circles.emptyTitle')} body={t('circles.emptyBody')} />;
   else if (active === 'messages') screen = <DecoyEmpty title={t('nav.messages')} icon="messages" heading={t('messages.emptyTitle')} body={t('messages.emptyBody')} />;
   else if (active === 'activity') screen = <DecoyEmpty title={t('nav.activity')} icon="activity" heading={t('activity.caughtUp')} body={t('activity.caughtUpBody')} />;
@@ -126,7 +127,7 @@ function DecoyHome({ name, posts, onPost }: { name: string; posts: { id: number;
   );
 }
 
-function DecoyEmpty({ title, icon, heading, body }: { title: string; icon: 'circles' | 'messages' | 'activity'; heading: string; body: string }) {
+function DecoyEmpty({ title, icon, heading, body }: { title: string; icon: 'circles' | 'messages' | 'activity' | 'compass'; heading: string; body: string }) {
   useDocumentTitle(title);
   return (
     <Page title={title}>

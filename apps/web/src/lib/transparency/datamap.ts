@@ -41,6 +41,8 @@ export const TABLES: Record<string, TableInfo> = {
   'public.message_reactions': { label: 'transparency.t.reactions.label', sees: 'transparency.t.reactions.sees', hidden: 'transparency.t.reactions.hidden' },
   'public.friendships': { label: 'transparency.t.friendships.label', sees: 'transparency.t.friendships.sees', hidden: 'transparency.t.friendships.hidden' },
   'public.blocks': { label: 'transparency.t.blocks.label', sees: 'transparency.t.blocks.sees' },
+  'public.follows': { label: 'transparency.t.follows.label', sees: 'transparency.t.follows.sees', hidden: 'transparency.t.follows.hidden' },
+  'public.restrictions': { label: 'transparency.t.restrictions.label', sees: 'transparency.t.restrictions.sees' },
   'public.audiences': { label: 'transparency.t.audiences.label', sees: 'transparency.t.audiences.sees', hidden: 'transparency.t.audiences.hidden' },
   'public.audience_members': { label: 'transparency.t.memberships.label', sees: 'transparency.t.memberships.sees' },
   'public.audience_keys': { label: 'transparency.t.audienceKeys.label', sees: 'transparency.t.audienceKeys.sees', hidden: 'transparency.t.audienceKeys.hidden' },
@@ -64,7 +66,7 @@ export const TABLES: Record<string, TableInfo> = {
 export const STATIC_MAP: { category: Exclude<DataCategory, 'system' | 'housekeeping'>; tables: string[] }[] = [
   { category: 'content', tables: ['public.posts', 'public.comments', 'public.likes', 'public.stories', 'public.story_views', 'public.albums', 'public.photos', 'public.media_objects'] },
   { category: 'messages', tables: ['public.conversations', 'public.messages', 'public.message_reactions'] },
-  { category: 'social', tables: ['public.friendships', 'public.blocks', 'public.audiences', 'public.audience_members', 'public.audience_keys', 'public.groups', 'public.events'] },
+  { category: 'social', tables: ['public.friendships', 'public.follows', 'public.restrictions', 'public.blocks', 'public.audiences', 'public.audience_members', 'public.audience_keys', 'public.groups', 'public.events'] },
   { category: 'account', tables: ['public.profiles', 'public.profile_info', 'public.key_bundles', 'public.passkeys', 'public.vault', 'public.push_subscriptions', 'public.native_push_devices', 'public.safety_checkins', 'public.legacy_contacts'] },
   { category: 'activity', tables: ['public.notifications', 'public.reports'] },
 ];

@@ -47,6 +47,7 @@ export function YouScreen() {
           <li><ListItem icon="users" title={t('people.title')} href="/people"
             subtitle={friends.data ? t('people.count', { count: friends.data.length }) : undefined}
             trailing={reqs.data?.length ? <Badge count={reqs.data.length} /> : undefined} /></li>
+          <li><ListItem icon="userCheck" title={t('follow.settings.title')} subtitle={t('follow.settings.sub')} href={href('/you/settings/following')} /></li>
           <li><ListItem icon="qr" title={t('people.tabInvite')} subtitle={t('people.inviteTitle')} href="/people?tab=invite" /></li>
         </List>
       </Card>

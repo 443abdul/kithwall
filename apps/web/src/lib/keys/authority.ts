@@ -10,7 +10,7 @@
 //     matches that record's commitment (packages/crypto/src/epoch.ts). Any member may relay such a key;
 //     a key that does not match is a CONFLICT: it is rejected and surfaced as a security warning; or
 //  3. there is no (valid) record, which is the case for epochs that predate records, and the SEALER is a
-//     key authority: the audience owner (friends / self / list), or the owner or an active admin
+//     key authority: the audience owner (friends / self / list / followers), or the owner or an active admin
 //     (group / event / conversation). For conversations, past epochs relayed by a current member are
 //     accepted too (history from before this change), never the current epoch.
 //
@@ -18,7 +18,7 @@
 import { b64u, keyMatchesCommit, verifyAdminGrant, verifyEpochRecord } from '@kithwall/crypto';
 import type { SignerTrust } from './pinsCore';
 
-export type AudienceKind = 'friends' | 'list' | 'group' | 'event' | 'conversation' | 'self';
+export type AudienceKind = 'friends' | 'list' | 'group' | 'event' | 'conversation' | 'self' | 'followers';
 
 export interface AudienceMeta { id: string; kind: AudienceKind; owner_id: string; current_epoch: number }
 
@@ -38,7 +38,7 @@ export type KeyVerdict =
 /** Who may mint keys for this audience right now. */
 export function isKeyAuthority(aud: AudienceMeta, roster: Roster, userId: string): boolean {
   if (aud.owner_id === userId) return true;
-  if (aud.kind === 'friends' || aud.kind === 'self' || aud.kind === 'list') return false;
+  if (aud.kind === 'friends' || aud.kind === 'self' || aud.kind === 'list' || aud.kind === 'followers') return false;
   return roster.admins.has(userId);
 }
 
@@ -161,6 +161,12 @@ export function judgeIncoming(args: {
 //    from before signed additions existed, and members whose adder has since left). The caller checks
 //    that signature (crypto sealedSignatureValid) and passes `proven`.
 // Nothing the server merely asserts (timestamps, roles of people who signed nothing) counts.
+//
+// The followers audience is different by design (docs/v2/10-follow-public.md §3): anyone signed in may follow
+// without the owner's approval, so there is nobody whose signature could vouch for a follower, and a
+// signature by the follower would prove nothing the server could not arrange with an account of its own.
+// Like 'friends', it is delivered to whoever the server lists; what protects it is that only the OWNER's
+// devices mint and hand out its key (isKeyAuthority) and that the owner can remove a follower and rotate.
 
 export interface MemberAddRow {
   audience_id: string; member_id: string; role: 'admin' | 'member'; status: string;
@@ -175,7 +181,7 @@ export interface MemberAddRow {
  * circles and events (open circles and circle events are joined directly).
  */
 export function memberVouched(aud: AudienceMeta, roster: Roster, row: MemberAddRow, verify: (signerId: string, sig: string) => boolean, proven = false): boolean {
-  if (aud.kind === 'friends' || aud.kind === 'self') return true;
+  if (implicitMembers(aud.kind)) return true;
   if (row.member_id === aud.owner_id) return true;
   if (proven) return true;
   const by = row.add_by;
@@ -184,6 +190,11 @@ export function memberVouched(aud: AudienceMeta, roster: Roster, row: MemberAddR
   if (aud.kind === 'list') return false;
   if (by === row.member_id) return aud.kind === 'group' || aud.kind === 'event';
   return roster.members.has(by);
+}
+
+/** Audiences whose members are not listed in audience_members (connections, followers, only me). */
+export function implicitMembers(kind: AudienceKind): boolean {
+  return kind === 'friends' || kind === 'self' || kind === 'followers';
 }
 
 /** Who may have sealed a key that proves earlier membership: a key authority, or (conversations) a member. */

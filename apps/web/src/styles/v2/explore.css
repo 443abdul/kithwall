@@ -1,0 +1,41 @@
+/* Follow, public posts and Explore (docs/v2/10-follow-public.md). Tokens only; everything adapts to the
+   three styles, light/dark and RTL through the variables and logical properties used elsewhere. */
+
+/* A public post is always marked as such: the tag takes the warning tone instead of the muted one. */
+.kw .k-aud-public { color: var(--warning); font-weight: var(--weight-bold); }
+.kw .k-post-public { border-inline-start: 3px solid var(--warning); }
+.kw .k-public-note {
+  display: flex; align-items: flex-start; gap: var(--space-2); margin: 0;
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+  background: var(--warning-soft); color: var(--text);
+}
+.kw .k-public-note .k-icon { flex: none; inline-size: 16px; block-size: 16px; margin-block-start: 2px; }
+
+.kw .k-public-foot { display: flex; align-items: center; gap: var(--space-4); padding-block-start: var(--space-2); }
+.kw .k-public-foot > span { display: inline-flex; align-items: center; gap: var(--space-1); }
+.kw .k-public-foot .k-icon { inline-size: 16px; block-size: 16px; }
+
+/* Folded away by my hidden words. */
+.kw .k-post-filtered p, .kw .k-comment-filtered p { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.kw .k-post-filtered .k-icon, .kw .k-comment-filtered .k-icon { inline-size: 16px; block-size: 16px; }
+.kw .k-comment-limited, .kw .k-comment-public { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) 0 0; }
+.kw .k-comment-limited .k-icon, .kw .k-comment-public .k-icon { inline-size: 14px; block-size: 14px; flex: none; }
+.kw .k-comment-meta .k-icon { inline-size: 12px; block-size: 12px; vertical-align: -1px; }
+
+/* Profile: follower count under the handle. */
+.kw .k-profile-followers { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; color: var(--text-muted); }
+.kw .k-profile-followers .k-icon { inline-size: 16px; block-size: 16px; }
+
+/* The shareable link of a public post (/p/<id>): one readable column. */
+.kw .k-public-post { max-inline-size: 42rem; margin-inline: auto; }
+.kw .k-public-cta { display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; }
+.kw .k-public-cta p { margin: 0; }
+
+/* "Who can comment" select inside settings and sheets. */
+.kw select.k-control { inline-size: 100%; min-block-size: 44px; padding-inline: var(--space-3); color: var(--text); background: var(--surface); }
+
+/* Person rows with two trailing controls (Follow + dismiss) keep the name readable on phones. */
+.kw .k-person-row .k-item-trail.k-row { gap: var(--space-1); flex: none; }
+@media (max-width: 420px) {
+  .kw .k-person-row .k-item-trail.k-row .k-btn span { max-inline-size: 6.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}

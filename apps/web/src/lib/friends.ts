@@ -65,12 +65,16 @@ export async function cancelRequest(userId: string) { await ignoreRequest(userId
 export async function unfriend(userId: string) {
   must(await sb().from('friendships').delete().match(pair(me(), userId)));
   await keyring.rotate(keyring.friendsAudience!.id);
+  // A connection counts as a follower (lib/follow): unless they also follow me, my followers key moves on too.
+  await keyring.afterFollowerRemoved(userId).catch((e) => console.warn('followers key', e));
   await republishProfileInfo();
 }
 
+/** Block: ends the connection and any follow in either direction (the database does both), then rotates my keys. */
 export async function block(userId: string) {
   must(await sb().from('blocks').insert({ blocker: me(), blocked: userId }));
   await keyring.rotate(keyring.friendsAudience!.id);
+  await keyring.afterFollowerRemoved(userId).catch((e) => console.warn('followers key', e));
   await republishProfileInfo();
 }
 export async function unblock(userId: string) {

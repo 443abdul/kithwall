@@ -5,6 +5,9 @@
 // it has left and leaves the screen the moment it expires; the author's scheduled post says when it goes out.
 // Batch 1 (docs/v2/roadmap-2026-11.md): emoji reactions (encrypted; the author sees the breakdown), polls,
 // reposts, save, mute the author, and pin to my profile.
+// Follow and public posts (docs/v2/10-follow-public.md): a Public post is labelled Public, has a link that
+// opens without an account, and tells its author when it is hidden after reports; the author chooses who
+// can comment on each post; posts containing one of my hidden words are folded away on this device.
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
@@ -28,7 +31,14 @@ import type { PostPayload, PostRow } from '@/lib/types';
 import { AudienceTag, NoteText, RelativeTime, RichText } from './bits';
 import { Translatable } from '@/components/translate/Translatable';
 import { Comments, useComments } from './Comments';
-import { audienceOf, deletePostFully } from './data';
+import { audienceOf, deletePostFully, isWide } from './data';
+import { CommentPolicySelect } from './PostOptions';
+import { payloadText } from '@/lib/feed/feed';
+import { matchesHidden } from '@/lib/social/hiddenWords';
+import { useHiddenStore } from '@/lib/social/hiddenStore';
+import { publicPostPath } from '@/lib/public/posts';
+import { sb, must } from '@/lib/supabase';
+import type { CommentPolicy } from '@/lib/types';
 import { LinkCard, PhotoGrid, VideoPlayer } from './Media';
 import { Menu } from './Menu';
 import { ReportDialog } from './ReportDialog';
@@ -83,6 +93,10 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
   const when = useWhen();
   const [sharing, setSharing] = useState(false);
   const [picker, setPicker] = useState(false);
+  const [commentSetting, setCommentSetting] = useState(false);
+  const [unfold, setUnfold] = useState(false);
+  const hiddenWords = useHiddenStore().words;
+  const wide = isWide(row);
   const prefs = useSocialPrefs();
   useEffect(() => { if (status === 'ready') void loadSocialPrefs().catch(() => undefined); }, [status]);
   const saved = isSaved(prefs, row.id);
@@ -92,7 +106,7 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
   // Feeds seed the per-post likes / comments caches in two batched queries per page (prefetchEngagement)
   // and Realtime keeps them current, so remounting a feed doesn't refetch every card one by one.
   const like = usePostLike(row);
-  const comments = useComments(row.id);
+  const comments = useComments(row.id, wide);
   const liked = like.liked;
   const likeCount = like.count;
   const commentCount = comments.data?.length ?? 0;
@@ -130,8 +144,12 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
     await saveProfileInfo(next);
     await qc.invalidateQueries({ queryKey: ['pinned-post'] });
   }, on ? 'post.pinned' : 'post.unpinned');
+  const publicWall = row.is_public && !!row.wall_owner_id;
+  const copyLink = () => run(async () => { await navigator.clipboard.writeText(`${location.origin}${publicPostPath(row.id)}`); }, 'follow.public.linkCopied');
   const menu = [
     ...(payload ? [{ label: saved ? t('post.unsave') : t('post.save'), icon: 'book' as const, onSelect: () => void run(() => setSaved(row.id, !saved), saved ? 'post.unsaved' : 'post.saved') }] : []),
+    ...(publicWall && !row.public_hidden_at ? [{ label: t('follow.public.copyLink'), icon: 'link' as const, onSelect: () => void copyLink() }] : []),
+    ...(mine && row.wall_owner_id === userId ? [{ label: t('comments.policy.title'), icon: 'comment' as const, onSelect: () => setCommentSetting(true) }] : []),
     ...(canPin && payload ? [{ label: isPinned ? t('post.unpin') : t('post.pin'), icon: 'mapPin' as const, onSelect: () => void pin(!isPinned) }] : []),
     ...(!mine ? [{ label: t('post.mute', { name }), icon: 'eyeOff' as const, onSelect: () => void run(() => setMuted(row.author_id, 30), 'post.muted') }] : []),
     ...(mine && payload && !payload.capsule ? [{ label: t('feed.edit'), icon: 'edit' as const, onSelect: () => setEditing(true) }] : []),
@@ -144,6 +162,14 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
   if (isExpired(row, now)) return null;
   const left = row.expires_at ? timeLeft(row.expires_at, now) : null;
   const scheduled = isScheduled(row, now);
+  // One of my hidden words: folded away for me only (never my own posts).
+  if (!mine && !unfold && payload && hiddenWords.length && matchesHidden(payloadText(payload), hiddenWords)) {
+    return (
+      <Card as="article" className="k-post k-post-filtered" aria-label={name}>
+        <p className="k-muted k-small"><Icon name="eyeOff" /> {t('hidden.post')} <button type="button" className="k-linkbtn" onClick={() => setUnfold(true)}>{t('hidden.show')}</button></p>
+      </Card>
+    );
+  }
 
   return (
     <Card as="article" className="k-post" aria-label={name}>
@@ -170,6 +196,9 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
 
       {scheduled && row.publish_at ? (
         <p className="k-eph-banner k-small"><Icon name="calendar" /> {t('schedule.banner', { when: when(row.publish_at) })}</p>
+      ) : null}
+      {row.public_hidden_at && mine ? (
+        <p className="k-eph-banner k-small" role="status"><Icon name="alert" /> {t('follow.public.hiddenBanner')}</p>
       ) : null}
       {!d.ok ? (
         d.reason === 'waiting'
@@ -218,6 +247,7 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
         <Gallery items={items} start={gallery} post={galleryPost} onClose={() => setGallery(null)} />
       ) : null}
       {editing && payload ? <EditDialog row={row} payload={payload} onClose={() => setEditing(false)} /> : null}
+      {commentSetting ? <CommentSettingDialog row={row} onClose={() => setCommentSetting(false)} /> : null}
       {sharing ? <ShareDialog row={row} onClose={() => setSharing(false)} /> : null}
       <Dialog open={deleting} onClose={() => setDeleting(false)} title={t('feed.deleteTitle')}
         footer={<>
@@ -260,6 +290,36 @@ export function PostBody({ payload, row, nested = false, onOpenMedia }: { payloa
       {payload.poll && row ? <PollView row={row} poll={payload.poll} /> : null}
       {row?.kind === 'share' && row.shared_post_id && !nested ? <SharedPost id={row.shared_post_id} /> : null}
     </div>
+  );
+}
+
+/** Who can comment on this one post of mine (null = my account setting). Not an edit: the post itself is untouched. */
+function CommentSettingDialog({ row, onClose }: { row: PostRow; onClose: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const [value, setValue] = useState<CommentPolicy | null>(row.comment_policy ?? null);
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    setBusy(true);
+    try {
+      must(await sb().from('posts').update({ comment_policy: value }).eq('id', row.id).select('id'));
+      await qc.invalidateQueries({ queryKey: ['v2feed'] });
+      toast({ message: t('feed.saved') });
+      onClose();
+    } catch { toast({ message: t('feed.failed'), tone: 'danger' }); } finally { setBusy(false); }
+  }
+  return (
+    <Dialog open onClose={onClose} title={t('comments.policy.title')} sheet dismissible={!busy}
+      footer={<>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>{t('feed.cancel')}</Button>
+        <Button variant="primary" onClick={() => void save()} busy={busy}>{t('feed.save')}</Button>
+      </>}>
+      <div className="k-stack">
+        <CommentPolicySelect label={t('comments.policy.thisPost')} value={value} onChange={setValue} disabled={busy} />
+        <p className="k-small k-muted">{t('comments.policy.note')}</p>
+      </div>
+    </Dialog>
   );
 }
 

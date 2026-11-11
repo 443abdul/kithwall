@@ -102,8 +102,12 @@ function ConnectionsPrivacy() {
     if (on && !name) { setDirErr(true); return; }
     await save(async () => {
       if (!profile) throw new Error('no profile');
-      // The CHECK constraint keeps display_name_public null unless discoverable.
-      const { error } = await sb().from('profiles').update(on ? { discoverable: true, display_name_public: name } : { discoverable: false, display_name_public: null }).eq('id', profile.id);
+      // The CHECK constraints keep display_name_public null unless I'm listed here or let people follow me
+      // (Settings → Following and public posts), in which case the public name I chose there stays.
+      const followOn = !!profile.follow_enabled;
+      const patch = on ? { discoverable: true, display_name_public: followOn ? profile.display_name_public ?? name : name }
+        : followOn ? { discoverable: false } : { discoverable: false, display_name_public: null };
+      const { error } = await sb().from('profiles').update(patch).eq('id', profile.id);
       if (error) throw error;
       await refreshProfile();
     });

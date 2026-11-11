@@ -70,6 +70,15 @@ the same notices as server notice messages (`public.messages.notice`, already ma
 its own record of each circle's key authorities in the encrypted vault (namespace `rosterpins`), next to the
 identity-key pins (`keypins`); the server never sees either.
 
+**Added by follow and public posts** (`20261112000100_follow_public.sql`, `10-follow-public.md` §8, classified
+in the map): `public.follows` (`social`, owner predicate `follower_id` or `followee_id`), `public.restrictions`
+(`social`, the people you restricted; `owner_id` only, the restricted person's report never shows it),
+`profiles.follow_enabled`, four switches on `privacy_prefs`, and on `posts` `comment_policy`,
+`public_hidden_at`, `public_reviewed_at`. The notes of `posts.envelope` and `comments.envelope` now say that
+content the author made Public is readable and only signed. The export adds who I follow, my followers, the
+people I restricted and my switches (`data/connections.json`, `data/profile.json`); hidden words are part of
+the vault (`data/settings.json`).
+
 ## 2. Safety numbers (`/u/<handle>/verify`)
 
 - `packages/crypto/src/safety.ts`: `safetyNumber` (existing, Signal-style, 5200 × SHA-512, order-independent),

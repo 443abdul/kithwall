@@ -6,8 +6,10 @@
 // kithwall-<handle>-<date>.zip
 //   index.html                       readable overview (open in any browser, no network)
 //   README.txt
-//   data/*.json                      profile, connections, posts, notes, comments, reactions, albums,
-//                                    photos, stories, circles, events, messages, settings, legacy contact,
+//   data/*.json                      profile, connections (with who I follow, my followers and the people I
+//                                    restricted), posts, notes, comments, reactions, albums,
+//                                    photos, stories, circles, events, messages, settings (the vault: hidden
+//                                    words too), legacy contact,
 //                                    and what-kithwall-knows.json (the server's live inventory, /you/privacy-report)
 //   media/albums/<album>/<id>.jpg    decrypted photos (largest size)
 //   media/posts/<post id>-<n>.jpg    photos attached to my posts
@@ -30,6 +32,8 @@ import { readStory, type StoryRow } from './stories';
 import { fetchReactions, readReaction, type ReactionRow } from './chat/reactions';
 import { fetchTransparencyReport } from './transparency/report';
 import { exportLegacy } from './legacy/legacy';
+import { myFollowers, myFollowing, myRestricted } from './follow/follow';
+import { loadServerPrivacy } from './chat/privacy';
 import type { CommentRow, FileRef, LikeRow, MessageRow, PostRow } from './types';
 
 export type ExportStep =
@@ -98,10 +102,23 @@ export async function buildExport(progress: Progress = () => undefined): Promise
   const friends = friendIds.map((id) => { const p = people.person(id); return { id, username: p?.username, name: p?.name }; });
   const blocked = (must(await sb().from('blocks').select('blocked, created_at').eq('blocker', myId)) as { blocked: string; created_at: string }[]);
   await people.ensure(blocked.map((b) => b.blocked));
+  // Follow and public posts (docs/v2/10-follow-public.md): my switches, who I follow, who follows me, who I restricted.
+  const serverPrivacy = await loadServerPrivacy().catch(() => null);
+  const [following, followers, restricted] = await Promise.all([
+    myFollowing(5000).catch(() => []), myFollowers(5000).catch(() => []), myRestricted().catch(() => []),
+  ]);
+  const card = (a: { username: string; name: string | null; at?: string }) => ({ username: a.username, name: a.name, ...(a.at ? { since: a.at } : {}) });
   const profile = {
     id: myId, username: s.profile.username, created_at: s.profile.created_at,
     directory_name: s.profile.display_name_public, public_keys: { sign: s.profile.sign_pub, kx: s.profile.kx_pub }, info,
+    people_can_follow_me: !!s.profile.follow_enabled,
+    public_name: s.profile.follow_enabled ? s.profile.display_name_public : null,
+    ...(serverPrivacy ? {
+      search_engines_may_show_my_public_posts: serverPrivacy.indexPublic, connections_see_who_i_follow: serverPrivacy.showFollowing,
+      who_can_comment: serverPrivacy.commentPolicy, who_can_mention_me: serverPrivacy.mentionPolicy,
+    } : {}),
   };
+  const followersAudience = keyring.followersAudience?.id ?? null;
 
   // Posts (mine, and others' posts on my wall), notes, likes ---------------------------------------------------
   progress('posts');
@@ -125,7 +142,10 @@ export async function buildExport(progress: Progress = () => undefined): Promise
     }
     posts.push({
       id: r.id, created_at: r.created_at, edited_at: r.edited_at ?? null, kind: r.kind, author: nameOf(r.author_id),
-      audience: r.is_public ? 'public' : r.group_id ? `circle:${r.group_id}` : r.audience_id,
+      audience: r.is_public ? 'public' : r.group_id ? `circle:${r.group_id}` : r.audience_id === followersAudience ? 'followers' : r.audience_id,
+      // A public post is readable by anyone at this link while "Let people follow me" is on.
+      ...(r.is_public && r.wall_owner_id ? { public_link: `/p/${r.id}`, hidden_after_reports: !!r.public_hidden_at } : {}),
+      who_can_comment: r.comment_policy ?? 'account setting',
       publish_at: r.publish_at ?? null, expires_at: r.expires_at ?? null,
       content: d.ok ? d.value : null, media, status: d.ok ? 'ok' : d.reason,
     });
@@ -284,7 +304,10 @@ export async function buildExport(progress: Progress = () => undefined): Promise
     in_messages: myMessageReactions,
   };
   files['data/profile.json'] = json(profile);
-  files['data/connections.json'] = json({ connections: friends, blocked: blocked.map((b) => ({ who: nameOf(b.blocked), at: b.created_at })) });
+  files['data/connections.json'] = json({
+    connections: friends, blocked: blocked.map((b) => ({ who: nameOf(b.blocked), at: b.created_at })),
+    following: following.map(card), followers: followers.map(card), restricted: restricted.map(card),
+  });
   files['data/posts.json'] = json(posts);
   files['data/notes.json'] = json(notes);
   files['data/comments.json'] = json(comments);
