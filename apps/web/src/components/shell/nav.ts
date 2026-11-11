@@ -1,13 +1,17 @@
 import type { IconName } from '@/components/ui/Icon';
 import type { MessageKey } from '@/i18n';
 
-export type NavKey = 'home' | 'circles' | 'messages' | 'activity' | 'you';
+export type NavKey = 'home' | 'explore' | 'circles' | 'messages' | 'activity' | 'you';
 
 export interface NavItem { key: NavKey; href: string; icon: IconName; label: MessageKey }
 
-/** The five destinations (docs/v2/00-brief.md §4): bottom tabs on phones, the rail on larger screens. */
+/**
+ * The main destinations (docs/v2/00-brief.md §4; Explore: docs/v2/10-follow-public.md §5): bottom tabs on
+ * phones, the rail on larger screens. The tab bar lays out however many entries are listed here.
+ */
 export const NAV: NavItem[] = [
   { key: 'home', href: '/home', icon: 'home', label: 'nav.home' },
+  { key: 'explore', href: '/explore', icon: 'compass', label: 'nav.explore' },
   { key: 'circles', href: '/circles', icon: 'circles', label: 'nav.circles' },
   { key: 'messages', href: '/messages', icon: 'messages', label: 'nav.messages' },
   { key: 'activity', href: '/activity', icon: 'activity', label: 'nav.activity' },

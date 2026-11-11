@@ -124,8 +124,11 @@ export function sealingPausedFor(id: string): boolean { return blocked.has(id); 
  * Of these recipients (current published keys), which may receive newly sealed keys? New contacts are
  * pinned on the way (TOFU). Never throws: if the vault can't be read, nothing new is pinned and only
  * recipients whose pin already matches are allowed.
+ * `pinNew: false` (followers, lib/keys/keyring deliverTo): people seen for the first time are allowed without
+ * being pinned or looked up in the key log (neither record is kept for strangers who follow: the vault would
+ * grow with every follower); people already pinned are held to their pin and the log as usual.
  */
-export async function sealGate(recipients: { id: string; s: string; x: string }[]): Promise<Set<string>> {
+export async function sealGate(recipients: { id: string; s: string; x: string }[], opts: { pinNew?: boolean } = {}): Promise<Set<string>> {
   const ok = new Set<string>();
   if (!recipients.length) return ok;
   let pins: PinMap;
@@ -143,10 +146,11 @@ export async function sealGate(recipients: { id: string; s: string; x: string }[
     if (maySealTo({ pin, signPub: r.s, kxPub: r.x, verifiedKey: verified[r.id] ?? null, vouched })) { ok.add(r.id); blocked.delete(r.id); }
     else { blocked.add(r.id); console.warn('Kithwall: not sharing new keys with a contact whose identity key changed until you confirm it', r.id); }
   }
-  if (fresh.length) await pinIfNew(fresh).catch((e) => console.warn('key pins', e));
+  const unpinned = new Set(opts.pinNew === false ? fresh.map((r) => r.id) : []);
+  if (fresh.length && opts.pinNew !== false) await pinIfNew(fresh).catch((e) => console.warn('key pins', e));
   // Key transparency: keys the public log can't vouch for (not in it, a bad proof, or a forked log and keys
   // never confirmed) get nothing new until the user accepts them (KeyChangeBanner).
-  const refused = await keyLogGate(recipients.filter((r) => ok.has(r.id)).map((r) => ({ userId: r.id, signPub: r.s, kxPub: r.x })))
+  const refused = await keyLogGate(recipients.filter((r) => ok.has(r.id) && !unpinned.has(r.id)).map((r) => ({ userId: r.id, signPub: r.s, kxPub: r.x })))
     .catch(() => new Set<string>());
   for (const id of refused) {
     ok.delete(id);

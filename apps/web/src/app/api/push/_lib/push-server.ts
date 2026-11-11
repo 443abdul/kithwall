@@ -37,6 +37,7 @@ export function dispatchSecretOk(given: string | null): boolean {
 // Kept in step with NOTIF text in lib/notifications.ts (that file is client-only).
 const WHAT: Record<string, string> = {
   friend_request: 'sent you a friend request', friend_accept: 'accepted your friend request',
+  follow: 'started following you',
   wall_post: 'wrote on your Wall', comment: 'commented on your post', like: 'likes your post',
   tag: 'tagged you in a photo', group_invite: 'added you to a group',
   group_request: 'asked to join your group', event_invite: 'invited you to an event', mention: 'mentioned you in a comment',
@@ -53,7 +54,7 @@ const WHAT: Record<string, string> = {
 export type PushCategory = 'messages' | 'activity' | 'friend_requests' | 'invites' | 'security';
 const CATEGORY: Record<string, PushCategory> = {
   friend_request: 'friend_requests', friend_accept: 'friend_requests',
-  wall_post: 'activity', comment: 'activity', like: 'activity', tag: 'activity', mention: 'activity', share: 'activity',
+  wall_post: 'activity', comment: 'activity', like: 'activity', tag: 'activity', mention: 'activity', share: 'activity', follow: 'activity',
   relationship: 'activity',
   group_invite: 'invites', group_request: 'invites', event_invite: 'invites',
   recovery_request: 'security', recovery_trustee: 'security', key_waiting: 'security',

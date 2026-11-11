@@ -3,7 +3,7 @@
 // against the client-side rule (the database refuses the same rows: supabase/tests/keys.test.sql).
 import { describe, expect, it } from 'vitest';
 import { b64u, epochCommit, generateIdentity, newSymmetricKey, signEpochRecord } from '@kithwall/crypto';
-import { judgeKey, isKeyAuthority, type AudienceMeta, type EpochRecordRow, type Roster } from './authority';
+import { implicitMembers, judgeKey, isKeyAuthority, memberVouched, type AudienceMeta, type EpochRecordRow, type Roster } from './authority';
 
 const OWNER = 'owner-0000';
 const MALLORY = 'mallory-00';
@@ -105,5 +105,44 @@ describe('judgeKey (K1)', () => {
   it('waits when the audience is not visible', () => {
     expect(judgeKey({ aud: null, roster: roster([]), epoch: 1, sealedBy: OWNER, key: newSymmetricKey(), record: null, rotatorSignPub: null }))
       .toEqual({ ok: false, reason: 'wait' });
+  });
+});
+
+// docs/v2/10-follow-public.md §3: the followers audience. Anyone may follow, so membership is whatever the
+// server lists (like 'friends'); what the device insists on is that only the OWNER hands out its key.
+describe('followers audience', () => {
+  const followers = (epoch: number): AudienceMeta => ({ id: AUD, kind: 'followers', owner_id: OWNER, current_epoch: epoch });
+  const none: Roster = { admins: new Set(), members: new Set() };
+
+  it('only the owner is a key authority, whatever roles the server claims', () => {
+    expect(isKeyAuthority(followers(1), none, OWNER)).toBe(true);
+    expect(isKeyAuthority(followers(1), roster([MALLORY], [OWNER, MALLORY]), MALLORY)).toBe(false);
+  });
+
+  it('adopts the key of the owner and never one a follower hands out', () => {
+    const real = newSymmetricKey();
+    const rec = record(OWNER, 2, real);
+    expect(judgeKey({ aud: followers(2), roster: none, epoch: 2, sealedBy: OWNER, key: real, record: rec, rotatorSignPub: pub(OWNER) }))
+      .toEqual({ ok: true, via: 'record' });
+    // A follower relays a key of their own for the recorded epoch: conflict.
+    expect(judgeKey({ aud: followers(2), roster: none, epoch: 2, sealedBy: MALLORY, key: newSymmetricKey(), record: rec, rotatorSignPub: pub(OWNER) }))
+      .toEqual({ ok: false, reason: 'conflict' });
+    // A follower signs a record naming herself: not an authority, so her key waits forever.
+    const mine = newSymmetricKey();
+    expect(judgeKey({ aud: followers(2), roster: none, epoch: 2, sealedBy: MALLORY, key: mine, record: record(MALLORY, 2, mine), rotatorSignPub: pub(MALLORY) }))
+      .toEqual({ ok: false, reason: 'wait' });
+    // After the owner removed someone and rotated, a key planted for the next epoch is refused outright.
+    expect(judgeKey({ aud: followers(2), roster: none, epoch: 3, sealedBy: MALLORY, key: newSymmetricKey(), record: null, rotatorSignPub: null }))
+      .toEqual({ ok: false, reason: 'conflict' });
+  });
+
+  it('has implicit members: no signed addition is asked for (nobody approves a follow)', () => {
+    expect(implicitMembers('followers')).toBe(true);
+    expect(implicitMembers('friends')).toBe(true);
+    expect(implicitMembers('list')).toBe(false);
+    expect(implicitMembers('group')).toBe(false);
+    const row = { audience_id: AUD, member_id: BOB, role: 'member' as const, status: 'active', created_at: '2026-11-01T00:00:00Z' };
+    expect(memberVouched(followers(1), none, row, () => false)).toBe(true);
+    expect(memberVouched({ ...followers(1), kind: 'list' }, none, row, () => false)).toBe(false);
   });
 });

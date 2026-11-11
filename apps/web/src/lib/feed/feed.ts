@@ -13,11 +13,18 @@ import type { CommentRow, FileRef, LikeRow, PostPayload, PostRow } from '../type
 
 export const likesKey = (kind: 'post' | 'comment', id: string) => ['likes', kind, id] as const;
 export const commentsKey = (postId: string) => ['comments', postId] as const;
+/** May I comment on this post? (docs/v2/10-follow-public.md §6; the database decides) */
+export const commentGateKey = (postId: string) => ['comment-gate', postId] as const;
 
 const chunk = <T,>(a: T[], n: number) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
-/** Load likes and comments for a page of posts in two queries and seed the per-story caches. */
-export async function prefetchEngagement(qc: QueryClient, rows: PostRow[]) {
+/**
+ * Load likes and comments for a page of posts in two queries and seed the per-story caches (plus, in a third,
+ * whether I may comment on other people's profile posts). `strangers(row)`: a Followers or Public post, whose
+ * likers and commenters may be people I don't know: they are not looked up in my people directory (which
+ * would pin the identity key of every one of them); their names come with the thread instead.
+ */
+export async function prefetchEngagement(qc: QueryClient, rows: PostRow[], strangers: (row: PostRow) => boolean = () => false) {
   const ids = rows.map((r) => r.id);
   if (!ids.length) return;
   const likes: LikeRow[] = [];
@@ -30,11 +37,38 @@ export async function prefetchEngagement(qc: QueryClient, rows: PostRow[]) {
     likes.push(...((l.data ?? []) as LikeRow[]));
     comments.push(...((c.data ?? []) as CommentRow[]));
   }
-  await people.ensure([...likes.map((l) => l.user_id), ...comments.map((c) => c.author_id)]);
+  const wide = new Set(rows.filter(strangers).map((r) => r.id));
+  await people.ensure([...likes.filter((l) => !wide.has(l.target_id)).map((l) => l.user_id), ...comments.filter((c) => !wide.has(c.post_id ?? '')).map((c) => c.author_id)]);
   for (const id of ids) {
     qc.setQueryData(likesKey('post', id), likes.filter((x) => x.target_id === id));
     qc.setQueryData(commentsKey(id), comments.filter((x) => x.post_id === id));
   }
+  const others = rows.filter((r) => r.wall_owner_id && r.author_id !== me()).map((r) => r.id);
+  const gates = others.length ? await fetchCommentGates(others).catch(() => null) : null;
+  if (gates) for (const id of others) qc.setQueryData(commentGateKey(id), gates.get(id) ?? true);
+}
+
+/** Which of these posts I may comment on (posts the database doesn't answer for are left out). */
+export async function fetchCommentGates(postIds: string[]): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>();
+  for (const part of chunk(postIds, 200)) {
+    const rows = (must(await sb().rpc('comment_gates', { p_posts: part })) ?? []) as { post_id: string; can_comment: boolean }[];
+    for (const r of rows) out.set(r.post_id, !!r.can_comment);
+  }
+  return out;
+}
+
+export async function fetchCommentGate(postId: string): Promise<boolean> {
+  return (await fetchCommentGates([postId])).get(postId) ?? true;
+}
+
+/** Who wrote a comment, as told with the thread of a Followers or Public post. */
+export interface CommentAuthor { id: string; username: string; name: string | null; sign_pub: string }
+
+/** The people who commented on a Followers or Public post I can read (empty for other posts). */
+export async function fetchCommentAuthors(postId: string): Promise<Map<string, CommentAuthor>> {
+  const rows = (must(await sb().rpc('comment_authors', { p_post: postId })) ?? []) as { id: string; username: string; display_name: string | null; sign_pub: string }[];
+  return new Map(rows.map((r) => [r.id, { id: r.id, username: r.username, name: r.display_name, sign_pub: r.sign_pub }]));
 }
 
 /**

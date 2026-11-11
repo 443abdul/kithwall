@@ -80,7 +80,7 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
   switch (type) {
     case 'like': case 'reaction': case 'story_reaction': case 'relationship': return 'heart';
     case 'comment': case 'mention': case 'wall_post': return 'messages';
-    case 'friend_request': case 'friend_accept': return 'users';
+    case 'friend_request': case 'friend_accept': case 'follow': return 'users';
     case 'group_invite': case 'group_request': return 'circles';
     case 'event_invite': return 'calendar';
     case 'recovery_request': case 'recovery_trustee': return 'key';
@@ -100,6 +100,6 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
 export const ACTIVITY_TYPES = [
   'friend_request', 'friend_accept', 'wall_post', 'comment', 'like', 'tag', 'group_invite', 'group_request',
   'event_invite', 'mention', 'share', 'relationship', 'recovery_request', 'recovery_trustee',
-  'key_waiting', 'post_published', 'security_notice',
+  'key_waiting', 'post_published', 'security_notice', 'follow',
   'legacy_contact', 'legacy_declined', 'legacy_cleared', 'legacy_reminder', 'legacy_released', 'legacy_active',
 ] as const;

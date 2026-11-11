@@ -1,6 +1,8 @@
 'use client';
 // The composer: text (with automatic link previews through the no-log proxy), photos, one video, and an
-// audience picker (connections / a circle / only me). Everything is built into a payload and encrypted on
+// audience picker (connections / a circle / only me; for accounts that let people follow them also
+// Followers, still encrypted, and Public, which is signed but NOT encrypted and says so before the first
+// one goes out: docs/v2/10-follow-public.md). Everything is built into a payload and encrypted on
 // this device (lib/content createPost); photos and videos are re-encoded / encrypted before upload, with
 // progress shown while they go up. Phase 3: an optional disappearing timer and a publish time (scheduled
 // posts wait, sealed and visible only to their author, until then). With no connection a post (and its
@@ -20,7 +22,9 @@ import { clean, linkPostMedia } from '@/lib/feed/feed';
 import { firstUrl } from '@/lib/feed/linkMeta';
 import { loadLinkDraft, normalizeUrl, toPayloadLink, uploadPreparedImage, type LinkDraft } from '@/lib/feed/linkPreview';
 import { getGroup, groupAudience, listGroups, myMemberships, readGroup } from '@/lib/groups';
-import { useKeyringReady, useKeyringVersion } from '@/lib/hooks';
+import { useAppNumber, useAppSetting, useKeyringReady, useKeyringVersion } from '@/lib/hooks';
+import { Callout } from '@/components/ui/Callout';
+import { markPublicExplained, publicExplained, useHiddenStore } from '@/lib/social/hiddenStore';
 import { KeyWaitingError } from '@/lib/keys/keyring';
 import { useSession } from '@/lib/keys/session';
 import { deleteMedia, MAX_PHOTO_BYTES, sealPhoto, uploadSealed, type SealedFile } from '@/lib/media';
@@ -69,6 +73,8 @@ export async function resolve(a: ComposerAudience): Promise<{ audience: Audience
     case 'connections': return { audience: { kind: 'friends' } };
     case 'only_me': return { audience: { kind: 'self' } };
     case 'close': return { audience: { kind: 'audience', id: await ensureCloseList() } };
+    case 'followers': return { audience: { kind: 'followers' } };
+    case 'public': return { audience: { kind: 'public' } };
     case 'circle': {
       const g = await getGroup(a.circleId);
       if (!g) throw new Error('circle');
@@ -87,8 +93,17 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
   const toast = useToast();
   const qc = useQueryClient();
   const me = useMe();
-  const { userId } = useSession();
+  const { userId, profile } = useSession();
   const textId = useId();
+  // Followers and Public are offered only to accounts that let people follow them; Public also needs the
+  // operator's switch and an account older than the waiting period (the database enforces all three).
+  const followOn = !!profile?.follow_enabled;
+  const publicOn = useAppSetting('public_posts_enabled').data === true;
+  const minAgeHours = useAppNumber('public_post_min_age_hours', 24);
+  const [mountedAt] = useState(() => Date.now());
+  const tooNew = !!profile?.created_at && mountedAt - Date.parse(profile.created_at) < minAgeHours * 3_600_000;
+  const hiddenStore = useHiddenStore();
+  const [intro, setIntro] = useState(false);
   const [text, setText] = useState('');
   const [audience, setAudience] = useState<ComposerAudience>(initial);
   const [picking, setPicking] = useState(false);
@@ -107,7 +122,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
   const circles = useMyCircles(!fixedAudience);
   const router = useRouter();
   const when = useWhen();
-  const [options, setOptions] = useState<PostOptionsValue>({ disappear: null, schedule: null });
+  const [options, setOptions] = useState<PostOptionsValue>({ disappear: null, schedule: null, comments: null });
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [poll, setPoll] = useState<NonNullable<PostPayload['poll']> | null>(null);
   /** Time capsule: '' = picker open but no date yet, null = not a capsule. */
@@ -213,10 +228,21 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
     setVideo((v) => (v && v.file === file ? { file, probe, poster } : v));
   }
 
-  async function submit(e: FormEvent) {
+  function submit(e: FormEvent) {
     e.preventDefault();
+    void send();
+  }
+
+  /** `explained`: the "Public means anyone" explanation was just confirmed. */
+  async function send(explained = false) {
     if (busy || !userId) return;
     setErr(null);
+    // Before the very first public post: say plainly what Public means, once (remembered in the vault).
+    if (audience.kind === 'public' && !explained && !hiddenStore.publicExplained) {
+      // Not read from the vault yet (or unreadable right now): ask rather than skip the explanation.
+      const seen = await publicExplained().catch(() => false);
+      if (!seen) { setIntro(true); return; }
+    }
     const body = text.trim().slice(0, MAX_TEXT);
     const pendingLink = req.current;
     const capsuleAt = capsule ? new Date(capsule) : null;
@@ -244,7 +270,8 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
       let kind: PostKind = 'status';
       if (body) payload.text = body;
       if (readyPoll) payload.poll = readyPoll;
-      const mentioned = body ? await resolveMentions(body).catch(() => [] as string[]) : [];
+      const wide = audience.kind === 'followers' || audience.kind === 'public';
+      const mentioned = body ? await resolveMentions(body, wide).catch(() => [] as string[]) : [];
       if (mentioned.length) payload.mentions = mentioned;
       if (photos.length) {
         kind = 'photo';
@@ -280,7 +307,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
       const finalPayload: PostPayload = capsuleAt ? { capsule: await sealCapsule(clean(payload), capsuleAt) } : clean(payload);
       const postArgs = {
         id, kind: capsuleAt ? 'status' as const : kind, payload: finalPayload, audience: target.audience, groupId: target.groupId, eventId: target.eventId,
-        publishAt: schedule ? schedule.toISOString() : null, disappearSecs: options.disappear,
+        publishAt: schedule ? schedule.toISOString() : null, disappearSecs: options.disappear, commentPolicy: options.comments ?? null,
       };
       // Sealed once; sent now, or (no connection) kept as is in the outbox.
       const sealed = await sealPost(postArgs);
@@ -315,7 +342,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
       if (mentioned.length && !schedule && !capsuleAt) await notifyMentions(mentioned, 'post', id);
       setText(''); clearPhotos(); setVideo(null); setLink(null); setPoll(null); setCapsule(null); skip.current.clear();
       void saveDraft(draftKey, '').catch(() => undefined);
-      setOptions({ disappear: null, schedule: null });
+      setOptions({ disappear: null, schedule: null, comments: null });
       if (schedule) {
         toast({ message: t('schedule.done', { when: when(schedule) }), action: { label: t('schedule.view'), onClick: () => router.push('/you/scheduled') } });
         void qc.invalidateQueries({ queryKey: ['scheduled'] });
@@ -333,9 +360,12 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
   const audienceLabel = audience.kind === 'connections' ? t('feed.toConnections')
     : audience.kind === 'only_me' ? t('feed.toOnlyMe')
     : audience.kind === 'close' ? t('close.audience')
+    : audience.kind === 'followers' ? t('follow.aud.followers')
+    : audience.kind === 'public' ? t('follow.aud.public')
     : audience.kind === 'circle' ? (circles.find((c) => c.id === audience.circleId)?.name ?? t('feed.audienceCircle'))
     : t('feed.audienceEvent');
-  const audienceIcon = audience.kind === 'only_me' ? 'lock' : audience.kind === 'close' ? 'heart' : audience.kind === 'circle' ? 'circles' : audience.kind === 'event' ? 'calendar' : 'users';
+  const audienceIcon = audience.kind === 'only_me' ? 'lock' : audience.kind === 'close' ? 'heart' : audience.kind === 'circle' ? 'circles' : audience.kind === 'event' ? 'calendar'
+    : audience.kind === 'followers' ? 'userCheck' : audience.kind === 'public' ? 'globe' : 'users';
   // Right after sign-in the keyring is still loading this account's keys: wait instead of failing.
   const keysReady = useKeyringReady();
   const canPost = !busy && keysReady && (!!text.trim() || photos.length > 0 || !!video || !!link || !!poll);
@@ -398,6 +428,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
           </div>
         ) : null}
         <PostOptionChips value={options} disabled={busy} onChange={setOptions} onOpen={() => setOptionsOpen(true)} />
+        {audience.kind === 'public' ? <p className="k-public-note k-small" role="note"><Icon name="globe" /> {t('follow.public.composerNote')}</p> : null}
         {err ? <p className="k-error" role="alert"><Icon name="alert" />{err}</p> : null}
         {!keysReady ? <p className="k-muted k-small k-composer-wait" role="status"><Icon name="lock" />{t('feed.preparingKeys')}</p> : null}
 
@@ -428,25 +459,41 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
       <PostOptionsDialog open={optionsOpen} value={options} onClose={() => setOptionsOpen(false)} onChange={(v) => { setOptions(v); setErr(null); }} />
       {!fixedAudience ? (
         <Dialog open={picking} onClose={() => setPicking(false)} title={t('feed.audiencePicker')} sheet>
-          <AudienceOptions value={audience} circles={circles} onPick={(a) => { setAudience(a); setPicking(false); }} />
+          <AudienceOptions value={audience} circles={circles} onPick={(a) => { setAudience(a); setPicking(false); }}
+            follow={followOn ? { publicOn, tooNew, minAgeHours } : undefined} />
         </Dialog>
       ) : null}
+      <Dialog open={intro} onClose={() => setIntro(false)} title={t('follow.public.introTitle')}
+        footer={<>
+          <Button variant="ghost" onClick={() => setIntro(false)}>{t('feed.cancel')}</Button>
+          <Button variant="primary" icon="globe" onClick={() => {
+            setIntro(false);
+            void markPublicExplained().catch(() => undefined).then(() => send(true));
+          }}>{t('follow.public.introConfirm')}</Button>
+        </>}>
+        <div className="k-stack">
+          <Callout tone="warning" icon="globe">{t('follow.public.introBody')}</Callout>
+          <p className="k-small k-muted">{t('follow.public.introMore')}</p>
+        </div>
+      </Dialog>
     </Card>
   );
 }
 
-export function AudienceOptions({ value, circles, onPick, allowOnlyMe = true }: {
+export function AudienceOptions({ value, circles, onPick, allowOnlyMe = true, follow }: {
   value: ComposerAudience | { kind: 'connections' } | { kind: 'circle'; circleId: string };
   circles: { id: string; name: string }[];
   onPick: (a: ComposerAudience) => void;
   allowOnlyMe?: boolean;
+  /** Set for accounts that let people follow them: adds Followers and (when allowed) Public. */
+  follow?: { publicOn: boolean; tooNew: boolean; minAgeHours: number };
 }) {
   const t = useT();
-  const opt = (a: ComposerAudience, icon: 'users' | 'lock' | 'circles' | 'heart', title: string, sub: string) => {
+  const opt = (a: ComposerAudience, icon: 'users' | 'lock' | 'circles' | 'heart' | 'userCheck' | 'globe', title: string, sub: string, disabled = false) => {
     const on = a.kind === value.kind && (a.kind !== 'circle' || (value.kind === 'circle' && value.circleId === a.circleId));
     return (
       <li key={a.kind === 'circle' ? a.circleId : a.kind}>
-        <button type="button" className="k-item k-aud-opt" aria-pressed={on} onClick={() => onPick(a)}>
+        <button type="button" className="k-item k-aud-opt" aria-pressed={on} disabled={disabled} onClick={() => onPick(a)}>
           <span className="k-item-lead k-item-icon"><Icon name={icon} /></span>
           <span className="k-item-body"><span className="k-item-title">{title}</span><span className="k-item-sub">{sub}</span></span>
           <span className="k-item-trail">{on ? <Icon name="check" /> : null}</span>
@@ -461,6 +508,16 @@ export function AudienceOptions({ value, circles, onPick, allowOnlyMe = true }: 
         {opt({ kind: 'close' }, 'heart', t('close.audience'), t('close.audienceSub'))}
         {allowOnlyMe ? opt({ kind: 'only_me' }, 'lock', t('feed.toOnlyMe'), t('feed.toOnlyMeSub')) : null}
       </ul>
+      {follow ? (
+        <>
+          <h3 className="k-section-title">{t('follow.aud.heading')}</h3>
+          <ul className="k-list" role="list">
+            {opt({ kind: 'followers' }, 'userCheck', t('follow.aud.followers'), t('follow.aud.followersSub'))}
+            {follow.publicOn ? opt({ kind: 'public' }, 'globe', t('follow.aud.public'),
+              follow.tooNew ? t('follow.aud.publicTooNew', { count: follow.minAgeHours }) : t('follow.aud.publicSub'), follow.tooNew) : null}
+          </ul>
+        </>
+      ) : null}
       <h3 className="k-section-title">{t('feed.circlesHeading')}</h3>
       {circles.length ? (
         <ul className="k-list" role="list">

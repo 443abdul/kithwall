@@ -9,10 +9,12 @@ export interface ProfileRow {
   suspended_until: string | null; created_at: string;
   /** Set by the person's legacy contact after release: the profile shows "Remembering <name>" (lib/legacy). */
   memorialised_at?: string | null;
+  /** "Let people follow me" (docs/v2/10-follow-public.md): anyone signed in may follow; display_name_public is then set. */
+  follow_enabled?: boolean;
 }
 
 export interface AudienceRow {
-  id: Uuid; owner_id: Uuid; kind: 'friends' | 'list' | 'group' | 'event' | 'conversation' | 'self';
+  id: Uuid; owner_id: Uuid; kind: 'friends' | 'list' | 'group' | 'event' | 'conversation' | 'self' | 'followers';
   current_epoch: number; name_enc: unknown; created_at: string;
 }
 
@@ -31,7 +33,14 @@ export interface PostRow {
   publish_at?: string | null;
   /** Disappearing posts (phase 3): the chosen timer and when the server deletes the post. */
   disappear_secs?: number | null; expires_at?: string | null;
+  /** Who can comment on this post (null: the author's account setting). Enforced by the database. */
+  comment_policy?: CommentPolicy | null;
+  /** A Public post hidden after reports until a moderator reviews it (only its author and moderators still see it). */
+  public_hidden_at?: string | null; public_reviewed_at?: string | null;
 }
+
+/** Who can comment / who can mention (docs/v2/10-follow-public.md §6). */
+export type CommentPolicy = 'everyone' | 'followers' | 'connections' | 'nobody';
 
 export interface CommentRow {
   id: Uuid; post_id: Uuid | null; photo_id: Uuid | null; author_id: Uuid; envelope: Envelope; created_at: string;

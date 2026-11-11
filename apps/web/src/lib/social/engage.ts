@@ -85,15 +85,20 @@ export function reactionOf(row: PostRow, like: LikeRow): Reaction {
 }
 
 // --------------------------------------------------------------------------------------- mentions
-/** The connections a text mentions (only they can read it, so only they are notified). */
-export async function resolveMentions(text: string): Promise<string[]> {
+/**
+ * The people a text mentions. Normally only my connections (only they can read it, so only they are
+ * notified). `wide`: the post goes to my followers or is public, so accounts that let people follow them can
+ * be mentioned too; whether each one is told is up to their "Who can mention me" setting, which the
+ * database enforces.
+ */
+export async function resolveMentions(text: string, wide = false): Promise<string[]> {
   const handles = handlesIn(text);
   if (!handles.length) return [];
   const friends = new Set(await myFriendIds());
   const ids: string[] = [];
   for (const h of handles) {
     const p = await people.byUsername(h).catch(() => null);
-    if (p && p.id !== me() && friends.has(p.id)) ids.push(p.id);
+    if (p && p.id !== me() && (friends.has(p.id) || (wide && p.follow_enabled))) ids.push(p.id);
   }
   return ids;
 }

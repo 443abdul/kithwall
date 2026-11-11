@@ -3,6 +3,9 @@
 // can carry sender proof that the database checked, reports.frank), decisions
 // recorded in moderation_actions / reports (RPC mod_remove_content); admins also appoint moderators and
 // change operator settings (sign-ups, the Public audience, the trusted-friend waiting period).
+// Public posts and public comments (docs/v2/10-follow-public.md §7) arrive as readable text signed by their
+// author (./verify.ts checks the signature); a public post that enough different accounts reported is
+// hidden automatically until a moderator removes it or decides it may stay (RPC mod_restore_public_post).
 // The database enforces every permission (staff_roles + RLS); this screen only hides what can't work.
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -30,7 +33,7 @@ import { payloadText, reporterCopy, verifyReport, type ReportRow, type Verificat
 
 type Role = 'admin' | 'moderator';
 type Status = 'open' | 'actioned' | 'dismissed';
-type Action = 'remove' | 'warn' | 'suspend' | 'ban' | 'restore' | 'dismiss';
+type Action = 'remove' | 'warn' | 'suspend' | 'ban' | 'restore' | 'dismiss' | 'keep';
 
 const REASONS = ['spam', 'harassment', 'hate', 'violence', 'nudity', 'child_safety', 'self_harm', 'impersonation', 'illegal', 'other'];
 const FRANK_LABEL = {
@@ -146,6 +149,22 @@ function ReportDetail({ r, role, onChanged, onBack }: { r: ReportRow; role: Role
   const [days, setDays] = useState('7');
   const [history, setHistory] = useState<{ action: string; reason: string; created_at: string }[]>([]);
   const when = (iso: string) => f.date(new Date(iso), { dateStyle: 'medium', timeStyle: 'short' });
+  // A public post: readable by anyone, and hidden automatically once enough different accounts reported it.
+  const isPublic = r.stored_meta?.is_public === true && (r.target_kind === 'post' || r.target_kind === 'photo');
+  const publicPost = r.target_kind === 'post' && r.stored_meta?.is_public === true && !!r.stored_meta?.wall_owner_id;
+  const [pub, setPub] = useState<{ hidden: boolean; reviewed: boolean; reporters: number } | null>(null);
+
+  useEffect(() => {
+    if (!publicPost) return;
+    void Promise.all([
+      sb().from('posts').select('public_hidden_at, public_reviewed_at').eq('id', r.target_id).maybeSingle(),
+      sb().from('reports').select('reporter_id').eq('target_kind', 'post').eq('target_id', r.target_id).limit(1000),
+    ]).then(([p, reps]) => {
+      const row = p.data as { public_hidden_at: string | null; public_reviewed_at: string | null } | null;
+      if (!row) { setPub(null); return; }
+      setPub({ hidden: !!row.public_hidden_at, reviewed: !!row.public_reviewed_at, reporters: new Set(((reps.data ?? []) as { reporter_id: string }[]).map((x) => x.reporter_id)).size });
+    });
+  }, [publicPost, r.target_id]);
 
   useEffect(() => {
     void verifyReport(r).then(setV).catch((e) => setV({ state: 'unverifiable', why: (e as Error).message }));
@@ -164,6 +183,8 @@ function ReportDetail({ r, role, onChanged, onBack }: { r: ReportRow; role: Role
         must(await sb().from('reports').update({ status: 'dismissed', decision_note: reason }).eq('id', r.id));
       } else if (kind === 'remove') {
         must(await sb().rpc('mod_remove_content', { report: r.id, note: reason }));
+      } else if (kind === 'keep') {
+        must(await sb().rpc('mod_restore_public_post', { report: r.id, note: reason }));
       } else {
         if (!r.target_owner_id) throw new Error(t('mod.deletedAccount'));
         const expires = kind === 'suspend' ? new Date(Date.now() + Number(days) * 86400_000).toISOString() : null;
@@ -188,7 +209,10 @@ function ReportDetail({ r, role, onChanged, onBack }: { r: ReportRow; role: Role
         <div className="k-row-wrap">
           <h2 className="k-card-title">{L.reason(r.reason)} · {L.kind(r.target_kind)}</h2>
           <Badge tone={r.status === 'open' ? 'danger' : 'neutral'}>{t(`mod.status.${r.status}` as MessageKey)}</Badge>
+          {isPublic ? <Badge tone="neutral">{t('mod.public.badge')}</Badge> : null}
         </div>
+        {pub?.hidden ? <Callout tone="warning">{t('mod.public.hidden', { count: pub.reporters })}</Callout>
+          : pub ? <p className="k-small k-muted">{t('mod.public.reporters', { count: pub.reporters })}{pub.reviewed ? ` ${t('mod.public.reviewed')}` : ''}</p> : null}
         <dl className="k-mod-facts">
           <dt>{t('mod.reported')}</dt>
           <dd><span className="k-row"><PersonAvatar id={r.target_owner_id} size={28} /> {L.who(r.target_owner_id)}</span></dd>
@@ -236,6 +260,7 @@ function ReportDetail({ r, role, onChanged, onBack }: { r: ReportRow; role: Role
         <div className="k-row-wrap">
           {r.status === 'open' ? <Button variant="secondary" disabled={busy} onClick={() => setConfirm('dismiss')}>{t('mod.action.dismiss')}</Button> : null}
           {removable ? <Button variant="danger" disabled={busy} onClick={() => setConfirm('remove')}>{t('mod.action.remove')}</Button> : null}
+          {pub && r.status === 'open' ? <Button variant="secondary" disabled={busy} onClick={() => setConfirm('keep')}>{t('mod.action.keep')}</Button> : null}
           <Button variant="secondary" disabled={busy || !r.target_owner_id} onClick={() => setConfirm('warn')}>{t('mod.action.warn')}</Button>
         </div>
         <div className="k-row-wrap">
@@ -276,6 +301,8 @@ function Admin() {
   const [settings, setSettings] = useState<Record<string, unknown>>({});
   const [err, setErr] = useState<string | null>(null);
   const [wait, setWait] = useState('24');
+  const [hideAt, setHideAt] = useState('5');
+  const [minAge, setMinAge] = useState('24');
   const [handle, setHandle] = useState('');
   const [newRole, setNewRole] = useState<Role>('moderator');
 
@@ -288,6 +315,8 @@ function Admin() {
       const map = Object.fromEntries(a.map((x) => [x.key, x.value]));
       setSettings(map);
       setWait(String(map.recovery_wait_hours ?? 24));
+      setHideAt(String(map.public_report_hide_threshold ?? 5));
+      setMinAge(String(map.public_post_min_age_hours ?? 24));
     } catch (x) { setErr((x as Error).message); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -362,6 +391,18 @@ function Admin() {
           <form className="k-row-wrap k-mod-wait" onSubmit={(e) => { e.preventDefault(); void setSetting('recovery_wait_hours', Number(wait)); }}>
             <TextField label={t('mod.wait')} hint={t('mod.waitNote')} type="number" min={0} max={168} step={1} value={wait}
               onChange={(e) => setWait(e.target.value)} dir="ltr" />
+            <Button type="submit" variant="secondary">{t('mod.save')}</Button>
+          </form>
+          <Switch checked={settings.public_posts_enabled === true} onChange={(v) => void setSetting('public_posts_enabled', v)}
+            label={t('mod.publicPosts')} description={t('mod.publicPostsNote')} />
+          <form className="k-row-wrap k-mod-wait" onSubmit={(e) => { e.preventDefault(); void setSetting('public_report_hide_threshold', Number(hideAt)); }}>
+            <TextField label={t('mod.hideThreshold')} hint={t('mod.hideThresholdNote')} type="number" min={1} max={1000} step={1} value={hideAt}
+              onChange={(e) => setHideAt(e.target.value)} dir="ltr" />
+            <Button type="submit" variant="secondary">{t('mod.save')}</Button>
+          </form>
+          <form className="k-row-wrap k-mod-wait" onSubmit={(e) => { e.preventDefault(); void setSetting('public_post_min_age_hours', Number(minAge)); }}>
+            <TextField label={t('mod.minAge')} hint={t('mod.minAgeNote')} type="number" min={0} max={720} step={1} value={minAge}
+              onChange={(e) => setMinAge(e.target.value)} dir="ltr" />
             <Button type="submit" variant="secondary">{t('mod.save')}</Button>
           </form>
         </Card>

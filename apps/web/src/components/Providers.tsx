@@ -81,6 +81,8 @@ function RealtimeBridge() {
         () => { inv.key(['notifications']); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' },
         () => { inv.key(['friends']); inv.key(['requests']); })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'follows' },
+        () => { inv.key(['follows']); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
         (p) => {
           inv.key(['conversations']);
@@ -106,6 +108,8 @@ function RealtimeBridge() {
       .on('broadcast', { event: 'change' }, ({ payload }) => {
         const t = (payload as { t?: unknown } | undefined)?.t;
         if (t === 'friendships') { inv.key(['friends']); inv.key(['requests']); }
+        // Someone unfollowed me, or I was removed from someone's followers (docs/v2/10-follow-public.md).
+        else if (t === 'follows') inv.key(['follows']);
         else if (t === 'likes') inv.likes();
         // A connection (or I, on another device) changed a profile: re-read the ones that changed
         // (the notice names no one; lib/people compares cheap stamps). 20261031000100_profile_info_live.sql

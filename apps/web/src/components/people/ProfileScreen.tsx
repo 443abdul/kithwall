@@ -2,6 +2,9 @@
 // A person's profile (/u/[handle]): header (avatar, name, @handle, short bio, connection action) and
 // tabs Posts / Photos / About. Everything but the handle is end-to-end encrypted to the person's
 // connections (profile_info), so strangers only see the handle and a Connect button.
+// An account that lets people follow it (docs/v2/10-follow-public.md) also shows its public name, its
+// follower count and a Follow button to everyone signed in, and its Public posts (plus, to followers, its
+// Followers posts once the key has arrived from one of its owner's devices).
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useT } from '@/i18n';
@@ -33,6 +36,7 @@ import { VerifiedBadge } from '@/components/verify/VerifiedBadge';
 import { EditProfileDialog } from './EditProfile';
 import { PersonActions } from './PersonActions';
 import { RequestSafety } from './RequestSafety';
+import { followKeyReady, useFollowInfo } from '@/lib/follow/follow';
 
 type Tab = 'posts' | 'photos' | 'about';
 
@@ -62,9 +66,13 @@ function Profile({ id }: { id: string }) {
   const avatar = useFileUrl(p?.info?.avatar?.med ?? p?.info?.avatar?.thumb);
   const [tab, setTab] = useState<Tab>('posts');
   const [editing, setEditing] = useState(false);
+  const follow = useFollowInfo(id).data ?? null;
   if (!p) return <Page title="…"><div className="k-center"><Spinner size={28} /></div></Page>;
   const self = id === userId;
-  const canRead = self || !!p.info;
+  const connected = self || !!p.info;
+  const canRead = connected || !!p.follow_enabled;
+  // I follow them, but none of their devices has been online since to hand over the key of their Followers posts.
+  const waitingForKey = !self && !!follow?.iFollow && !!follow.audienceId && !followKeyReady(follow);
   return (
     <Page title={p.name} back={self ? { href: '/you', label: t('common.back') } : undefined}>
       {!self ? <KeyChangeBanner userId={id} name={p.name} handle={p.username} /> : null}
@@ -80,6 +88,12 @@ function Profile({ id }: { id: string }) {
         <div className="k-profile-head-text">
           <h2 className="k-profile-name">{p.name}{!self ? <> <VerifiedBadge userId={id} /></> : null}</h2>
           <p className="k-muted k-ltr">@{p.username}</p>
+          {p.follow_enabled && follow?.followers != null ? (
+            <p className="k-small k-profile-followers">
+              <Icon name="userCheck" /> {t('follow.count', { count: follow.followers })}
+              {follow.followsMe ? <span className="k-chip">{t('follow.followsYou')}</span> : null}
+            </p>
+          ) : null}
           {p.info?.bio ? <p className="k-profile-bio" dir="auto">{p.info.bio}</p> : null}
         </div>
         <div className="k-profile-head-actions">
@@ -88,11 +102,16 @@ function Profile({ id }: { id: string }) {
           {!self ? <ButtonLink href={`/u/${encodeURIComponent(p.username)}/verify`} variant="ghost" size="sm" icon="shield">{t('verify.profileLink')}</ButtonLink> : null}
         </div>
       </Card>
+      {waitingForKey ? <Callout icon="key">{t('follow.waitingKey', { name: p.name })}</Callout> : null}
+      {canRead && !connected ? (
+        <p className="k-muted k-small"><Icon name="info" /> {follow?.iFollow ? t('follow.profileFollowing') : t('follow.profilePublic')}</p>
+      ) : null}
       {canRead ? (
         <Tabs label={t('profile.tabs')} value={tab} onChange={setTab} items={[
           { value: 'posts', label: t('profile.posts'), panel: <Feed scope={{ kind: 'profile', userId: id }} empty={<Card><EmptyState icon="edit" title={t('profile.noPosts')} /></Card>} /> },
           { value: 'photos', label: t('profile.photos'), panel: <ProfilePhotos userId={id} /> },
-          { value: 'about', label: t('profile.about'), panel: <About person={p} /> },
+          // The rest of a profile is encrypted to connections; followers see the public name only.
+          ...(connected ? [{ value: 'about' as Tab, label: t('profile.about'), panel: <About person={p} /> }] : []),
         ]} />
       ) : (
         <Card>
