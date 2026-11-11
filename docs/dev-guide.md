@@ -43,7 +43,10 @@ supabase/migrations       schema + RLS;  supabase/tests  pgTAP RLS tests
    it** (`docs/v2/10-follow-public.md`): gated by `profiles.follow_enabled`, `public_posts_enabled` and the
    account's age, read through `lib/public/posts.ts` (signature checked before display), always labelled
    Public. Followers posts are NOT public: they use the owner's `followers` audience key like any other
-   encrypted audience.
+   encrypted audience. Reels (`docs/v2/12-reels.md`) are posts of kind `reel` and follow the same rule: a
+   Public reel is the only kind the server can read. **Never add a request that tells the server what
+   someone watched** (views, impressions, watch time, skips): the reels feed is ordered on the device from
+   a profile that stays there (`lib/reels/rank.ts`, `lib/reels/store.ts`).
 3. No `dangerouslySetInnerHTML`, no `eval`, no third-party scripts, fonts, images or iframes.
    Production CSP enforces Trusted Types. Inline `style={{}}` is fine.
 4. User links: only `http:`/`https:`, rendered with `rel="noopener noreferrer nofollow"` and `target="_blank"`.

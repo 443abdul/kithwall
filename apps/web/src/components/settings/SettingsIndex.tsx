@@ -18,6 +18,7 @@ const PAGES: { slug: string; icon: IconName; title: MessageKey; sub: MessageKey 
   { slug: 'security', icon: 'key', title: 'settings.security.title', sub: 'settings.security.sub' },
   { slug: 'privacy', icon: 'eye', title: 'settings.privacy.title', sub: 'settings.privacy.sub' },
   { slug: 'following', icon: 'userCheck', title: 'follow.settings.title', sub: 'follow.settings.sub' },
+  { slug: 'reels', icon: 'reel', title: 'reels.settings.title', sub: 'reels.settings.sub' },
   { slug: 'notifications', icon: 'activity', title: 'settings.notifications.title', sub: 'settings.notifications.sub' },
   { slug: 'data', icon: 'share', title: 'settings.data.title', sub: 'settings.data.sub' },
   { slug: 'apps', icon: 'download', title: 'install.settings.title', sub: 'install.settings.sub' },

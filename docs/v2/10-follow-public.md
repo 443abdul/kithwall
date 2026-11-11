@@ -138,7 +138,7 @@ A new main destination (`/explore`, `components/explore`).
   it did not already hold (it stores both graphs) and is not told which suggestions were shown, opened or
   dismissed.
 
-**Seam for further public feeds** (e.g. short videos):
+**Seam for further public feeds** (used by reels, `12-reels.md`: `kinds: ['reel']`):
 
 - data: `fetchPublicPosts({ sort, kinds, authorId, limit }, cursor)` and `publicPostsKey` in
   `lib/public/posts.ts` (SQL: `explore_posts(p_sort, p_kinds, p_before, p_offset, p_limit, p_author)`;

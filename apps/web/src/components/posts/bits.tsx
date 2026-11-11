@@ -48,7 +48,10 @@ export function RichText({ text, clamp = 700, className }: { text: string; clamp
   );
 }
 
-/** Plain text with @handles turned into profile links (only the text the person wrote; never HTML). */
+/**
+ * Plain text with @handles turned into profile links (only the text the person wrote; never HTML). The
+ * links are not fetched ahead: a prefetch would tell the web server which post or reel is on screen.
+ */
 function withMentions(text: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
   let last = 0;
@@ -56,7 +59,7 @@ function withMentions(text: string): React.ReactNode {
     const at = m.index! + m[1]!.length;
     const handle = m[2]!.replace(/[._-]+$/, '');
     if (at > last) parts.push(text.slice(last, at));
-    parts.push(<Link key={at} href={'/u/' + encodeURIComponent(handle.toLowerCase())} className="k-mention k-ltr">@{handle}</Link>);
+    parts.push(<Link key={at} href={'/u/' + encodeURIComponent(handle.toLowerCase())} prefetch={false} className="k-mention k-ltr">@{handle}</Link>);
     last = at + 1 + handle.length;
   }
   if (!parts.length) return text;

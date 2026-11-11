@@ -61,6 +61,7 @@ const P: Record<string, ReactElement> = {
   flag: <><path d="M5.5 21V4" /><path d="M5.5 4.5h11l-2.5 4 2.5 4h-11" /></>,
   send: <><path d="M4 12l16-8-6 16-2.5-6.5z" /><path d="M11.5 13.5 20 4" /></>,
   play: <path d="M8 5.5v13l11-6.5z" />,
+  reel: <><rect x="5" y="2.5" width="14" height="19" rx="3" /><path d="M10.5 9.5v5l4-2.5z" /></>,
   pause: <path d="M8 5.5v13M16 5.5v13" />,
   volume: <><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" /><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /></>,
   volumeOff: <><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" /><path d="M16 9.5l5 5M21 9.5l-5 5" /></>,

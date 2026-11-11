@@ -303,6 +303,8 @@ function Admin() {
   const [wait, setWait] = useState('24');
   const [hideAt, setHideAt] = useState('5');
   const [minAge, setMinAge] = useState('24');
+  const [reelDaily, setReelDaily] = useState('10');
+  const [reelMax, setReelMax] = useState('16');
   const [handle, setHandle] = useState('');
   const [newRole, setNewRole] = useState<Role>('moderator');
 
@@ -317,6 +319,8 @@ function Admin() {
       setWait(String(map.recovery_wait_hours ?? 24));
       setHideAt(String(map.public_report_hide_threshold ?? 5));
       setMinAge(String(map.public_post_min_age_hours ?? 24));
+      setReelDaily(String(map.reel_daily_limit ?? 10));
+      setReelMax(String(map.reel_max_mb ?? 16));
     } catch (x) { setErr((x as Error).message); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -403,6 +407,18 @@ function Admin() {
           <form className="k-row-wrap k-mod-wait" onSubmit={(e) => { e.preventDefault(); void setSetting('public_post_min_age_hours', Number(minAge)); }}>
             <TextField label={t('mod.minAge')} hint={t('mod.minAgeNote')} type="number" min={0} max={720} step={1} value={minAge}
               onChange={(e) => setMinAge(e.target.value)} dir="ltr" />
+            <Button type="submit" variant="secondary">{t('mod.save')}</Button>
+          </form>
+          <Switch checked={settings.reels_enabled === true} onChange={(v) => void setSetting('reels_enabled', v)}
+            label={t('mod.reels')} description={t('mod.reelsNote')} />
+          <form className="k-row-wrap k-mod-wait" onSubmit={(e) => { e.preventDefault(); void setSetting('reel_daily_limit', Number(reelDaily)); }}>
+            <TextField label={t('mod.reelDaily')} hint={t('mod.reelDailyNote')} type="number" min={1} max={200} step={1} value={reelDaily}
+              onChange={(e) => setReelDaily(e.target.value)} dir="ltr" />
+            <Button type="submit" variant="secondary">{t('mod.save')}</Button>
+          </form>
+          <form className="k-row-wrap k-mod-wait" onSubmit={(e) => { e.preventDefault(); void setSetting('reel_max_mb', Number(reelMax)); }}>
+            <TextField label={t('mod.reelMax')} hint={t('mod.reelMaxNote')} type="number" min={1} max={30} step={1} value={reelMax}
+              onChange={(e) => setReelMax(e.target.value)} dir="ltr" />
             <Button type="submit" variant="secondary">{t('mod.save')}</Button>
           </form>
         </Card>

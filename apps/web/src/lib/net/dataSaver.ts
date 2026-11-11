@@ -4,7 +4,8 @@
 // "Lite mode" / Data Saver flag, or a 2G/3G-class connection). While it is on:
 //  - feed photos load their small copy; the full one only when opened,
 //  - videos (stories included) and link-preview images wait for a tap,
-//  - photos I send are shrunk harder,
+//  - reels show their cover and a play button, and the next one is not fetched ahead (docs/v2/12-reels.md),
+//  - photos I send are shrunk harder, and reels I make are encoded smaller,
 //  - calls start in their low-bandwidth mode.
 // The meter counts the media this device downloaded today (ciphertext bytes, the data actually used).
 import { useSyncExternalStore } from 'react';
@@ -13,7 +14,7 @@ export type DataSaverMode = 'auto' | 'on' | 'off';
 const KEY = 'kw.dataSaver';
 const METER = 'kw.dataMeter';
 
-interface NetInfo { saveData?: boolean; effectiveType?: string; addEventListener?: (t: string, f: () => void) => void }
+interface NetInfo { saveData?: boolean; effectiveType?: string; type?: string; addEventListener?: (t: string, f: () => void) => void }
 const conn = (): NetInfo | null => (typeof navigator !== 'undefined' ? ((navigator as unknown as { connection?: NetInfo }).connection ?? null) : null);
 
 const listeners = new Set<() => void>();
@@ -41,6 +42,11 @@ export function dataSaverActive(): boolean {
   if (m !== 'auto') return m === 'on';
   const c = conn();
   return !!c && (c.saveData === true || c.effectiveType === 'slow-2g' || c.effectiveType === '2g' || c.effectiveType === '3g');
+}
+
+/** Does the browser say this device is on mobile data right now? (false when it doesn't tell) */
+export function onMobileData(): boolean {
+  return conn()?.type === 'cellular';
 }
 
 const subscribe = (l: () => void) => { wire(); listeners.add(l); return () => { listeners.delete(l); }; };

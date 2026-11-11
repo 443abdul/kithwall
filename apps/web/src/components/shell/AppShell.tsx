@@ -47,6 +47,9 @@ export function useMe() {
   return { userId, name: p?.name ?? profile?.username ?? '', handle: profile?.username ?? '', avatar: url ?? null };
 }
 
+/** Routes shown without the shell's bars. */
+const IMMERSIVE: readonly string[] = ['/reels'];
+
 export function AppShell({ children, base = '' }: { children: ReactNode; base?: string }) {
   const t = useT();
   const raw = usePathname() ?? '/home';
@@ -77,6 +80,16 @@ export function AppShell({ children, base = '' }: { children: ReactNode; base?: 
       </li>
     );
   });
+
+  // Full-screen screens (reels: docs/v2/12-reels.md) take the whole viewport: no bars, no rail, nothing
+  // behind them to tab into, and no pull-to-refresh fighting their own vertical swipe.
+  if (IMMERSIVE.includes(path)) {
+    return (
+      <BaseContext.Provider value={base}>
+        <div className="k-app-immersive">{base ? null : <LegacyHeartbeat />}{children}</div>
+      </BaseContext.Provider>
+    );
+  }
 
   return (
     <BaseContext.Provider value={base}>

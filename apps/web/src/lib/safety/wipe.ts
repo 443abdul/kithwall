@@ -15,6 +15,7 @@ import { deleteDeviceDatabase } from '../keys/device';
 import { sb } from '../supabase';
 import { clearSwHidden } from './swmirror';
 import { deleteKitDropDatabase } from '../social/kitdrop';
+import { deleteReelsDatabase } from '../reels/store';
 import { offlineStore } from '../keys/offline';
 import { isNative } from '../native';
 
@@ -49,6 +50,7 @@ async function dropStorage(): Promise<void> {
   await deleteDeviceDatabase();
   await clearSwHidden();
   await deleteKitDropDatabase();
+  await deleteReelsDatabase(); // what reels learned and the time controls (lib/reels/store)
   await offlineStore.clear();
   try {
     const dbs = await indexedDB.databases?.();

@@ -23,7 +23,8 @@ export interface FriendshipRow {
   note: unknown; created_at: string; accepted_at: string | null;
 }
 
-export type PostKind = 'status' | 'photo' | 'link' | 'video' | 'note' | 'share';
+/** 'reel': a short vertical video (docs/v2/12-reels.md); its payload carries `video` and, as caption, `text`. */
+export type PostKind = 'status' | 'photo' | 'link' | 'video' | 'note' | 'share' | 'reel';
 
 export interface PostRow {
   id: Uuid; author_id: Uuid; wall_owner_id: Uuid | null; group_id: Uuid | null; event_id: Uuid | null;
@@ -88,6 +89,12 @@ export interface PostPayload {
    * (published at `opens`); until then nobody can read it. A capsule post carries nothing else.
    */
   capsule?: { opens: string; round: number; ct: string };
+  /**
+   * Reels: the language the author's app was in (two letters), so a reader's device can prefer reels in a
+   * language they watch (lib/reels/rank). Part of the post like everything else here: encrypted with it, or
+   * public with it.
+   */
+  lang?: string;
 }
 
 export interface CommentPayload { text: string; /** Kithwall 2: id of the comment this replies to (one level). */ replyTo?: string }
