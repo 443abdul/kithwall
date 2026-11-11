@@ -131,6 +131,34 @@ Design, threat model and production steps: `10-follow-public.md`. In short:
   hidden after reports from 5 accounts until a moderator reviews it; rate limits on follows and public posts;
   a 24-hour wait for new accounts.
 - Left as a seam for a short-video feed: `fetchPublicPosts({ kinds: ['video'] })`, `<PublicFeed>`,
-  `EXPLORE_TABS` (10-follow-public.md §5).
+  `EXPLORE_TABS` (10-follow-public.md §5). Used by reels in round 5 (kind `reel`).
 - Next: a public picture and bio for follow-enabled accounts, reposting to followers, batched key delivery
   for very large accounts (10-follow-public.md §9).
+
+## Round 5 (2026-11-11): reels
+
+The owner's ask: short vertical videos, the "scroll and stay" surface people expect, without watching the
+watcher. Design, exactly what the server does and does not learn, encoding, limits and costs:
+`12-reels.md`. In short:
+
+- **A reel is a post of kind `reel`**: one video of at most 60 seconds, a cover, a caption, for Public,
+  Followers or any existing audience. No new table or column; reports, automatic hiding, moderators, blocks,
+  comment controls and hidden words apply as they do to posts.
+- **Made on the device**: pick or record, trim, choose a cover, and the video is re-encoded to at most 720p
+  (about 7 MB a minute; WebCodecs with `mp4-muxer`, else MediaRecorder, else the original only when it is
+  already small enough) before it is encrypted and uploaded, with progress and cancel. The database enforces a
+  size cap measured by the storage service and a daily limit per account.
+- **Watched full screen**: one reel per screen, plays muted until tapped, pauses out of view and in the
+  background, tap to pause, double tap to like, comments in a sheet, share, report, "Not interested";
+  keyboard and screen-reader support, reduced motion, Data Saver (cover and a play button, nothing fetched
+  ahead), Android Back.
+- **Ranked on the device**: the server hands out generic pages (followed reels by time; public reels by
+  popularity and by time). The device orders them with a small interest profile kept encrypted in IndexedDB,
+  never uploaded, resettable in Settings → Reels. "You're all caught up" comes before discovery continues.
+  **The server gets no watch events, impressions or watch time**; what it can still see is which media files
+  an account downloads, as with any media (said plainly in `12-reels.md` §4).
+- **Time controls**, on the device and off by default: a daily limit (15 / 30 / 45 / 60 minutes) with a calm
+  "You've reached the limit you set" screen, and a "take a break" reminder.
+- Where it lives: a Reels tab in Explore and a shelf on Home. No seventh item in the main navigation.
+- Next: faster-than-real-time encoding (a demuxer feeding `VideoDecoder`), a relay or decoys to blur the
+  media download trail, streaming playback (`12-reels.md` §9).

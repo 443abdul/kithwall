@@ -8,6 +8,7 @@ import { useT, type MessageKey } from '@/i18n';
 import { Segmented } from '@/components/ui/Segmented';
 import type { IconName } from '@/components/ui/Icon';
 import type { PublicSort } from '@/lib/public/posts';
+import { ReelsTab } from '@/components/reels/ReelsTab';
 import { ExplorePeople } from './ExplorePeople';
 import { PublicFeed } from './PublicFeed';
 
@@ -37,5 +38,7 @@ function ExplorePosts() {
 
 export const EXPLORE_TABS: ExploreTab[] = [
   { value: 'posts', label: 'explore.tab.posts', icon: 'globe', render: () => <ExplorePosts /> },
+  // Short videos (docs/v2/12-reels.md): the covers here are the generic popular list; the feed itself is ordered on the device.
+  { value: 'reels', label: 'explore.tab.reels', icon: 'reel', render: () => <ReelsTab /> },
   { value: 'people', label: 'explore.tab.people', icon: 'users', render: () => <ExplorePeople /> },
 ];

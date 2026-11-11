@@ -25,6 +25,8 @@ export const NAV_SECTIONS: { prefix: string; key: NavKey }[] = [
   { prefix: '/notes', key: 'circles' },
   { prefix: '/people', key: 'you' },
   { prefix: '/post', key: 'home' },
+  // Reels open from Explore and from Home. No tab of their own: six are as many as fit on a phone.
+  { prefix: '/reels', key: 'explore' },
   { prefix: '/mod', key: 'you' },
 ];
 

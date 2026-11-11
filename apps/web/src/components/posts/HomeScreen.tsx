@@ -1,7 +1,8 @@
 'use client';
 // Home (docs/v2/00-brief.md §4): stories row, the composer, then a chronological feed of your
 // connections and circles ending in "You're all caught up". Gentle nudges (recovery key, notifications)
-// sit above the composer; the context panel on wide screens holds the invite card.
+// sit above the composer; the context panel on wide screens holds the invite card. A small shelf under the
+// composer leads to reels (docs/v2/12-reels.md).
 import { useT } from '@/i18n';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -13,6 +14,7 @@ import { InstallNudge } from '@/components/install/InstallNudge';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { InviteCard } from '@/components/people/InviteCard';
 import { StoriesRow } from '@/components/stories/Stories';
+import { ReelsShelf } from '@/components/reels/ReelsTab';
 import { Birthdays } from './Birthdays';
 import { Composer, Feed } from '.';
 
@@ -38,6 +40,7 @@ export function HomeScreen() {
       <PushNudge />
       <InstallNudge />
       <Composer audience={{ kind: 'connections' }} />
+      <ReelsShelf />
       <Feed scope={{ kind: 'home' }} empty={
         <Card>
           <EmptyState icon="home" title={t('home.emptyTitle')} body={t('home.emptyBody')}

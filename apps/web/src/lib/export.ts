@@ -30,6 +30,7 @@ import { readGroup, type GroupRow, type MemberRow } from './groups';
 import { readEvent, type EventRow } from './events';
 import { readStory, type StoryRow } from './stories';
 import { fetchReactions, readReaction, type ReactionRow } from './chat/reactions';
+import { loadReelState } from './reels/store';
 import { fetchTransparencyReport } from './transparency/report';
 import { exportLegacy } from './legacy/legacy';
 import { myFollowers, myFollowing, myRestricted } from './follow/follow';
@@ -287,6 +288,13 @@ export async function buildExport(progress: Progress = () => undefined): Promise
     const row = (await sb().from('vault').select('blob, updated_at').eq('user_id', myId).maybeSingle()).data as { blob: string; updated_at: string } | null;
     settings = row ? { updated_at: row.updated_at, ...JSON.parse(new TextDecoder().decode(decryptBlob(deriveVaultKey(amk()), row.blob, `vault/${myId}`))) } : {};
   } catch (e) { skipped++; problems.push({ what: 'settings', why: (e as Error).message }); }
+  // Reels: what THIS device keeps (the interest profile the feed is ordered with, the time controls and
+  // today's watch time). It exists nowhere else: the server has no copy and other devices have their own.
+  let reels: unknown = null;
+  try {
+    const mine = await loadReelState();
+    reels = { note: 'Kept on this device only. Never uploaded, and not shared with your other devices.', profile: mine.profile, time: mine.time };
+  } catch (e) { problems.push({ what: 'reels', why: (e as Error).message }); }
   // Legacy contact: my choice and my note (opened from my own sealed copy), and who chose me.
   let legacy: unknown = null;
   try { legacy = await exportLegacy(); } catch (e) { skipped++; problems.push({ what: 'legacy', why: (e as Error).message }); }
@@ -319,6 +327,7 @@ export async function buildExport(progress: Progress = () => undefined): Promise
   files['data/events.json'] = json(events);
   files['data/messages.json'] = json(conversations);
   files['data/settings.json'] = json(settings);
+  files['data/reels-on-this-device.json'] = json(reels);
   files['data/legacy.json'] = json(legacy);
   files['data/what-kithwall-knows.json'] = json(inventory);
   if (problems.length) files['data/export-problems.json'] = json(problems);

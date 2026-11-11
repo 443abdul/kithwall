@@ -1,5 +1,6 @@
 'use client';
-// The composer: text (with automatic link previews through the no-log proxy), photos, one video, and an
+// The composer: text (with automatic link previews through the no-log proxy), photos, one video, a reel
+// (a short vertical video made in its own sheet, components/reels/ReelComposer), and an
 // audience picker (connections / a circle / only me; for accounts that let people follow them also
 // Followers, still encrypted, and Public, which is signed but NOT encrypted and says so before the first
 // one goes out: docs/v2/10-follow-public.md). Everything is built into a payload and encrypted on
@@ -7,6 +8,7 @@
 // progress shown while they go up. Phase 3: an optional disappearing timer and a publish time (scheduled
 // posts wait, sealed and visible only to their author, until then). With no connection a post (and its
 // photos, already encrypted) waits in the Kit Drop outbox (lib/social/kitdrop); a video can't wait.
+import dynamic from 'next/dynamic';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
@@ -45,6 +47,9 @@ import { CapsulePicker } from './Capsule';
 import { CAPSULE_MAX_MS, CAPSULE_MIN_MS, sealCapsule } from '@/lib/social/capsule';
 import { flushOutbox, queuePost } from '@/lib/social/kitdrop';
 import { isOfflineError } from '@/lib/net/offline';
+
+// Making a reel (trim, cover, on-device encoder) is its own chunk, loaded when someone asks for it.
+const ReelComposer = dynamic(() => import('@/components/reels/ReelComposer').then((m) => m.ReelComposer), { ssr: false });
 
 const MAX_TEXT = 8000;
 const MAX_PHOTOS = 10;
@@ -127,6 +132,9 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
   const [poll, setPoll] = useState<NonNullable<PostPayload['poll']> | null>(null);
   /** Time capsule: '' = picker open but no date yet, null = not a capsule. */
   const [capsule, setCapsule] = useState<string | null>(null);
+  // Reels (docs/v2/12-reels.md): a short video made in its own sheet, for the audience chosen here.
+  const reelsOn = useAppSetting('reels_enabled').data === true;
+  const [reel, setReel] = useState(false);
 
   // Posts written offline wait in the Kit Drop outbox (sealed); send them as soon as there is a connection.
   useEffect(() => {
@@ -437,6 +445,9 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
           <input ref={videoInput} type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={(e) => void pickVideo(e.target.files?.[0])} />
           <IconButton icon="image" label={t('feed.addPhotos')} disabled={busy || !!video || photos.length >= MAX_PHOTOS} onClick={() => photoInput.current?.click()} />
           <IconButton icon="video" label={t('feed.addVideo')} disabled={busy || photos.length > 0 || !!video} onClick={() => videoInput.current?.click()} />
+          {reelsOn && audience.kind !== 'event' ? (
+            <IconButton icon="reel" label={t('reels.new')} disabled={busy} aria-haspopup="dialog" onClick={() => setReel(true)} />
+          ) : null}
           <IconButton icon="listBullet" label={t('poll.add')} disabled={busy || !!poll} onClick={() => setPoll({ options: ['', ''] })} />
           <IconButton icon="gift" label={t('capsule.add')} disabled={busy || capsule !== null} variant={capsule !== null ? 'soft' : 'ghost'} onClick={() => setCapsule('')} />
           <IconButton icon="clock" label={t('schedule.options')} disabled={busy} aria-haspopup="dialog"
@@ -463,6 +474,7 @@ export function Composer({ audience: initial, fixedAudience, placeholder, onPost
             follow={followOn ? { publicOn, tooNew, minAgeHours } : undefined} />
         </Dialog>
       ) : null}
+      {reel ? <ReelComposer open onClose={() => setReel(false)} audience={audience} fixedAudience={fixedAudience} onPosted={() => onPosted?.()} /> : null}
       <Dialog open={intro} onClose={() => setIntro(false)} title={t('follow.public.introTitle')}
         footer={<>
           <Button variant="ghost" onClick={() => setIntro(false)}>{t('feed.cancel')}</Button>

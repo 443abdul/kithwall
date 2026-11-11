@@ -48,7 +48,7 @@ export function useConversations() {
   return useQuery({ queryKey: ['conversations'], enabled: ready, queryFn: () => listConversations() });
 }
 
-export function useAppSetting(key: 'public_audience_enabled' | 'signups_enabled' | 'public_posts_enabled') {
+export function useAppSetting(key: 'public_audience_enabled' | 'signups_enabled' | 'public_posts_enabled' | 'reels_enabled') {
   return useQuery({
     queryKey: ['setting', key], staleTime: 5 * 60_000,
     queryFn: async () => {
@@ -59,7 +59,7 @@ export function useAppSetting(key: 'public_audience_enabled' | 'signups_enabled'
 }
 
 /** A numeric operator setting (the fallback until it is read, or when it is missing). */
-export function useAppNumber(key: 'public_post_min_age_hours' | 'public_report_hide_threshold', fallback: number): number {
+export function useAppNumber(key: 'public_post_min_age_hours' | 'public_report_hide_threshold' | 'reel_max_mb' | 'reel_daily_limit', fallback: number): number {
   const ready = useReady();
   const q = useQuery({
     queryKey: ['setting', key], staleTime: 5 * 60_000, enabled: ready,
