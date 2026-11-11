@@ -19,11 +19,15 @@
         <item name="android:windowBackground">@color/kw_background</item>
     </style>
 
-    <!-- Launch: the system splash screen (Android 12+ natively, back-ported to 9–11): the adaptive icon on the
-         page colour, held until the first page paints (MainActivity). -->
+    <!-- Launch: the splash screen, held until the first page paints (KwActivity). It must not give a
+         disguised launcher entry away (KwIcons), and a theme can't know which entry is switched on:
+          - Android 9–11 (this file; core-splashscreen draws the splash from the theme alone): the page colour
+            with no mark at all;
+          - Android 12+ (values-v31/styles.xml): no icon is named, so the system shows the icon of the
+            launcher entry the app was opened from: the Kithwall mark, or the calculator, notes or weather icon. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/kw_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 

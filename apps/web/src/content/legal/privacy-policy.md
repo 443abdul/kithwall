@@ -138,11 +138,22 @@ people, our servers can see:
 | IP address, user agent, page address requested (which can include a username, e.g. /alice) | Vercel (hosting/CDN request logs) | Vercel Web Analytics is **off**. Kept per Vercel's log retention (section 10) |
 | Proof-of-work captcha challenge result at sign-up | Our server (self-hosted ALTCHA) | No third party, no cookies, not stored after the check |
 | Email delivery records (recipient address, time, status) | Spacemail by Spaceship | Emails contain no post or message content |
+| Crash reports, **only if you turn on "Send crash reports"** (Settings → Your data; off by default) | Our server (our own database; no third-party service) | What broke (the error's type, a scrubbed message and the code location), the app version, whether it was the website or an app, the operating system and browser with their major version, the kind of screen (for example "a chat", never which one) and the interface language. No account, session, device identifier or IP address is stored with a report, and it never contains what you wrote or who you talked to. "See what gets sent" in the same place shows the exact report. Deleted after 30 days |
 
 ### 4.5 Data stored on your device
 
 See section 13 (cookies and local storage). This data stays on your device and is not sent to us,
 except where stated.
+
+**Search on your phone.** So that you can search your own chats and posts, the app keeps an index of the
+text this device has decrypted. It is stored only on the device, encrypted with a key derived from your
+account key, and is never uploaded; your search words never leave the device either. It is deleted when you
+log out, when you wipe the device from the Safety centre, or when you switch "Search on this phone" off
+(Settings → Your data).
+
+**Blur faces.** When you cover faces in a photo before sharing it, the faces are found on your device. The
+photo is not sent anywhere for that, nobody is identified, and only the covered picture is encrypted and
+uploaded.
 
 ### 4.6 Support and legal communications
 
@@ -285,7 +296,8 @@ push service your browser uses (Google FCM, Apple APNs, Mozilla autopush or Micr
 section 4.9). It is encrypted for your browser, so the service can't read it. These services are
 part of your browser, operated by its maker under their own terms; we don't send them anything else.
 
-We use **no** analytics, advertising, social-media, font, or captcha services from third parties.
+We use **no** analytics, advertising, social-media, font, crash-reporting or captcha services from third
+parties. Crash reports, if you turn them on, go to our own server only (section 4.4).
 Our captcha (ALTCHA) runs on our own servers.
 
 ### 7.2 Other users
@@ -365,6 +377,7 @@ unreadable to us and our providers. Metadata and account data are readable.
 | Reports and moderation decisions | 1 year after resolution (longer if legally required, e.g. child safety preservation) |
 | Supabase authentication and API logs (incl. IP addresses) | 7 days (Supabase Pro plan) |
 | Vercel request logs | 1 hour (Vercel Hobby plan runtime logs) |
+| Crash reports (only if you turned them on) | 30 days |
 | Spacemail delivery logs | [SPACEMAIL LOG RETENTION] |
 | Link-preview requests | Not stored by us |
 | Support emails | [SUPPORT EMAIL RETENTION, e.g. 2 years after the conversation ends] |

@@ -28,3 +28,9 @@
 -keep @interface com.getcapacitor.annotation.** { *; }
 -keep class com.getcapacitor.annotation.** { *; }
 -keep @interface com.getcapacitor.PluginMethod { *; }
+
+# Crash reports (KwCrash; opt-in): a recorded crash is only useful if its stack names the app's own classes
+# and methods with file and line. Keep those names (the app is open source: renaming them hides nothing) and
+# the line tables. Shrinking and optimisation stay on, and libraries are still renamed.
+-keepattributes SourceFile,LineNumberTable
+-keepnames class com.kithwall.app.** { *; }

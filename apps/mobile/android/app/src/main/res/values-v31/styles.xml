@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launch on Android 12+ (see values/styles.xml): the system splash screen. The icon is deliberately
+         @null: Android then draws the icon of the launcher entry that was tapped (the activity-alias that is
+         switched on, KwIcons), so a disguised entry opens with its own icon instead of the Kithwall mark. -->
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/kw_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@null</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+    </style>
+</resources>

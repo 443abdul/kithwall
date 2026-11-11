@@ -22,7 +22,11 @@ export function HomeScreen() {
   return (
     <Page
       title={t('feed.homeTitle')}
-      actions={<ButtonLink href="/people" variant="ghost" size="sm" icon="userPlus">{t('people.findPeople')}</ButtonLink>}
+      actions={<>
+        {/* Search my posts and my feed on this device (lib/search); the server never sees the words. */}
+        <ButtonLink href="/you/search" variant="ghost" size="sm" icon="search" aria-label={t('search.posts')} title={t('search.posts')} />
+        <ButtonLink href="/people" variant="ghost" size="sm" icon="userPlus">{t('people.findPeople')}</ButtonLink>
+      </>}
       context={<>
         <Card className="k-sealed-card">
           <span className="k-nudge-ico" aria-hidden><Icon name="lock" /></span>

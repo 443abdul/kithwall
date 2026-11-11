@@ -41,6 +41,10 @@ import { OldChatSuggestion, TimerHint } from './Ephemeral';
 import { CallButtons } from '@/components/calls/CallButtons';
 import { ChatKeyNotices } from '@/components/verify/ChatKeyNotices';
 import { Translatable } from '@/components/translate/Translatable';
+import { useSearchParams } from 'next/navigation';
+import { forgetMessage } from '@/lib/search';
+import { ChatSearch } from '@/components/search/ChatSearch';
+import { useToast } from '@/components/ui/Toast';
 
 interface Line extends ChatLine { row: MessageRow; payload: ChatPayload | null }
 /** 'queued': failed because the device is offline; it is sent again by itself when the connection is back. */
@@ -55,6 +59,15 @@ function offlineFailure(e: unknown): boolean {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
   const m = (e as Error)?.message ?? '';
   return /failed to fetch|networkerror|network request failed|load failed|err_internet|timed? ?out/i.test(m);
+}
+
+/** Scroll a message of the open thread into view and flash it (quoted replies, search results). */
+function flashMessage(mid: string) {
+  const el = document.getElementById(`m-${mid}`);
+  if (!el) return;
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.add('is-flash');
+  setTimeout(() => el.classList.remove('is-flash'), 1400);
 }
 
 function useDayLabel() {
@@ -91,6 +104,7 @@ function Thread({ c }: { c: ConversationSummary }) {
   const t = useT();
   const f = useFormat();
   const qc = useQueryClient();
+  const toast = useToast();
   const { userId } = useSession();
   const s = useSettings();
   const pv = usePeopleVersion();
@@ -243,13 +257,36 @@ function Thread({ c }: { c: ConversationSummary }) {
     setFocusKey((k) => k + 1);
   };
 
-  const jumpTo = (mid: string) => {
-    const el = document.getElementById(`m-${mid}`);
-    if (!el) return;
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    el.classList.add('is-flash');
-    setTimeout(() => el.classList.remove('is-flash'), 1400);
-  };
+  const jumpTo = flashMessage;
+
+  // Search on your phone (lib/search): go to a message found by search, in this chat's own search or from
+  // a result elsewhere (/messages/<chat>?m=<message>). It may be far back: older pages are loaded until it
+  // is on the page. If the chat's beginning is reached without it, it is gone (unsent, expired), and it
+  // leaves the search index too.
+  const [finding, setFinding] = useState(false);
+  const [seeking, setSeeking] = useState(false);
+  const latest = useRef(msgs);
+  useEffect(() => { latest.current = msgs; });
+  const goTo = useCallback(async (mid: string) => {
+    const there = () => !!document.getElementById(`m-${mid}`);
+    setSeeking(true);
+    try {
+      for (let page = 0; page < 80 && !there() && latest.current.hasOlder; page++) {
+        await latest.current.loadOlder();
+        await new Promise((r) => setTimeout(r, 60));
+      }
+    } catch { /* offline: whatever is loaded is all there is for now */ } finally { setSeeking(false); }
+    if (there()) { flashMessage(mid); return; }
+    if (!latest.current.hasOlder && !latest.current.isError) forgetMessage(mid);
+    toast({ message: t('search.gone') });
+  }, [t, toast]);
+  const wanted = useSearchParams().get('m');
+  const sought = useRef<string | null>(null);
+  useEffect(() => {
+    if (!wanted || !/^[0-9a-f-]{36}$/i.test(wanted) || sought.current === wanted || msgs.isLoading || !lines.length) return;
+    sought.current = wanted;
+    void goTo(wanted.toLowerCase());
+  }, [wanted, msgs.isLoading, lines.length, goTo]);
 
   const subtitle = typing.length
     ? (typing.length === 1 ? t('messages.typingOne', { name: nameOf(typing[0]!).split(' ')[0] ?? '' }) : t('messages.typingMany'))
@@ -273,9 +310,12 @@ function Thread({ c }: { c: ConversationSummary }) {
           </span>
         </button>
         <CallButtons conversation={c} />
+        <IconButton icon="search" label={t('search.inChat')} aria-expanded={finding} className="k-find-headbtn" onClick={() => setFinding((v) => !v)} />
         <IconButton icon="clock" label={t('ephemeral.chat.title')} onClick={() => setInfo('timer')} className={c.disappear_secs ? 'k-eph-headbtn is-on' : 'k-eph-headbtn'} />
         <IconButton icon="info" label={t('messages.info.title')} onClick={() => setInfo('main')} />
       </header>
+      {finding ? <ChatSearch c={c} onClose={() => setFinding(false)} onPick={(hit) => void goTo(hit.doc.id.slice(2))} /> : null}
+      {seeking ? <div className="k-chat-seeking k-small" role="status"><Spinner size={16} /> {t('search.seeking')}</div> : null}
 
       <div ref={scroller} className="k-chat-scroll" onScroll={onScroll} role="log" aria-label={t('messages.threadLabel', { title })} aria-live="polite" aria-relevant="additions">
         <div className="k-chat-sealed k-small"><Icon name="lock" /> {t('messages.sealedBanner')}</div>
@@ -358,7 +398,7 @@ function Thread({ c }: { c: ConversationSummary }) {
           onReply={() => { const l = acting; setActing(null); startReply(l); }}
           onClose={() => setActing(null)} />
       ) : null}
-      <ChatInfo c={c} open={!!info} initialStep={info || 'main'} onClose={() => setInfo(false)} title={title} />
+      <ChatInfo c={c} open={!!info} initialStep={info || 'main'} onClose={() => setInfo(false)} title={title} onSearch={() => setFinding(true)} />
     </div>
   );
 }

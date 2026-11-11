@@ -7,6 +7,7 @@ import { people, profileHeader } from './people';
 import type { FriendshipRow, ProfileInfo } from './types';
 import { loadVisibility, myPrivateFields, saveMyPrivateFields, sealExtra, splitProfile, tierOf } from './social/visibility';
 import { ensureCloseList } from './social/closeFriends';
+import { forgetAuthor } from './search';
 
 const pair = (a: string, b: string) => (a < b ? { user_a: a, user_b: b } : { user_a: b, user_b: a });
 export const other = (f: FriendshipRow, self: string) => (f.user_a === self ? f.user_b : f.user_a);
@@ -64,12 +65,14 @@ export async function cancelRequest(userId: string) { await ignoreRequest(userId
 /** Unfriend: remove the friendship, then rotate my friends key so they can't read anything new. */
 export async function unfriend(userId: string) {
   must(await sb().from('friendships').delete().match(pair(me(), userId)));
+  forgetAuthor(userId); // their posts are no longer mine to read: out of the on-device search index too
   await keyring.rotate(keyring.friendsAudience!.id);
   await republishProfileInfo();
 }
 
 export async function block(userId: string) {
   must(await sb().from('blocks').insert({ blocker: me(), blocked: userId }));
+  forgetAuthor(userId);
   await keyring.rotate(keyring.friendsAudience!.id);
   await republishProfileInfo();
 }

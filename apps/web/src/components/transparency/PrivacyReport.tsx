@@ -278,6 +278,8 @@ export function OutsideDatabase() {
           <li><Icon name="key" /><div><p>{t('transparency.logs.supabase')}</p><p className="k-xs k-muted">{t('transparency.logs.supabaseBody')}</p></div></li>
           <li><Icon name="mail" /><div><p>{t('transparency.logs.email')}</p><p className="k-xs k-muted">{t('transparency.logs.emailBody')}</p></div></li>
           <li><Icon name="refresh" /><div><p>{t('transparency.logs.backups')}</p><p className="k-xs k-muted">{t('transparency.logs.backupsBody')}</p></div></li>
+          <li><Icon name="alert" /><div><p>{t('transparency.logs.crash')}</p><p className="k-xs k-muted">{t('transparency.logs.crashBody')} <Link href="/you/settings/data#crash">{t('transparency.logs.crashLink')}</Link></p></div></li>
+          <li><Icon name="search" /><div><p>{t('transparency.logs.device')}</p><p className="k-xs k-muted">{t('transparency.logs.deviceBody')}</p></div></li>
           <li><Icon name="eye" /><div><p>{t('transparency.logs.none')}</p><p className="k-xs k-muted">{t('transparency.logs.noneBody')}</p></div></li>
         </ul>
         <p className="k-xs k-muted k-tr-foot">{t('transparency.logs.more')} <Link href="/legal/privacy">{t('footer.privacy')}</Link></p>

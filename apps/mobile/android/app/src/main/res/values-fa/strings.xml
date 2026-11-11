@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Names of the disguised launcher entries (KwIcons; values/strings.xml). Machine-drafted: the usual
+     names of these apps on Android in this language. Nothing else in the native shell is translated here. -->
+<resources>
+    <string name="kw_icon_calculator">ماشین‌حساب</string>
+    <string name="kw_icon_notes">یادداشت‌ها</string>
+    <string name="kw_icon_weather">آب‌وهوا</string>
+</resources>

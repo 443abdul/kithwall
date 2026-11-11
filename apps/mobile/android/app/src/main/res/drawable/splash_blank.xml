@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash "icon" on Android 9–11: nothing (values/styles.xml). The splash is the page colour only, so a
+     disguised launcher entry doesn't open with the Kithwall mark. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+</shape>

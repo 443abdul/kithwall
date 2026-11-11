@@ -18,6 +18,7 @@ import type { AudienceRow, FileRef, MessagePayload, MessageRow } from './types';
 import type { Decrypted } from './content';
 import type { VoiceMeta } from './chat/voice';
 import { checkFrank, frankPayload } from './chat/franking';
+import { forgetChat, forgetMessage, noteMessage, reconcileMessages } from './search';
 
 export interface ConversationRow {
   id: string; audience_id: string; created_by: string; dm_key: string | null; last_message_at: string; created_at: string;
@@ -253,6 +254,7 @@ export async function removeMember(conv: ConversationSummary, memberId: string) 
 export async function leaveConversation(conv: ConversationRow) {
   await sendMessage(conv, { text: '', event: { kind: 'left' } }).catch(() => undefined);
   must(await sb().rpc('leave_conversation', { conv: conv.id }));
+  forgetChat(conv.id); // its messages leave the on-device search index (lib/search)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -286,6 +288,7 @@ export async function deleteMessage(row: MessageRow, attachments: FileRef[] = []
   }
   must(await sb().rpc('unsend_message', { msg: row.id }));
   forget(row.id);
+  forgetMessage(row.id);
 }
 
 /**
@@ -322,6 +325,8 @@ export async function fetchMessages(conv: Pick<ConversationRow, 'id'>, before?: 
   if (before) q = q.lt('created_at', before);
   const rows = (must(await q) as MessageRow[]).reverse();
   await people.ensure(rows.map((r) => r.sender_id));
+  // The on-device search index (lib/search) drops what this stretch of the chat no longer contains.
+  reconcileMessages(conv.id, rows, { before, complete: rows.length < pageSize });
   return rows;
 }
 
@@ -368,6 +373,8 @@ export function readMessage(conv: Pick<ConversationRow, 'audience_id'>, row: Mes
   }
   if (cache.size > 5000) cache.clear();
   cache.set(cacheKey(row), out);
+  // Decrypted and verified on this device: searchable on this device (lib/search; never sent anywhere).
+  if (out.ok) noteMessage(row, out.value);
   return out;
 }
 

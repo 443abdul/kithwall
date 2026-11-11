@@ -5,8 +5,11 @@
 //   node apps/mobile/scripts/gen-assets.mjs
 // Outputs are committed; rerun only when the logo changes.
 //  Android: legacy + round launcher icons, adaptive-icon foreground/monochrome (108dp canvas, glyph inside
-//           the 66dp safe zone); the splash icon, the background colour and the notification icon are
-//           vector/XML resources written here too.
+//           the 66dp safe zone); the background colours and the notification icon are vector/XML resources
+//           written here too. The same set again for each disguised launcher entry (Calculator, Notes,
+//           Weather: KwIcons.java, docs/v2/03-safety.md §13), drawn below as simple original glyphs.
+//           There is no splash image: the splash shows the launcher icon of the entry the app was opened
+//           from (Android 12+) or the page colour alone (res/values/styles.xml).
 //  iOS:     the 1024 px App Store icon (opaque, square: iOS rounds it) and the 2732 px splash images.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -29,8 +32,8 @@ const glyph = (stroke) => `
     <circle cx="312" cy="288" r="88"/>
   </g>`;
 
-/** @param {{w:number,h?:number,scale?:number,bg?:string|null,fg?:string,shape?:'square'|'rounded'|'circle'}} o */
-function svg({ w, h = w, scale = 1, bg = BLUE, fg = '#ffffff', shape = 'square' }) {
+/** @param {{w:number,h?:number,scale?:number,bg?:string|null,fg?:string,shape?:'square'|'rounded'|'circle',mark?:(fg:string,mono:boolean)=>string,mono?:boolean}} o */
+function svg({ w, h = w, scale = 1, bg = BLUE, fg = '#ffffff', shape = 'square', mark = glyph, mono = false }) {
   // The glyph lives in a 512 box centred in the canvas, scaled to `scale` of the canvas's short side.
   const side = Math.min(w, h);
   const s = (side / 512) * scale;
@@ -39,7 +42,7 @@ function svg({ w, h = w, scale = 1, bg = BLUE, fg = '#ffffff', shape = 'square' 
   const back = !bg ? '' : shape === 'circle' ? `<circle cx="${w / 2}" cy="${h / 2}" r="${side / 2}" fill="${bg}"/>`
     : `<rect width="${w}" height="${h}" ${shape === 'rounded' ? `rx="${side * 0.14}"` : ''} fill="${bg}"/>`;
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-    ${back}<g transform="translate(${tx} ${ty}) scale(${s})">${glyph(fg)}</g></svg>`);
+    ${back}<g transform="translate(${tx} ${ty}) scale(${s})">${mark(fg, mono)}</g></svg>`);
 }
 
 const png = (o, file) => sharp(svg(o)).png({ compressionLevel: 9 }).toFile(file).then(() => console.log('wrote', file.slice(root.length + 1)));
@@ -55,37 +58,72 @@ for (const [d, k] of Object.entries(DENSITIES)) {
   await png({ w: 108 * k, bg: null, scale: 0.58, fg: '#000000' }, join(dir, 'ic_launcher_monochrome.png'));
 }
 
-// Splash: Android 12+'s system splash screen (themes in res/values/styles.xml) shows a vector icon on the
-// page colour, so no full-screen splash bitmaps are shipped (they were stretched and only used pre-12).
-await writeFile(join(res, 'drawable', 'splash_icon.xml'), `<?xml version="1.0" encoding="utf-8"?>
-<!-- Splash screen icon: the Kithwall 2 mark (two rings, components/shell/Logo.tsx) in white on an accent
-     disc, like the launcher icon. Canvas = the splash icon's 240dp box, of which the system shows the inner
-     160dp circle (r = 32 of 96 units). -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="240dp" android:height="240dp" android:viewportWidth="96" android:viewportHeight="96">
-    <path android:fillColor="#FFB4532A" android:pathData="M16,48a32,32 0,1 1,64 0a32,32 0,1 1,-64 0z"/>
-    <group android:translateX="24" android:translateY="24" android:scaleX="1.5" android:scaleY="1.5">
-        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:fillColor="#00000000"
-            android:pathData="M7,14a5.5,5.5 0,1 1,11 0a5.5,5.5 0,1 1,-11 0z"/>
-        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:fillColor="#00000000"
-            android:pathData="M14,18a5.5,5.5 0,1 1,11 0a5.5,5.5 0,1 1,-11 0z"/>
-    </group>
-</vector>
-`);
+// Disguised launcher entries (KwIcons.java): the same app under another name and icon, for people who need
+// to hide that they use Kithwall. Original glyphs in the same 512 box, white on one flat colour; the parts
+// drawn in black inside a <mask> are cut out, so they show the background (and stay see-through in the
+// adaptive and monochrome layers).
+const DISGUISES = {
+  // A pocket calculator: body, display and a 3×3 keypad.
+  calculator: {
+    bg: '#37474f',
+    mark: (fg) => `
+  <mask id="cut"><rect width="512" height="512" fill="#fff"/>
+    <rect x="182" y="134" width="148" height="58" rx="10" fill="#000"/>
+    ${[244, 300, 356].map((y) => [196, 256, 316].map((x) => `<circle cx="${x}" cy="${y}" r="17" fill="#000"/>`).join('')).join('')}
+  </mask>
+  <rect x="148" y="100" width="216" height="312" rx="30" fill="${fg}" mask="url(#cut)"/>`,
+  },
+  // A sheet of paper with a turned corner and four lines of writing.
+  notes: {
+    bg: '#f57f17',
+    mark: (fg) => `
+  <mask id="cut"><rect width="512" height="512" fill="#fff"/>
+    ${[204, 252, 300].map((y) => `<rect x="190" y="${y}" width="132" height="18" rx="9" fill="#000"/>`).join('')}
+    <rect x="190" y="348" width="78" height="18" rx="9" fill="#000"/>
+  </mask>
+  <path d="M176 100h108l80 80v204a28 28 0 0 1-28 28H176a28 28 0 0 1-28-28V128a28 28 0 0 1 28-28z" fill="${fg}" mask="url(#cut)"/>`,
+  },
+  // A sun behind a cloud.
+  weather: {
+    bg: '#1e88e5',
+    mark: (fg, mono) => `
+  <mask id="cut"><rect width="512" height="512" fill="#fff"/>
+    <circle cx="226" cy="318" r="70" fill="#000"/><circle cx="296" cy="290" r="86" fill="#000"/>
+    <circle cx="352" cy="330" r="62" fill="#000"/><rect x="226" y="304" width="126" height="88" fill="#000"/>
+  </mask>
+  <circle cx="204" cy="204" r="66" fill="${mono ? fg : '#ffd54f'}" mask="url(#cut)"/>
+  <g fill="${fg}">
+    <circle cx="226" cy="318" r="54"/><circle cx="296" cy="290" r="70"/><circle cx="352" cy="330" r="46"/>
+    <rect x="226" y="318" width="126" height="58"/>
+  </g>`,
+  },
+};
+for (const [id, { bg, mark }] of Object.entries(DISGUISES)) {
+  for (const [d, k] of Object.entries(DENSITIES)) {
+    const dir = join(res, `mipmap-${d}`);
+    await png({ w: 48 * k, shape: 'rounded', scale: 0.98, bg, mark }, join(dir, `ic_alt_${id}.png`));
+    await png({ w: 48 * k, shape: 'circle', scale: 0.86, bg, mark }, join(dir, `ic_alt_${id}_round.png`));
+    await png({ w: 108 * k, bg: null, scale: 0.68, mark }, join(dir, `ic_alt_${id}_foreground.png`));
+    await png({ w: 108 * k, bg: null, scale: 0.68, fg: '#000000', mark, mono: true }, join(dir, `ic_alt_${id}_monochrome.png`));
+  }
+  await writeFile(join(res, 'mipmap-anydpi-v26', `ic_alt_${id}.xml`), adaptive(`ic_alt_${id}`));
+  await writeFile(join(res, 'mipmap-anydpi-v26', `ic_alt_${id}_round.xml`), adaptive(`ic_alt_${id}`));
+}
 
 await writeFile(join(res, 'values', 'ic_launcher_background.xml'), `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">${BLUE}</color>
+${Object.entries(DISGUISES).map(([id, { bg }]) => `    <color name="ic_alt_${id}_background">${bg}</color>`).join('\n')}
 </resources>
 `);
 await writeFile(join(res, 'mipmap-anydpi-v26', 'ic_launcher.xml'), adaptive());
 await writeFile(join(res, 'mipmap-anydpi-v26', 'ic_launcher_round.xml'), adaptive());
-function adaptive() {
+function adaptive(name = 'ic_launcher') {
   return `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background"/>
-    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
-    <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
+    <background android:drawable="@color/${name}_background"/>
+    <foreground android:drawable="@mipmap/${name}_foreground"/>
+    <monochrome android:drawable="@mipmap/${name}_monochrome"/>
 </adaptive-icon>
 `;
 }

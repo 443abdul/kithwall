@@ -25,6 +25,7 @@ import { dayBucket, matches, orderConversations } from './chatModel';
 import { ConversationAvatar, useConversationTitle, useNameOf } from './look';
 import { previewText } from './content';
 import { ChatIcon } from './ChatIcon';
+import { MessageSearch } from '@/components/search/MessageSearch';
 
 export function useConversationList() {
   const { status } = useSession();
@@ -148,6 +149,8 @@ export function ConversationListPane({ activeId }: { activeId: string | null }) 
           <ChatIcon name="archive" /> {t('messages.archivedCount', { count: archived.length })}
         </button>
       ) : null}
+      {/* Messages that contain the words, found in the on-device index (lib/search); hidden chats stay out. */}
+      {!showArchived ? <MessageSearch query={filter} conversations={q.data ?? []} /> : null}
       {filter && shown.length > 0 ? <p className="k-small k-muted k-chat-search-note">{t('messages.searchNote')}</p> : null}
     </div>
   );

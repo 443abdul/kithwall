@@ -12,6 +12,7 @@ import { invalidateSoon } from '../invalidate';
 import { getSession } from '../keys/session';
 import type { MessageRow } from '../types';
 import { rotateConversation, type ConversationSummary } from '../messages';
+import { forgetMessage } from '../search';
 
 type Listener = (m: MessageRow) => void;
 
@@ -110,6 +111,8 @@ export function useMessagesLive(uid: string | null | undefined) {
         const m = { ...(p.new as MessageRow) };
         if (!m?.id || !m.conversation_id) return;
         if (m.envelope == null) delete (m as Partial<MessageRow>).envelope;
+        // Unsent by its sender: out of the on-device search index at once (an edit re-enters it when read).
+        if (m.unsent_at) forgetMessage(m.id);
         patchCachedMessage(qc, m);
         invalidateSoon(qc, ['conversations']);
       })

@@ -50,7 +50,7 @@ final class Notifier {
     static final String CH_ACTIVITY = "activity";
     static final String EXTRA_URL = "kw_url";
     static final String EXTRA_TAG = "kw_tag";
-    /** Per-install secret on our own notification intents (security review L15): MainActivity is exported, so
+    /** Per-install secret on our own notification intents (security review L15): KwActivity is exported, so
      *  other apps could otherwise send it kw_url / kw_tag to open paths or cancel our notifications. */
     static final String EXTRA_TOKEN = "kw_token";
     private static final String TOKEN_PREFS = "kw_intent";
@@ -122,9 +122,9 @@ final class Notifier {
         return s == null ? "" : s.length() > n ? s.substring(0, n) : s;
     }
 
-    /** Opens the app at an in-app path (MainActivity checks the per-install token). */
+    /** Opens the app at an in-app path (KwActivity checks the per-install token). */
     static Intent openActivityIntent(Context c, String path, String tag) {
-        Intent i = new Intent(c, MainActivity.class);
+        Intent i = new Intent(c, KwActivity.class);
         i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         i.putExtra(EXTRA_URL, path);
         i.putExtra(EXTRA_TAG, tag);
@@ -161,7 +161,7 @@ final class Notifier {
             return;
         }
         // The app is on screen: it shows new messages and rings for calls itself.
-        if (MainActivity.isForeground() && ("message".equals(kind) || "call".equals(kind))) return;
+        if (KwActivity.isForeground() && ("message".equals(kind) || "call".equals(kind))) return;
 
         int req = tag.hashCode();
         PendingIntent open = openIntent(c, path, tag, req);

@@ -20,7 +20,7 @@ class KwWebViewClient extends BridgeWebViewClient {
     /**
      * "Use Tor (Orbot)": true from the moment the bridge is created until the WebView proxy override is
      * confirmed. Every request the page makes meanwhile is refused here, so nothing leaves without Tor
-     * (MainActivity.load creates the bridge at the normal time and reloads once the proxy is in effect).
+     * (KwActivity.load creates the bridge at the normal time and reloads once the proxy is in effect).
      */
     static volatile boolean holdNetwork = false;
 
@@ -80,7 +80,7 @@ class KwWebViewClient extends BridgeWebViewClient {
                 android.app.Activity a = bridge.getActivity();
                 if (a == null || a.isDestroyed() || !onOfflinePage(view)) { watching = false; return; }
                 final String server = bridge.getServerUrl();
-                if (!MainActivity.isForeground() || holdNetwork || server == null) { main.postDelayed(this, RECONNECT_EVERY_MS); return; }
+                if (!KwActivity.isForeground() || holdNetwork || server == null) { main.postDelayed(this, RECONNECT_EVERY_MS); return; }
                 final Runnable again = this;
                 checker.execute(() -> {
                     final boolean ok = KwNet.healthy(a, server.replaceAll("/+$", ""));

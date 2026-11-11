@@ -53,7 +53,7 @@ public class KwCallService extends Service {
                 nm.createNotificationChannel(ch);
             }
         }
-        Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        Intent open = new Intent(this, KwActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         PendingIntent pi = PendingIntent.getActivity(this, ID, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new NotificationCompat.Builder(this, CH_ONGOING)
                 .setSmallIcon(R.drawable.ic_stat_kithwall)

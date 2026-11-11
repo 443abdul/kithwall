@@ -16,6 +16,8 @@ import { Callout } from '@/components/ui/Callout';
 import { Dialog } from '@/components/ui/Dialog';
 import { TextField } from '@/components/ui/Field';
 import { SettingsPage, Section } from './shared';
+import { CrashReportsSection } from './CrashReportsSettings';
+import { SearchSection } from '@/components/search/SearchSettings';
 
 const STEP: Record<ExportStep, MessageKey> = {
   profile: 'transparency.export.step.profile', posts: 'transparency.export.step.posts', comments: 'transparency.export.step.comments',
@@ -136,6 +138,8 @@ export function DataSettings() {
     <SettingsPage title={t('settings.data.title')} description={t('settings.data.description')}>
       <KnowsSection />
       <ExportSection />
+      <SearchSection />
+      <CrashReportsSection />
       <DeleteSection />
     </SettingsPage>
   );

@@ -13,6 +13,8 @@ import { IconButton } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { ChatIcon } from './ChatIcon';
+import { Icon } from '@/components/ui/Icon';
+import { BlurEditor } from '@/components/photo/BlurEditor';
 import { previewOffer, snippet } from './chatModel';
 import { MAX_ATTACHMENTS, MAX_CHAT_VIDEO_BYTES, type Draft } from './send';
 import { useVoiceRecorder, type VoiceErrorCode } from '@/lib/chat/voiceRecorder';
@@ -21,7 +23,7 @@ import { VoiceMicButton, VoicePanel } from './VoiceRecorder';
 
 export interface ReplyTarget { id: string; author: string; authorName: string; text: string }
 
-function FileChip({ file, onRemove }: { file: File; onRemove: () => void }) {
+function FileChip({ file, onRemove, onBlur }: { file: File; onRemove: () => void; onBlur: () => void }) {
   const t = useT();
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -37,6 +39,12 @@ function FileChip({ file, onRemove }: { file: File; onRemove: () => void }) {
         <img src={url} alt="" />
       ) : <span className="k-chat-chip-ico"><ChatIcon name="video" /></span>}
       <span className="k-sr-only">{file.name}</span>
+      {/* Photos only: cover faces or other parts before sending (components/photo/BlurEditor). */}
+      {url ? (
+        <button type="button" className="k-chat-chip-blur" aria-label={t('blur.openFile', { name: file.name })} title={t('blur.title')} onClick={onBlur}>
+          <Icon name="eyeOff" />
+        </button>
+      ) : null}
       <button type="button" className="k-chat-chip-x" aria-label={t('messages.composer.removeFile', { name: file.name })} onClick={onRemove}>×</button>
     </li>
   );
@@ -56,6 +64,8 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
   const s = useSettings();
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  // The photo being covered in "Blur faces" (its place in `files`); the covered copy replaces it.
+  const [blurAt, setBlurAt] = useState<number | null>(null);
   const [linkState, setLink] = useState<{ url: string; draft: LinkDraft | null; loading: boolean } | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -144,6 +154,9 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
 
   const canSend = !disabled && (!!text.trim() || files.length > 0);
   return (
+    <>
+    <BlurEditor file={blurAt !== null ? files[blurAt] ?? null : null} onClose={() => setBlurAt(null)}
+      onDone={(covered) => { setFiles((cur) => cur.map((f, j) => (j === blurAt ? covered : f))); setBlurAt(null); }} />
     <form className="k-chat-composer" onSubmit={(e) => { e.preventDefault(); send(); }} aria-label={t('messages.composer.label')}>
       {disabled ? <p className="k-chat-composer-note k-small k-muted" role="status">{disabled}</p> : null}
       {reply ? (
@@ -177,7 +190,7 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
       ) : null}
       {files.length ? (
         <ul className="k-chat-chips" aria-label={t('messages.composer.attached')}>
-          {files.map((f, i) => <FileChip key={`${f.name}-${f.size}-${i}`} file={f} onRemove={() => setFiles(files.filter((_, j) => j !== i))} />)}
+          {files.map((f, i) => <FileChip key={`${f.name}-${f.size}-${i}`} file={f} onRemove={() => setFiles(files.filter((_, j) => j !== i))} onBlur={() => setBlurAt(i)} />)}
         </ul>
       ) : null}
       <div className="k-chat-composer-row">
@@ -214,5 +227,6 @@ export function ChatComposer({ convId, members, disabled, reply, onCancelReply, 
         ) : <VoiceMicButton rec={voice} disabled={!!disabled} onDrag={setDrag} />}
       </div>
     </form>
+    </>
   );
 }

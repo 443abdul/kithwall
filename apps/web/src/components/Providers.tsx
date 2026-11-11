@@ -9,6 +9,8 @@ import { InstallRuntime } from '@/components/install/InstallRuntime';
 import { NativeRuntime } from '@/components/native/NativeRuntime';
 import { NetRuntime } from '@/components/net/NetRuntime';
 import { OfflineRuntime } from '@/components/net/OfflineRuntime';
+import { CrashRuntime } from '@/components/crash/CrashRuntime';
+import { SearchRuntime } from '@/components/search/SearchRuntime';
 import { invalidateSoon } from '@/lib/invalidate';
 import { people } from '@/lib/people';
 import { releaseFileUrls } from '@/lib/media';
@@ -29,6 +31,8 @@ export function Providers({ children }: { children: ReactNode; nonce?: string })
       <NativeRuntime />
       <NetRuntime />
       <OfflineRuntime />
+      <CrashRuntime />
+      <SearchRuntime />
       {children}
     </QueryClientProvider>
   );

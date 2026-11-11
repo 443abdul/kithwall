@@ -1,0 +1,101 @@
+/* Kithwall 2: disguised app icon, blur faces, search on your phone, crash reports (docs/v2/03-safety.md §13–14,
+   03-transparency.md §6). Tokens only; logical properties so everything mirrors in right-to-left languages
+   (the photo stage of the blur editor is the exception: a picture has no reading direction). */
+
+/* ------------------------------------------------------------------ crash reports */
+.kw .k-crash { min-block-size: 60dvh; display: grid; place-content: center; gap: var(--space-3); padding: var(--space-5) var(--space-4); text-align: center; }
+.kw .k-crash-note { max-inline-size: 28rem; margin-inline: auto; }
+.kw .k-crash-pre {
+  margin: 0; padding: var(--space-3); max-block-size: 45dvh; overflow: auto;
+  border: var(--border-width) solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
+  font: var(--text-xs) / 1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: start;
+  white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext;
+}
+.kw .k-crash-pre:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: 2px; }
+.kw .k-mod-crashes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.kw .k-mod-crashes details { border: var(--border-width) solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); }
+.kw .k-mod-crashes summary { display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+.kw .k-mod-crashes details[open] summary { margin-block-end: var(--space-2); }
+.kw .k-mod-crash-name { font-weight: var(--weight-bold); overflow-wrap: anywhere; text-align: start; }
+
+/* ------------------------------------------------------------------ disguised app icon (Android app) */
+.kw .k-appicon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--space-2); }
+.kw .k-appicon {
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-1); min-inline-size: 0;
+  padding: var(--space-3) var(--space-2); border: var(--border-width) solid var(--border); border-radius: var(--radius-lg);
+  background: var(--surface); color: var(--text); font: inherit; cursor: pointer;
+}
+.kw .k-appicon:hover { background: var(--surface-2); }
+.kw .k-appicon[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.kw .k-appicon:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: 2px; }
+.kw .k-appicon-art { flex: none; border-radius: 22%; }
+.kw .k-appicon-name { font-weight: var(--weight-medium); overflow-wrap: anywhere; text-align: center; }
+.kw .k-appicon-state { color: var(--accent-text); min-block-size: 1.2em; }
+
+/* ------------------------------------------------------------------ blur faces */
+.kw .k-dialog.k-blur-dialog { inline-size: min(100% - 2 * var(--space-3), 40rem); max-block-size: min(94dvh, 56rem); }
+.kw .k-blur-status { display: flex; align-items: center; gap: var(--space-2); margin: 0; min-block-size: 1.5em; }
+.kw .k-blur-frame { display: flex; justify-content: center; background: var(--surface-2); border-radius: var(--radius-md); overflow: hidden; }
+.kw .k-blur-stage { position: relative; display: inline-block; max-inline-size: 100%; line-height: 0; }
+.kw .k-blur-canvas { display: block; max-inline-size: 100%; max-block-size: 52dvh; inline-size: auto; block-size: auto; }
+/* Dragging on the photo draws a box: the browser must not scroll or zoom instead. */
+.kw .k-blur-boxes { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+.kw .k-blur-box { position: absolute; box-sizing: border-box; min-inline-size: 12px; min-block-size: 12px; }
+.kw .k-blur-box.is-face {
+  padding: 0; border: 2px solid #fff; border-radius: var(--radius-sm); background: transparent; color: #fff; cursor: pointer;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.55), inset 0 0 0 1px rgb(0 0 0 / 0.55); display: grid; place-items: center;
+}
+.kw .k-blur-box.is-face.is-off { border-style: dashed; background: rgb(0 0 0 / 0.12); }
+.kw .k-blur-box.is-face .k-icon { filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.9)); }
+.kw .k-blur-own {
+  position: absolute; inset: 0; inline-size: 100%; block-size: 100%; padding: 0; border: 2px solid #fff; border-radius: var(--radius-sm);
+  background: transparent; cursor: move; touch-action: none; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.55), inset 0 0 0 1px rgb(0 0 0 / 0.55);
+}
+.kw .k-blur-own:focus-visible, .kw .k-blur-box.is-face:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.kw .k-blur-x {
+  position: absolute; top: -12px; right: -12px; inline-size: 26px; block-size: 26px; padding: 0; display: grid; place-items: center;
+  border: 2px solid #fff; border-radius: 50%; background: #1b1613; color: #fff; cursor: pointer;
+}
+.kw .k-blur-x .k-icon { inline-size: 14px; block-size: 14px; }
+.kw .k-blur-x:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.kw .k-blur-grip {
+  position: absolute; right: -9px; bottom: -9px; inline-size: 20px; block-size: 20px; border: 2px solid #1b1613; border-radius: 4px;
+  background: #fff; cursor: nwse-resize; touch-action: none;
+}
+.kw .k-blur-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+/* The "blur" button on a picked photo: opposite corner from "remove". */
+.kw .k-composer-photos .k-iconbtn.k-blur-open { inset-block-start: auto; inset-block-end: 4px; inset-inline-end: auto; inset-inline-start: 4px; }
+.kw .k-chat-chip-blur {
+  position: absolute; inset-block-end: 3px; inset-inline-start: 3px; inline-size: 24px; block-size: 24px; padding: 0; display: grid; place-items: center;
+  border: 0; border-radius: 50%; background: var(--overlay); color: var(--accent-contrast); cursor: pointer;
+}
+.kw .k-chat-chip-blur .k-icon { inline-size: 14px; block-size: 14px; }
+
+/* ------------------------------------------------------------------ search on your phone */
+.kw .k-search-section { display: flex; flex-direction: column; gap: var(--space-1); margin-block-start: var(--space-3); }
+.kw .k-search-section > .k-section-title { padding-inline: var(--space-2); }
+.kw .k-search-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.kw .k-search-row {
+  display: flex; align-items: flex-start; gap: var(--space-3); inline-size: 100%; padding: var(--space-2);
+  border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--text); font: inherit; text-align: start;
+  text-decoration: none; cursor: pointer;
+}
+.kw .k-search-row:hover { background: var(--surface-2); }
+.kw .k-search-row:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: -2px; }
+.kw .k-search-body { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 2px; }
+.kw .k-search-top { display: flex; align-items: baseline; gap: var(--space-2); }
+.kw .k-search-title { flex: 1; min-inline-size: 0; font-weight: var(--weight-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw .k-search-time, .kw .k-search-kind { flex: none; font-size: var(--text-xs); color: var(--text-muted); }
+.kw .k-search-kind { display: inline-flex; align-items: center; gap: 4px; }
+.kw .k-search-kind .k-icon { inline-size: 14px; block-size: 14px; }
+.kw .k-search-line { font-size: var(--text-sm); color: var(--text-muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.kw .k-search-who { color: var(--text); }
+.kw .k-search-text mark { background: var(--accent-soft, color-mix(in srgb, var(--accent) 24%, transparent)); color: var(--text); border-radius: 3px; padding-inline: 1px; font-weight: var(--weight-medium); }
+.kw .k-search-field { margin-block-end: var(--space-1); }
+/* Search inside one chat: a bar under the chat's header, results over the top of the thread. */
+.kw .k-chat-find { flex: none; position: relative; border-block-end: 1px solid var(--border); background: var(--surface); padding: var(--space-2); z-index: 2; }
+.kw .k-chat-find-bar { display: flex; align-items: center; gap: var(--space-1); }
+.kw .k-chat-find-bar .k-chat-search { flex: 1; min-inline-size: 0; }
+.kw .k-chat-find-results { max-block-size: min(46dvh, 26rem); overflow-y: auto; margin-block-start: var(--space-2); overscroll-behavior: contain; }
+.kw .k-chat-seeking { flex: none; display: flex; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-1); color: var(--text-muted); }
+@container (max-width: 30rem) { .kw .k-chat-head .k-find-headbtn { display: none; } }

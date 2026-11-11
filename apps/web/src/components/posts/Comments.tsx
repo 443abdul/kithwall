@@ -26,6 +26,7 @@ import { Menu } from './Menu';
 import { ReportDialog } from './ReportDialog';
 import { deriveSubkey } from '@kithwall/crypto';
 import { notifyMentions, resolveMentions } from '@/lib/social/engage';
+import { forgetComment } from '@/lib/search';
 
 interface Item { row: CommentRow; text: string | null; replyTo?: string; created_at: string; id: string }
 
@@ -86,6 +87,7 @@ export function Comments({ post, contentKey, focusSignal }: { post: PostRow; con
   async function remove(c: CommentRow) {
     try {
       must(await sb().from('comments').delete().eq('id', c.id));
+      forgetComment(c.id);
       await qc.invalidateQueries({ queryKey: commentsKey(post.id) });
       toast({ message: t('feed.commentDeleted') });
     } catch { toast({ message: t('feed.failed'), tone: 'danger' }); }

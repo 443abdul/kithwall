@@ -10,6 +10,7 @@ import { preparePosts } from '../content';
 import { deleteMedia, fileRefPaths } from '../media';
 import { people } from '../people';
 import type { CommentRow, FileRef, LikeRow, PostPayload, PostRow } from '../types';
+import { forgetPost } from '../search';
 
 export const likesKey = (kind: 'post' | 'comment', id: string) => ['likes', kind, id] as const;
 export const commentsKey = (postId: string) => ['comments', postId] as const;
@@ -72,9 +73,12 @@ export interface Engagement { likes: LikeRow[]; comments: CommentRow[] }
 // Listings
 
 export async function fetchPost(id: string): Promise<PostRow | null> {
-  const { data } = await sb().from('posts').select('*').eq('id', id).maybeSingle();
+  const { data, error } = await sb().from('posts').select('*').eq('id', id).maybeSingle();
   const row = (data as PostRow | null) ?? null;
   if (row) await preparePosts([row]);
+  // The server answered and the post isn't there (deleted, expired, or no longer mine to read): it leaves
+  // the on-device search index too (lib/search).
+  else if (!error) forgetPost(id);
   return row;
 }
 
@@ -99,6 +103,7 @@ export async function deletePost(row: PostRow, payload?: PostPayload | null) {
   const mine = refs.flatMap(fileRefPaths).filter((p) => p.startsWith(`${me()}/`));
   if (mine.length && row.author_id === me()) await deleteMedia(mine).catch(() => undefined);
   must(await sb().from('posts').delete().eq('id', row.id));
+  forgetPost(row.id);
 }
 
 

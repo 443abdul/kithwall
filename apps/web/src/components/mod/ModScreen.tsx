@@ -27,6 +27,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { useToast } from '@/components/ui/Toast';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { payloadText, reporterCopy, verifyReport, type ReportRow, type Verification } from './verify';
+import { CrashReports } from './CrashReports';
 
 type Role = 'admin' | 'moderator';
 type Status = 'open' | 'actioned' | 'dismissed';
@@ -366,6 +367,8 @@ function Admin() {
           </form>
         </Card>
       </section>
+
+      <CrashReports />
     </div>
   );
 }
