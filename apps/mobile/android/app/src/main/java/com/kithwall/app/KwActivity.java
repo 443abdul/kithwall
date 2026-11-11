@@ -74,6 +74,7 @@ public class KwActivity extends BridgeActivity {
         getOnBackPressedDispatcher().addCallback(this, back);
         pendingPath = pathFrom(getIntent());
         if (bridge != null) afterBridge();
+        KwCrash.beFirst(this);   // the WebView has just installed its own crash handler in front of ours
     }
 
     private String pendingPath;
@@ -203,6 +204,7 @@ public class KwActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        KwCrash.beFirst(this);
         foreground = true;
     }
 

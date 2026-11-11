@@ -688,7 +688,8 @@ Wipe and duress
     device wiped behind it, and the launcher icon unchanged.
 
 The app's own crash report
-16. Settings → Your data → turn **Send crash reports** on. Then `adb shell am crash com.kithwall.app`.
+16. Settings → Your data → turn **Send crash reports** on. Then crash the app's own process by its id: `adb shell am crash $(adb shell pidof com.kithwall.app)`
+    (`am crash com.kithwall.app` may crash the WebView's renderer process instead, which records nothing).
     Expect the app stops. `adb shell run-as com.kithwall.app ls files` (debug build) lists `kw-crash.json`;
     `adb shell run-as com.kithwall.app cat files/kw-crash.json` shows a class name and `at …` frames and
     **no message text**.
@@ -696,6 +697,16 @@ The app's own crash report
     `native`, platform `android`, the app's version and frames like
     `at android.app.ActivityThread…` / `at com.kithwall.app…`; and `kw-crash.json` is gone. Settings → Your
     data → "See what gets sent" shows that report.
-18. Turn the setting off, crash again (`am crash`), reopen. Expect no `kw-crash.json` and no new row.
+18. Turn the setting off, crash again (`am crash <pid>`), reopen. Expect no `kw-crash.json` and no new row.
 19. Release build only: the frames of step 17 name `com.kithwall.app.*` classes with file and line (the two
     R8 rules of §14.2 worked).
+
+### 14.4 Verified on a device (2026-11-11)
+
+`scripts/verify-release.mjs` now also covers the app icon and crash capture, on an Android 15 emulator with a
+release build: one launcher entry at a time (`.MainActivity` by default, `.IconCalculator` after switching,
+back again), the app opens through the disguised entry and a `https://www.kithwall.com/...` link still lands
+in it; with crash reports off a crash leaves no file, with them on `kw-crash.json` holds the class, the frames
+and the app version, and no message. Found while doing so: the WebView's own handler ends the process itself,
+so the recorder must run before it; the main thread now has its own handler (`KwCrash.guardMainThread`), which
+Android calls before any default handler.

@@ -4,7 +4,9 @@
 //   2. "Turn on notifications" really shows Android's dialog, and every request gets an answer:
 //      "Don't allow", the silent refusal after two denials (blocked), and "Allow";
 //   3. a push token can be fetched;
-//   4. the bundled offline page returns to the app's own origin (it pointed at a developer address).
+//   4. the bundled offline page returns to the app's own origin (it pointed at a developer address);
+//   5. opt-in crash capture really writes a crash down (the WebView's handler used to end the process first);
+//   6. the disguised app icon: one launcher entry at a time, the app and its links work through it.
 //
 // Needs: adb on PATH (or ANDROID_HOME), one device with Android 13+, and a release APK built with
 // `android.webContentsDebuggingEnabled: true` in the synced capacitor.config.json (never ship that build).
@@ -61,6 +63,21 @@ async function waitFor(pred, ms = 40_000) {
   }
 }
 const tap = (n) => adb('shell', 'input', 'tap', String(n.x), String(n.y));
+/**
+ * Tap a button of a system dialog and make sure it took: on a slow emulator a tap is sometimes swallowed and
+ * the dialog stays up, which would look like the app never answering. Returns false if the button never showed.
+ */
+async function press(label) {
+  let found = false;
+  for (let i = 0; i < 5; i++) {
+    const node = (await settled()).find((n) => label.test(n.text));
+    if (!node) return found;
+    found = true;
+    tap(node);
+    await sleep(2500);
+  }
+  return found;
+}
 
 // ---- the page, through the WebView's DevTools socket --------------------------------------------------
 async function connect() {
@@ -144,8 +161,7 @@ for (const round of [1, 2]) {
   const req = request();
   const d = await waitFor(dialog);
   check(`request ${round}: Android shows its notification dialog`, !!d);
-  const deny = (await settled()).find((n) => /^Don't allow$/i.test(n.text));
-  if (deny) tap(deny);
+  await press(/^Don't allow$/i);
   const r = await req.result();
   check(`request ${round}: "Don't allow" is answered, not blocked`, r.value?.state !== 'granted' && r.value?.blocked === false, JSON.stringify(r.value ?? r));
   await sleep(1500);
@@ -163,13 +179,62 @@ start = await launch();
   const req = request();
   const d = await waitFor(dialog);
   check('after a reset: the dialog shows again', !!d);
-  const allow = (await settled()).find((n) => /^Allow$/i.test(n.text));
-  if (allow) tap(allow);
+  await press(/^Allow$/i);
   const r = await Promise.race([req.result(), sleep(25_000).then(() => ({ pending: true }))]);
   if (r.pending) console.log('      still waiting after 25 s; on screen:', JSON.stringify((await settled()).map((n) => n.text).slice(0, 6)), '| granted:', sh(`dumpsys package ${PKG} | grep "POST_NOTIFICATIONS: granted"`).trim());
   check('"Allow" is answered as granted', r.value?.state === 'granted', JSON.stringify(r.value ?? r));
-  const reg = await evaluate(`Capacitor.nativePromise('KithwallPush','register',{}).then(r=>({provider:r.provider,token:(r.token||'').length,key:!!r.p256dh}))`, 60_000);
+  // Google's push service often isn't connected yet on a freshly booted emulator: allow it a few tries.
+  let reg = null;
+  for (let i = 0; i < 4 && !(reg?.value?.token > 20); i++) {
+    if (i) await sleep(15_000);
+    reg = await evaluate(`Capacitor.nativePromise('KithwallPush','register',{}).then(r=>({provider:r.provider,token:(r.token||'').length,key:!!r.p256dh}))`, 60_000);
+  }
   check('a push token is issued', reg.value?.token > 20 && reg.value?.key === true, JSON.stringify(reg.value ?? reg));
+}
+
+// Crash capture (opt-in, docs/v2/05-native.md §14): nothing is written while it is off; when on, a crash of
+// the app is written down (class and frames, never the message) even though the WebView's own handler ends
+// the process, and the page finds it on the next start.
+const shell = (method, args = '{}', ms) => evaluate(`Capacitor.nativePromise('KithwallShell','${method}',${args})`, ms);
+async function crashAndReopen() {
+  // By process id: `am crash <package>` may pick the WebView's renderer process instead of the app's own.
+  sh(`am crash ${sh(`pidof ${PKG}`).split(/\s+/)[0]}`);
+  await sleep(5000);
+  await launch();
+}
+if ((await shell('pendingCrash')).error) {
+  console.log('SKIP  crash capture and app icon (this build has no KithwallShell.pendingCrash)');
+} else {
+  await shell('setCrashReports', '{enabled:false}');
+  await crashAndReopen();
+  const none = await shell('pendingCrash');
+  check('crash reports off: a crash leaves nothing behind', !!none.value && !none.value.name, JSON.stringify(none.value ?? none));
+  await shell('setCrashReports', '{enabled:true}');
+  await crashAndReopen();
+  const got = await shell('pendingCrash');
+  const stack = String(got.value?.stack ?? '');
+  check('crash reports on: the crash is recorded for the next start', /Exception|Error/.test(got.value?.name ?? '') && /^at [\w.$]+\(/m.test(stack), `${got.value?.name} · ${stack.split('\n').filter(Boolean).length} frames`);
+  check('the record has no exception message', !/shell-induced/i.test(JSON.stringify(got.value ?? {})));
+  await shell('clearCrash');
+  await shell('setCrashReports', '{enabled:false}');
+
+  // Disguised app icon: exactly one launcher entry at any time, the app opens through it, links still arrive.
+  const launchers = () => sh(`cmd package query-activities -a android.intent.action.MAIN -c android.intent.category.LAUNCHER --components ${PKG}`).split(/\s+/).filter(Boolean);
+  check('default icon: the launcher entry is the old component name (home-screen shortcuts survive)', launchers().join() === `${PKG}/.MainActivity`, launchers().join());
+  await shell('setAppIcon', "{icon:'calculator'}");
+  await sleep(8000);
+  check('icon switched: only the Calculator entry is left', launchers().join() === `${PKG}/.IconCalculator`, launchers().join());
+  const viaAlias = await launch();
+  const icon = await shell('getAppIcon');
+  check('the app opens through the disguised entry', viaAlias.href.startsWith(origin + '/') && icon.value?.icon === 'calculator', `${viaAlias.href} · ${icon.value?.icon}`);
+  sh(`am start -a android.intent.action.VIEW -d "${origin}/help" ${PKG} >/dev/null 2>&1`);
+  let at = null;
+  for (let i = 0; i < 10 && at?.value !== '/help'; i++) { await sleep(3000); await settled(); at = await evaluate('location.pathname', 8000).catch(() => null); }
+  check('a Kithwall link still opens in the disguised app', at?.value === '/help', at?.value);
+  await shell('setAppIcon', "{icon:'kithwall'}");
+  await sleep(8000);
+  check('icon switched back: only the Kithwall entry is left', launchers().join() === `${PKG}/.MainActivity`, launchers().join());
+  await launch();
 }
 
 // Offline page: bundled page for this origin, and back to the app when the connection returns.

@@ -51,15 +51,91 @@ final class KwCrash {
         } catch (Exception ignored) {
             // Stays off / unknown.
         }
-        final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
-        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+        beFirst(c);
+    }
+
+    /** Our handler: records once (it may sit in the chain twice, see beFirst), then lets the others run. */
+    private static final class Recorder implements Thread.UncaughtExceptionHandler {
+        private final Context app;
+        private final Thread.UncaughtExceptionHandler previous;
+
+        Recorder(Context app, Thread.UncaughtExceptionHandler previous) {
+            this.app = app;
+            this.previous = previous;
+        }
+
+        @Override
+        public void uncaughtException(Thread thread, Throwable error) {
             try {
-                if (enabled) record(c, error);
+                if (enabled && !recorded) {
+                    recorded = true;
+                    record(app, error);
+                }
             } catch (Throwable ignored) {
                 // Recording must never get in the way of the crash itself.
             }
             if (previous != null) previous.uncaughtException(thread, error);
-        });
+        }
+    }
+
+    private static volatile boolean recorded = false;
+
+    /**
+     * Keep our handler in front of the others. Android System WebView installs its own default handler when
+     * it starts (after KwApp.onCreate), and that handler ends the process itself (logcat: "FATAL
+     * java_exception_reporter: Uncaught exception") rather than passing the crash on: whatever sits behind it
+     * in the chain never runs. So the activity calls this again once the WebView exists and every time it
+     * comes to the front; whenever another handler has moved in front, ours wraps it. Cheap when nothing
+     * changed. The main thread does not depend on this ordering at all (guardMainThread).
+     */
+    static void beFirst(Context app) {
+        final Context c = app.getApplicationContext();
+        guardMainThread(c);
+        Thread.UncaughtExceptionHandler current = Thread.getDefaultUncaughtExceptionHandler();
+        if (current instanceof Recorder) return;
+        Thread.setDefaultUncaughtExceptionHandler(new Recorder(c, current));
+    }
+
+    /**
+     * The main thread gets its own handler, which Android calls BEFORE any default handler, so recording a
+     * main-thread crash cannot be pre-empted by a default handler installed later (the WebView installs its
+     * own lazily). Nearly every crash of this app surfaces on the main thread (the WebView's callbacks and
+     * the activity run there); other threads rely on beFirst() staying in front of the default chain. After
+     * recording, the default chain runs as if this handler were not there.
+     * Verified on a device with a release build (scripts/verify-release.mjs): `am crash <pid of the app>`
+     * leaves kw-crash.json with the class and frames. Note `am crash <package>` may crash the WebView's
+     * renderer process instead of the app, which records nothing and proves nothing.
+     */
+    private static void guardMainThread(final Context app) {
+        Thread main = android.os.Looper.getMainLooper().getThread();
+        if (main.getUncaughtExceptionHandler() instanceof MainGuard) return;
+        main.setUncaughtExceptionHandler(new MainGuard(app));
+    }
+
+    private static final class MainGuard implements Thread.UncaughtExceptionHandler {
+        private final Context app;
+
+        MainGuard(Context app) {
+            this.app = app;
+        }
+
+        @Override
+        public void uncaughtException(Thread thread, Throwable error) {
+            try {
+                if (enabled && !recorded) {
+                    recorded = true;
+                    record(app, error);
+                }
+            } catch (Throwable ignored) {
+                // Recording must never get in the way of the crash itself.
+            }
+            Thread.UncaughtExceptionHandler rest = Thread.getDefaultUncaughtExceptionHandler();
+            if (rest != null) rest.uncaughtException(thread, error);
+            else {
+                android.os.Process.killProcess(android.os.Process.myPid());
+                System.exit(10);
+            }
+        }
     }
 
     static boolean isEnabled() {
