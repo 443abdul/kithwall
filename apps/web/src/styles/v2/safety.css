@@ -71,8 +71,10 @@ html.kw-exiting { background: #fff !important; }
 /* ------------------------------------------------------------------ centre */
 .kw .k-safety-h { font-size: var(--text-lg); margin: 0 0 var(--space-1); }
 .kw .k-safety-panic { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
-.kw .k-safety-panic-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
-@media (max-width: 380px) { .kw .k-safety-panic-row { grid-template-columns: 1fr; } }
+/* Side by side when both fit on one line each, otherwise one above the other (no fixed breakpoint: it depends
+   on the language and the text size, not only on the screen). */
+.kw .k-safety-panic-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.kw .k-safety-panic-row > .k-btn { flex: 1 1 auto; }
 .kw .k-safety-bullets { margin: 0; padding-inline-start: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
 .kw .k-safety-pinfields { display: grid; gap: var(--space-3); grid-template-columns: 1fr; }
 @media (min-width: 560px) { .kw .k-safety-pinfields { grid-template-columns: 1fr 1fr; } }

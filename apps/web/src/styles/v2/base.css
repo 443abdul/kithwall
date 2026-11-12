@@ -77,6 +77,14 @@ html:has(.kw) body {
 
 .kw {
   min-block-size: 100dvh;
+  /* Nothing may make the page wider than the screen. On Android one element sticking out widens the whole
+     page, and the fixed tab bar and top bar are laid out to that width: the last tab slides off the edge
+     (the Safety centre's "Wipe this device", 2026-11-12). Clipping here keeps the shell intact whatever a
+     single screen does; scripts/overflow-audit.mjs finds the elements that stick out so they get fixed too.
+     `clip` (not `hidden`) makes no scroll container, so sticky headers keep working. */
+  overflow-x: clip;
+  /* A word longer than its line (long German/Russian compounds, links, handles) breaks instead of overflowing. */
+  overflow-wrap: break-word;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);

@@ -25,10 +25,17 @@
   border: var(--border-width) solid var(--btn-border); border-radius: var(--btn-radius);
   background: var(--btn-bg); color: var(--btn-fg);
   font-family: var(--font-sans); font-size: var(--text-md); font-weight: var(--weight-bold); line-height: 1.2;
-  text-decoration: none; white-space: nowrap; cursor: pointer; user-select: none;
+  text-decoration: none; cursor: pointer; user-select: none;
+  /* A button is never wider than the space it is given: a label that doesn't fit on one line (long
+     translations, narrow phones) wraps onto a second one, between words, instead of pushing the page
+     sideways. Where it fits, nothing changes. A single word is only ever broken when it is wider than the
+     whole space (`break-word`, not `anywhere`: in a row the button keeps room for its longest word, and
+     what sits next to it gives way instead). */
+  max-inline-size: 100%; white-space: normal; overflow-wrap: break-word; text-align: center; text-wrap: balance;
   transition: background-color var(--dur-1) var(--ease-standard), transform var(--dur-2) var(--ease-emphasized),
     box-shadow var(--dur-2) var(--ease-standard), color var(--dur-1);
 }
+.kw .k-btn > span { min-inline-size: 0; }
 .kw .k-btn:hover { background: var(--btn-hover); text-decoration: none; }
 .kw .k-btn:active:not(:disabled) { transform: scale(var(--press-scale)); }
 .kw .k-btn:disabled, .kw .k-btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
