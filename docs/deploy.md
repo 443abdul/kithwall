@@ -90,6 +90,7 @@ Import the GitHub repo, **Root Directory `apps/web`**, framework Next.js. Enviro
 | `ALTCHA_HMAC_KEY` | server only | 32+ random characters (`openssl rand -base64 48`) |
 | `AUTH_HOOK_SECRET` | server only | the hook secret from Supabase (`v1,whsec_…`) |
 | `CRON_SECRET` | server only | 32+ random characters; Vercel Cron sends it as `Authorization: Bearer …` |
+| `KITHWALL_OFFICIAL_SEED` | server only, optional | 40+ random characters (e.g. `openssl rand -base64 48`); the keys of Kithwall's automated accounts are wrapped under it. Unset: those accounts do not post. Keep a copy offline: without it the existing accounts cannot post again (`docs/v2/13-official-accounts.md`) |
 | `SMTP_URL` | server only | `smtps://no-reply%40<your-domain>:<url-encoded password>@mail.spacemail.com:465` — content-free notices to verified notice addresses (notice-email verification, recovery started, account recovered, new sign-in method) |
 | `MAIL_FROM` | server only | `Kithwall <no-reply@<your-domain>>` |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | all | Web Push public key (public by design) — see "Push notifications" below |
@@ -115,8 +116,9 @@ are replaced by a pointer to the website (App Store rules for donation links).
 
 ### Cron
 
-`apps/web/vercel.json` has three daily crons (daily works on every Vercel plan; set `CRON_SECRET` in Vercel):
-`/api/cron/stories`, `/api/cron/ephemeral` and `/api/cron/legacy`. Account deletion is immediate (`/api/account/delete`,
+`apps/web/vercel.json` has four daily crons (daily works on every Vercel plan; set `CRON_SECRET` in Vercel):
+`/api/cron/stories`, `/api/cron/ephemeral`, `/api/cron/legacy` and `/api/cron/official` (the automated accounts,
+`docs/v2/13-official-accounts.md`; does nothing without `KITHWALL_OFFICIAL_SEED`). Account deletion is immediate (`/api/account/delete`,
 proof-of-key), so no cron is involved.
 
 Legacy contacts (`20261102000200_legacy_contact`, `docs/v2/03-safety.md` §12): `GET /api/cron/legacy` runs

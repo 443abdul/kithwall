@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
+import { AutomatedBadge } from '@/components/official/Automated';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Textarea, TextField } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
@@ -180,6 +181,7 @@ export function PostCard({ row, onRemoved, expanded = false, pinned = false }: {
           {profileHref ? <Link href={profileHref} className="k-post-name">{name}</Link> : <span className="k-post-name">{name}</span>}
           <span className="k-post-meta">
             {pinned ? <span className="k-pin-tag"><Icon name="mapPin" /> {t('post.pinnedTag')} ·</span> : null}
+            <AutomatedBadge userId={row.author_id} />
             <RelativeTime iso={row.created_at} />
             {row.edited_at ? <span className="k-muted">· {t('feed.edited')}</span> : null}
             {left ? (

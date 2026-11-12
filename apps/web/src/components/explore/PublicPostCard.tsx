@@ -10,6 +10,7 @@ import { useFormat, useT } from '@/i18n';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
+import { AutomatedBadge } from '@/components/official/Automated';
 import { RelativeTime } from '@/components/posts/bits';
 import { Lightbox } from '@/components/posts/Media';
 import { PostBody } from '@/components/posts/PostCard';
@@ -54,6 +55,7 @@ export function PublicPostCard({ row, href, authorHref, hiddenWords, footer }: {
           {authorHref ? <Link href={authorHref} className="k-post-name">{name}</Link> : <span className="k-post-name">{name}</span>}
           <span className="k-post-meta">
             <span className="k-ltr">@{row.author_username}</span>
+            <AutomatedBadge userId={row.author_id} />
             <span aria-hidden>·</span>
             <RelativeTime iso={row.created_at} />
             {row.edited_at ? <span className="k-muted">· {t('feed.edited')}</span> : null}

@@ -19,6 +19,7 @@ import { usePerson } from '@/lib/people';
 import { useRelation, type Relation } from './data';
 import { follow, followInfo, followKey, followKeyReady, removeFollower, restrict, restrictedKey, unfollow, unrestrict, useFollowInfo, useRestricted } from '@/lib/follow/follow';
 import { useSession } from '@/lib/keys/session';
+import { useIsAutomated } from '@/lib/official/client';
 
 export function PersonActions({ userId, name, compact }: { userId: string; name: string; compact?: boolean }) {
   const t = useT();
@@ -27,6 +28,8 @@ export function PersonActions({ userId, name, compact }: { userId: string; name:
   const rel = useRelation(userId);
   // A remembered account (lib/legacy) takes no new connections or chats; the server refuses them too.
   const remembered = !!usePerson(userId)?.memorialised_at;
+  // An automated Kithwall account (docs/v2/13-official-accounts.md) can be followed, not connected with.
+  const automated = useIsAutomated(userId);
   const myFollowOn = !!useSession().profile?.follow_enabled;
   const fi = useFollowInfo(userId).data ?? null;
   const restricted = useRestricted();
@@ -82,7 +85,7 @@ export function PersonActions({ userId, name, compact }: { userId: string; name:
         onClick={() => void run(doFollow, t('follow.followed', { name }))}>{t('follow.follow')}</Button> : null}
       {fi?.iFollow && r !== 'blocked' && r !== 'connected' ? <Button size={size} variant="secondary" icon="userCheck" busy={busy} title={t('follow.unfollow')}
         onClick={() => void run(() => unfollow(userId), t('follow.unfollowed', { name }))}>{t('follow.following')}</Button> : null}
-      {r === 'none' && !remembered ? <Button size={size} variant={canFollow ? 'secondary' : 'primary'} icon="userPlus" busy={busy}
+      {r === 'none' && !remembered && !automated ? <Button size={size} variant={canFollow ? 'secondary' : 'primary'} icon="userPlus" busy={busy}
         onClick={() => void run(() => sendFriendRequest(userId), t('people.requestSent'), 'sent')}>{t('people.connect')}</Button> : null}
       {r === 'sent' ? <Button size={size} variant="secondary" icon="clock" busy={busy} title={t('people.cancelRequest')}
         onClick={() => void run(() => cancelRequest(userId), t('people.requestCancelled'), 'none')}>{t('people.requested')}</Button> : null}

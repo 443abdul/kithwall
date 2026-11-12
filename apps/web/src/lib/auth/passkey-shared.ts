@@ -23,7 +23,8 @@ export function normalizeHandle(raw: string): string {
 export function handleShapeProblem(raw: string): 'invalid' | 'reserved' | null {
   const h = normalizeHandle(raw);
   if (!HANDLE_RE.test(h)) return 'invalid';
-  if (RESERVED.has(h)) return 'reserved';
+  // Handles that start with "kithwall" belong to Kithwall's own automated accounts (docs/v2/13-official-accounts.md).
+  if (RESERVED.has(h) || h.startsWith('kithwall')) return 'reserved';
   return null;
 }
 

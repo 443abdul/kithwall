@@ -35,6 +35,8 @@ import { KeyChangeBanner } from '@/components/verify/KeyChangeBanner';
 import { VerifiedBadge } from '@/components/verify/VerifiedBadge';
 import { EditProfileDialog } from './EditProfile';
 import { PersonActions } from './PersonActions';
+import { AutomatedBadge } from '@/components/official/Automated';
+import { useIsAutomated } from '@/lib/official/client';
 import { RequestSafety } from './RequestSafety';
 import { followKeyReady, useFollowInfo } from '@/lib/follow/follow';
 
@@ -67,6 +69,7 @@ function Profile({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>('posts');
   const [editing, setEditing] = useState(false);
   const follow = useFollowInfo(id).data ?? null;
+  const automated = useIsAutomated(id);
   if (!p) return <Page title="…"><div className="k-center"><Spinner size={28} /></div></Page>;
   const self = id === userId;
   const connected = self || !!p.info;
@@ -76,7 +79,7 @@ function Profile({ id }: { id: string }) {
   return (
     <Page title={p.name} back={self ? { href: '/you', label: t('common.back') } : undefined}>
       {!self ? <KeyChangeBanner userId={id} name={p.name} handle={p.username} /> : null}
-      {!self ? <RequestSafety userId={id} /> : null}
+      {!self && !automated ? <RequestSafety userId={id} /> : null}
       {p.memorialised_at ? (
         // Chosen by their legacy contact after a long absence (lib/legacy); undone if they come back.
         <Callout tone="accent" icon="heart">
@@ -87,7 +90,7 @@ function Profile({ id }: { id: string }) {
         <Avatar name={p.name} src={avatar} size={96} />
         <div className="k-profile-head-text">
           <h2 className="k-profile-name">{p.name}{!self ? <> <VerifiedBadge userId={id} /></> : null}</h2>
-          <p className="k-muted k-ltr">@{p.username}</p>
+          <p className="k-muted k-profile-handle"><span className="k-ltr">@{p.username}</span> <AutomatedBadge userId={id} chip /></p>
           {p.follow_enabled && follow?.followers != null ? (
             <p className="k-small k-profile-followers">
               <Icon name="userCheck" /> {t('follow.count', { count: follow.followers })}
@@ -99,11 +102,12 @@ function Profile({ id }: { id: string }) {
         <div className="k-profile-head-actions">
           {self ? <Button variant="secondary" size="sm" icon="edit" onClick={() => setEditing(true)}>{t('profile.edit')}</Button>
             : <PersonActions userId={id} name={p.name} />}
-          {!self ? <ButtonLink href={`/u/${encodeURIComponent(p.username)}/verify`} variant="ghost" size="sm" icon="shield">{t('verify.profileLink')}</ButtonLink> : null}
+          {!self && !automated ? <ButtonLink href={`/u/${encodeURIComponent(p.username)}/verify`} variant="ghost" size="sm" icon="shield">{t('verify.profileLink')}</ButtonLink> : null}
         </div>
       </Card>
+      {automated ? <Callout icon="bolt">{t('official.profile')}</Callout> : null}
       {waitingForKey ? <Callout icon="key">{t('follow.waitingKey', { name: p.name })}</Callout> : null}
-      {canRead && !connected ? (
+      {canRead && !connected && !automated ? (
         <p className="k-muted k-small"><Icon name="info" /> {follow?.iFollow ? t('follow.profileFollowing') : t('follow.profilePublic')}</p>
       ) : null}
       {canRead ? (

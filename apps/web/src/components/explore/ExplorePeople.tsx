@@ -22,6 +22,8 @@ import { people, usePeopleVersion } from '@/lib/people';
 import { dismissSuggestion, useHiddenStore } from '@/lib/social/hiddenStore';
 import { isMuted, useSocialPrefs } from '@/lib/social/prefs';
 import { sb, must } from '@/lib/supabase';
+import { AutomatedBadge } from '@/components/official/Automated';
+import { useAutomated } from '@/lib/official/client';
 
 /** A follow-enabled account in a list: public name, @handle, a line of context and a Follow button. */
 export function AccountRow({ account, sub, following, trailing }: { account: AccountCard; sub?: ReactNode; following: boolean; trailing?: ReactNode }) {
@@ -136,11 +138,33 @@ function Suggested() {
   );
 }
 
+/** Kithwall's own automated accounts (docs/v2/13-official-accounts.md), each with a Follow button. */
+function Official() {
+  const t = useT();
+  const { status } = useSession();
+  const list = useAutomated();
+  const mine = useQuery({ queryKey: ['follows', 'following-ids'], enabled: status === 'ready', staleTime: 60_000, queryFn: myFollowingIds });
+  if (!list.length || mine.isPending) return null;
+  const following = new Set(mine.data ?? []);
+  return (
+    <section className="k-stack-sm" aria-labelledby="explore-official-h">
+      <h2 id="explore-official-h" className="k-section-title">{t('official.explore.title')}</h2>
+      <p className="k-muted k-small">{t('official.explore.body')}</p>
+      <Card padding="flush">
+        <ul className="k-list" role="list">
+          {list.map((a) => <li key={a.id}><AccountRow account={a} following={following.has(a.id)} sub={<AutomatedBadge userId={a.id} />} /></li>)}
+        </ul>
+      </Card>
+    </section>
+  );
+}
+
 export function ExplorePeople() {
   const t = useT();
   return (
     <div className="k-stack">
       <Search />
+      <Official />
       <section className="k-stack-sm" aria-labelledby="explore-suggest-h">
         <h2 id="explore-suggest-h" className="k-section-title">{t('explore.suggest.title')}</h2>
         <p className="k-muted k-small">{t('explore.suggest.body')}</p>

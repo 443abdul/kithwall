@@ -14,6 +14,9 @@ describe('handles', () => {
   it('checks the v1 username shape and reserved names', () => {
     expect(handleShapeProblem('maya')).toBeNull();
     expect(handleShapeProblem('maya.k2')).toBeNull();
+    // The prefix of Kithwall's own automated accounts cannot be registered.
+    expect(handleShapeProblem('kithwall.news')).toBe('reserved');
+    expect(handleShapeProblem('KithwallHelp')).toBe('reserved');
     expect(handleShapeProblem('ma')).toBe('invalid');
     expect(handleShapeProblem('.maya')).toBe('invalid');
     expect(handleShapeProblem('maya_k')).toBe('invalid');   // underscores are not allowed (profiles check)

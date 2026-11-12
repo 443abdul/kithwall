@@ -12,6 +12,7 @@ import { people } from './people';
 import type { CommentPayload, CommentPolicy, CommentRow, PostKind, PostPayload, PostRow } from './types';
 import { isOfflineError, knownOffline, OfflineError } from './net/offline';
 import { noteComment, notePost } from './search';
+import { postHeader } from './postHeader';
 
 export type Audience =
   | { kind: 'friends' }                 // my friends (or the wall owner's friends when posting on their wall)
@@ -20,13 +21,7 @@ export type Audience =
   | { kind: 'followers' }               // everyone who follows me (and my connections): still end-to-end encrypted
   | { kind: 'public' };                 // signed, not encrypted: anyone can read it (docs/v2/10-follow-public.md)
 
-export function postHeader(p: Pick<PostRow, 'id' | 'author_id' | 'wall_owner_id' | 'group_id' | 'event_id' | 'kind' | 'is_public' | 'audience_id' | 'epoch'>): EnvelopeHeader {
-  const wall = p.wall_owner_id ?? p.group_id ?? p.event_id ?? undefined;
-  return {
-    v: 1, type: `post:${p.kind}`, id: p.id, author: p.author_id, ...(wall ? { wall } : {}),
-    audience: p.is_public ? 'public' : { id: p.audience_id!, epoch: p.epoch! },
-  };
-}
+export { postHeader };
 
 export interface CreatePostArgs {
   kind: PostKind;

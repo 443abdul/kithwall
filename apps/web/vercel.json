@@ -3,6 +3,7 @@
   "crons": [
     { "path": "/api/cron/stories", "schedule": "15 4 * * *" },
     { "path": "/api/cron/ephemeral", "schedule": "30 4 * * *" },
-    { "path": "/api/cron/legacy", "schedule": "45 4 * * *" }
+    { "path": "/api/cron/legacy", "schedule": "45 4 * * *" },
+    { "path": "/api/cron/official", "schedule": "10 3 * * *" }
   ]
 }

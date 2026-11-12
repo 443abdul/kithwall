@@ -31,6 +31,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useDocumentTitle } from '@/components/onboarding/useDocumentTitle';
 import { payloadText, reporterCopy, verifyReport, type ReportRow, type Verification } from './verify';
 import { CrashReports } from './CrashReports';
+import { OfficialAdmin } from './OfficialAdmin';
 
 type Role = 'admin' | 'moderator';
 type Status = 'open' | 'actioned' | 'dismissed';
@@ -424,6 +425,8 @@ function Admin() {
           </form>
         </Card>
       </section>
+
+      <OfficialAdmin enabled={settings.official_accounts_enabled === true} onToggle={(v) => void setSetting('official_accounts_enabled', v)} />
 
       <CrashReports />
     </div>
