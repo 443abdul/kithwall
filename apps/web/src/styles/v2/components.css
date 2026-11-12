@@ -121,18 +121,31 @@
 .kw .k-switch:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ------------------------------------------------------------------ segmented */
+/* An option is never narrower than its label, so when the options don't fit side by side (small phones,
+   long translations) the group wraps onto more rows instead of pushing the page sideways. */
 .kw .k-seg {
-  display: inline-flex; padding: 4px; gap: 4px;
+  --seg-pad: 4px; --seg-row: 40px;
+  display: inline-flex; flex-wrap: wrap; padding: var(--seg-pad); gap: var(--seg-pad);
   background: var(--surface-2); border: var(--border-width) solid var(--border); max-inline-size: 100%;
-  border-radius: var(--seg-radius);
+  /* Capped at half of one row: a pill is still a pill on one row, and wrapped rows keep ordinary corners. */
+  border-radius: min(var(--seg-radius), calc(var(--seg-row) / 2 + var(--seg-pad) + var(--border-width)));
 }
 .kw .k-seg-block { display: flex; inline-size: 100%; }
 .kw .k-seg-item {
   flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  min-block-size: 40px; padding-inline: var(--space-4); border: 0; border-radius: calc(var(--seg-radius) - 4px);
+  min-block-size: var(--seg-row); padding-inline: var(--space-4); border: 0;
+  border-radius: min(calc(var(--seg-radius) - var(--seg-pad)), calc(var(--seg-row) / 2));
   background: transparent; color: var(--text-muted); font-weight: var(--weight-bold); font-size: var(--text-sm);
   cursor: pointer; white-space: nowrap;
   transition: background-color var(--dur-2) var(--ease-standard), color var(--dur-1), transform var(--dur-2) var(--ease-emphasized);
+}
+/* One label wider than the whole group (a long name or translation) breaks onto more lines; every other
+   label keeps to one line, because fit-content is the label's own width until the group is narrower. */
+@supports (min-inline-size: fit-content) {
+  .kw .k-seg-item {
+    min-inline-size: fit-content; padding-block: var(--space-1);
+    white-space: normal; overflow-wrap: anywhere; text-align: center;
+  }
 }
 .kw .k-seg-item:hover { color: var(--text); }
 .kw .k-seg-item[aria-checked="true"] { background: var(--seg-on-bg); color: var(--seg-on-fg); box-shadow: var(--shadow-1); }

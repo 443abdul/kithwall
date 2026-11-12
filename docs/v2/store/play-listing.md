@@ -89,22 +89,23 @@ the encrypted content).
 
 | Data type (Play) | Collected? | Required/optional | Purposes | Notes |
 |---|---|---|---|---|
-| Personal info → **Name** | No | — | — | Display names are end-to-end encrypted (exempt). Only people who choose to join the public directory publish a name — say "Yes, optional, App functionality" if you prefer to disclose that. |
+| Personal info → **Name** | Yes | Optional | App functionality | **Declared since 2.4.0.** Display names are end-to-end encrypted (exempt), but an account that turns on "Let people follow me" publishes a public name (`10-follow-public.md`). |
 | Personal info → **Email address** | Yes | Optional | Account management | Optional notice address (verified) for security notices; older v1 accounts use email sign-in. Passkey accounts have none. |
 | Personal info → **User IDs** | Yes | Required | App functionality, Account management, Security/fraud prevention | Account id, public @handle, public keys, passkey credential ids. |
 | Personal info → Address, phone, race, religion, sexual orientation, other | No | | | |
 | Financial info | No | | | Donations are handled by an external processor on the website. |
 | Health and fitness | No | | | |
 | **Messages** → Emails / SMS / Other in-app messages | No | | | Messages, posts, comments are end-to-end encrypted (exempt). The server stores who is in a conversation and when messages were sent; disclose under "App activity → Other actions" (below). |
-| **Photos and videos** | No | | | End-to-end encrypted before upload (exempt). |
+| **Photos and videos** → Photos, Videos | Yes | Optional | App functionality | **Declared since 2.4.0.** Still end-to-end encrypted before upload (exempt) for every private audience, including Followers. Photos and videos attached to a **Public** post or reel are readable by anyone, so they are collected when the person chooses to post publicly. |
 | **Audio files** (voice notes) / call audio | No | | | End-to-end encrypted (exempt). |
 | Files and docs | No | | | |
 | Calendar (events) | No | | | Events are end-to-end encrypted, except events the creator makes public. |
 | Contacts | No | | | The app never reads the phone's contacts. Connections between accounts are under "App activity". |
-| **App activity → Other user-generated content / Other actions** | Yes | Required | App functionality, Security/fraud prevention | Server-visible metadata: connections/friendships, circle and chat membership, timestamps of posts/messages, reactions' existence, notifications, reports filed. |
+| **App activity → Other actions** | Yes | Required | App functionality, Security/fraud prevention | Server-visible metadata: connections/friendships, follows, circle and chat membership, timestamps of posts/messages, reactions' existence, notifications, reports filed. |
+| **App activity → Other user-generated content** | Yes | Optional | App functionality | **Declared since 2.4.0.** The text of Public posts and of comments on them (signed plaintext). Private posts, comments and messages stay end-to-end encrypted (exempt). |
 | App activity → In-app search history, installed apps, web browsing | No | | | "Search on your phone" runs on the device; queries and the index never leave it (`03-safety.md` §14). |
 | Web browsing | No | | | |
-| App info and performance → **Crash logs** | Yes | Optional | Analytics (app stability) | **Changed in 2.5.0.** Only if the person turns on "Send crash reports" (off by default): the error's class, a scrubbed message and stack, app version, OS and WebView major version, route pattern, language. Sent to Kithwall's own server, no SDK, no third party; not linked to the account or the device, no IP address stored, deleted after 30 days (`03-transparency.md` §6). Declare as collected, optional, not shared, and not linked to the user; update the Data safety form when 2.5.0 is uploaded. |
+| App info and performance → **Crash logs** | Yes | Optional | Analytics (app stability) | **Declared since 2.4.0.** Only if the person turns on "Send crash reports" (off by default): the error's class, a scrubbed message and stack, app version, OS and WebView major version, route pattern, language. Sent to Kithwall's own server, no SDK, no third party; not linked to the account or the device, no IP address stored, deleted after 30 days (`03-transparency.md` §6). Declared as collected, optional, not shared; purpose Analytics only. |
 | App info and performance → Diagnostics / Other app performance data | No | | | No analytics SDKs. ML Kit (on-device translation) would log usage metrics; its uploader is removed from the play manifest (`05-native.md` §12), so they are never sent. Re-check with a network capture before answering. |
 | **Device or other IDs** | Yes | Optional | App functionality | Push token (FCM registration token) and the device's push public key, only when notifications are turned on; coarse device label ("Kithwall app on Android"). |
 | **Location** (approximate/precise) | No | | | The optional check-in location is end-to-end encrypted (exempt) and only sent when the person taps to attach it. |
@@ -120,6 +121,11 @@ Also state in the privacy policy (already in the transparency page's "Outside th
 (IP address, user agent) kept briefly by the hosting provider for operations and abuse prevention — this is
 "ephemeral/operational" and covered by the privacy policy; sign-in session records (IP, user agent) in the
 auth system are visible to the person in "What Kithwall knows about you".
+
+Form as submitted with 2.4.0 (2026-11-12): no data shared; collected = Name, Email address, User IDs, Photos,
+Videos, Crash logs, Other user-generated content, Other actions, Device or other IDs. Everything added in 2.4.0
+is optional and "not processed ephemerally". Play's "Automatic protection → Installer check" is switched OFF
+(`05-native.md` §13): leave it off, or the direct-download APK stops opening.
 
 ## Review notes for Google (App access)
 
