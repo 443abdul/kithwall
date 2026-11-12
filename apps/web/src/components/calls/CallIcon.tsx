@@ -12,6 +12,9 @@ const P = {
   speaker: <><path d="M4 9.5h3l5-4v13l-5-4H4z" /><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /></>,
   minimize: <><path d="M4 14h6v6M20 10h-6V4" /><path d="M10 14 4 20M14 10l6-6" /></>,
   expand: <><path d="M14 4h6v6M10 20H4v-6" /><path d="M20 4l-6 6M4 20l6-6" /></>,
+  /** Full screen: four corners pointing out; and pointing in, to leave it. */
+  fullscreen: <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />,
+  fullscreenExit: <path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />,
   shield: <><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z" /><path d="M9 12l2 2 4-4" /></>,
   /** Devices (microphone, camera, speaker): two sliders. */
   devices: <><path d="M4 7.5h8.5M17.5 7.5H20M4 16.5h2.5M11.5 16.5H20" /><circle cx="15" cy="7.5" r="2.5" /><circle cx="9" cy="16.5" r="2.5" /></>,

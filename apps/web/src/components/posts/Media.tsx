@@ -2,7 +2,7 @@
 // Post media: photo grid, the lightbox (profile photos; posts use components/gallery), the encrypted video
 // player, link preview cards and click-to-play embeds. Every image is decrypted on this device into a
 // blob: URL (lib/media useFileUrl); embeds load nothing from the provider until the viewer presses play.
-import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type CSSProperties } from 'react';
 import { useFormat, useLocale, useT } from '@/i18n';
 import { Icon } from '@/components/ui/Icon';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -41,7 +41,8 @@ export function PhotoGrid({ photos, onOpen }: { photos: Photo[]; onOpen: (i: num
         const last = i === shown - 1 && more > 0;
         return (
           <button key={p.id} type="button" className="k-pgrid-cell" onClick={() => onOpen(i)}
-            style={single?.w && single.h ? { aspectRatio: `${Math.max(single.w / single.h, 0.6)}` } : undefined}
+            // The frame takes the photo's own proportions (feed.css); only extremely tall strips are trimmed a little.
+            style={single?.w && single.h ? { '--ar': `${Math.max(single.w / single.h, 0.45)}` } as CSSProperties : undefined}
             aria-label={last ? `${alt}. ${t('feed.morePhotos', { count: more })}` : alt}>
             <DecryptedImg file={saver ? p.files.thumb : p.files.med} alt="" />
             {last ? <span className="k-pgrid-more" aria-hidden>+{more}</span> : null}

@@ -91,6 +91,12 @@
     border-radius: var(--radius-xl); box-shadow: var(--shadow-3); border: 1px solid var(--border);
   }
 }
+/* Full screen (the button in the top bar, or a double click on the picture): the call is the whole screen, not
+   a window in the middle of it. */
+.kw .k-call-screen:fullscreen {
+  inset: 0; inline-size: 100%; block-size: 100%; max-inline-size: none; margin: 0; border: 0; border-radius: 0; box-shadow: none; animation: none;
+}
+.kw .k-call-screen:fullscreen::backdrop { background: var(--bg); }
 .kw .k-call-top { display: flex; align-items: center; gap: var(--space-2); }
 .kw .k-call-top-text { flex: 1; min-inline-size: 0; text-align: center; }
 .kw .k-call-title { font-size: var(--text-lg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

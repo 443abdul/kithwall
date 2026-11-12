@@ -3,7 +3,7 @@
 // groups), a minimised bar that follows you around the app, and the encryption panel with the call's
 // safety code. Phone-first (375px), RTL-safe (logical properties only), keyboard and screen-reader usable.
 import Link from 'next/link';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useFormat, useT, type MessageKey } from '@/i18n';
 import { calls, type CallSnapshot, type PeerView } from '@/lib/calls/engine';
 import { people, usePeopleVersion } from '@/lib/people';
@@ -230,6 +230,27 @@ function useHasTwoCameras(on: boolean): boolean {
   return two;
 }
 
+// Full screen for the call (the browser's own, so it also hides the address bar and tabs). Offered where the
+// browser can do it for an element: desktop browsers and Android; not iPhone Safari, where the call already
+// fills the screen.
+const onFullscreenChange = (cb: () => void) => {
+  document.addEventListener('fullscreenchange', cb);
+  return () => document.removeEventListener('fullscreenchange', cb);
+};
+const noStore = () => () => undefined;
+
+function useFullscreen(): { available: boolean; on: boolean; toggle: (el: HTMLElement | null) => void } {
+  const available = useSyncExternalStore(noStore, () => !!document.fullscreenEnabled, () => false);
+  const on = useSyncExternalStore(onFullscreenChange, () => !!document.fullscreenElement?.classList.contains('k-call-screen'), () => false);
+  // Leaving the call screen (minimised, ended and dismissed) leaves full screen with it.
+  useEffect(() => () => { if (document.fullscreenElement?.classList.contains('k-call-screen')) void document.exitFullscreen().catch(() => undefined); }, []);
+  const toggle = (el: HTMLElement | null) => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    else if (el) void el.requestFullscreen({ navigationUI: 'hide' }).catch(() => undefined);
+  };
+  return { available, on, toggle };
+}
+
 function InCall({ s }: { s: CallSnapshot }) {
   const t = useT();
   const nameOf = useNameOf();
@@ -243,6 +264,8 @@ function InCall({ s }: { s: CallSnapshot }) {
   const main = s.peers[0] ?? null;
   const status = useStatus(s, main);
   const ended = s.m.phase === 'ended';
+  const screenRef = useRef<HTMLDivElement>(null);
+  const fs = useFullscreen();
   const hangRef = useRef<HTMLDivElement>(null);
   useEffect(() => { hangRef.current?.querySelector<HTMLButtonElement>('.is-danger')?.focus(); }, []);
   const who = group ? title : s.peers[0] ? nameOf(s.peers[0].userId) : title;
@@ -254,7 +277,7 @@ function InCall({ s }: { s: CallSnapshot }) {
     : null;
 
   return (
-    <div className={cx('k-call-screen', group ? 'is-group' : 'is-one', ended && 'is-ended')} role="dialog" aria-modal="true" aria-labelledby="k-call-title"
+    <div ref={screenRef} className={cx('k-call-screen', group ? 'is-group' : 'is-one', ended && 'is-ended')} role="dialog" aria-modal="true" aria-labelledby="k-call-title"
       data-call-phase={s.m.phase} data-call-e2ee={s.frameMode && s.peers.some((p) => p.frames) ? 'frames' : 'dtls'}>
       <header className="k-call-top">
         <button type="button" className="k-call-topbtn" onClick={() => calls.setMinimized(true)} aria-label={t('calls.minimize')} title={t('calls.minimize')} disabled={ended}>
@@ -267,12 +290,19 @@ function InCall({ s }: { s: CallSnapshot }) {
           {!ended && s.camError ? <p className="k-call-weak" role="status">{t('calls.camError')}</p> : null}
           {!ended && s.event ? <p className="k-call-event">{eventText(s.event)}</p> : null}
         </div>
+        {fs.available ? (
+          <button type="button" className="k-call-topbtn" onClick={() => fs.toggle(screenRef.current)} aria-pressed={fs.on}
+            aria-label={fs.on ? t('calls.fullscreenExit') : t('calls.fullscreen')} title={fs.on ? t('calls.fullscreenExit') : t('calls.fullscreen')}>
+            <CallIcon name={fs.on ? 'fullscreenExit' : 'fullscreen'} />
+          </button>
+        ) : null}
         <button type="button" className="k-call-topbtn k-call-lock" onClick={() => setSecurity(true)} aria-label={t('calls.security.open')} title={t('calls.security.open')}>
           <CallIcon name="shield" />
         </button>
       </header>
 
-      <div className={cx('k-call-stage', group && 'k-call-grid', group && `n-${Math.min(s.peers.length + 1, 9)}`)}>
+      <div className={cx('k-call-stage', group && 'k-call-grid', group && `n-${Math.min(s.peers.length + 1, 9)}`)}
+        onDoubleClick={fs.available ? () => fs.toggle(screenRef.current) : undefined}>
         {group ? (
           <>
             {s.peers.map((p) => <Tile key={p.ep} peer={p} sinkId={s.sinkId} voiceOnly={s.voiceOnly} />)}

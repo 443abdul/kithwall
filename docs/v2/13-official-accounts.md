@@ -1,6 +1,7 @@
 # Kithwall 2: official, automated accounts
 
-Status: implemented · 2026-11-12 · migration `supabase/migrations/20261113000100_official_accounts.sql` ·
+Status: implemented · 2026-11-12 · migrations `supabase/migrations/20261113000100_official_accounts.sql`,
+`20261113000300_official_admin.sql` ·
 code `apps/web/src/lib/official`, `apps/web/src/app/api/cron/official` · tests
 `apps/web/src/lib/official/official.test.ts`, `supabase/tests/official_accounts.test.sql`
 
@@ -18,10 +19,12 @@ nothing is copied that its publisher did not offer for this use.
 |---|---|---|
 | `@kithwall.learn` | Kithwall Learn | Wikipedia: featured article, picture of the day, on this day · TED-Ed, CrashCourse, Khan Academy videos |
 | `@kithwall.science` | Kithwall Science | NASA image of the day and news · Our World in Data · Kurzgesagt, Veritasium videos |
-| `@kithwall.news` | Kithwall News | UN News, World Health Organization (BBC News and Dawn: off until the operator switches them on) |
+| `@kithwall.news` | Kithwall News | UN News (BBC News and Dawn: off until the operator switches them on) |
 | `@kithwall.urdu` | Kithwall اردو | UN News in Urdu (BBC Urdu: off until the operator switches it on) |
 
-An account is created the first time it has something to post. Each posts at most 8 times a day.
+These four are built in. An admin can add more accounts (`@kithwall.<name>`) and more sources from the Admin
+screen (§5). An account is created the first time it has something to post, and posts at most 12 times in a
+scheduled day.
 
 **What makes them trustworthy**
 
@@ -59,29 +62,41 @@ Rules that hold for every source:
   redirect, at most 6 MB, and only if the file itself is a JPEG, PNG or WebP of sane size
   (`lib/official/image.ts`). They are stored like every picture in Kithwall: encrypted, with the key in the
   public post.
-- News older than three days is not posted, so switching a source on does not post its backlog.
+- News older than three days is not posted, so switching a source on does not post its backlog. A source with
+  nothing that recent (a weekly blog) still posts its newest item once, if it is under 30 days old.
 - Nothing is posted twice (`official_items`, a hash of each item's address).
-- A source's address is fixed by a migration. The admin screen can switch a source on or off, not point it
-  somewhere else, so the job cannot be made to fetch an arbitrary address.
+- A built-in source's address is fixed by a migration. A source an admin adds is an address a person typed,
+  so the server checks it before storing it and again on every read (`lib/official/fetch.ts`,
+  `lib/net/publicAddress.ts`, the rules the link-preview proxy uses): https only, a public host name, never an
+  address inside a network (also after DNS and after each redirect), size and time limits. Such a source can
+  only be an RSS/Atom feed or a YouTube channel, and never shows more than the headline, the feed's own
+  summary if the admin says the publisher allows it, and a link; no pictures (a database constraint).
 
 Featured-article thumbnails from Wikipedia are **not** used: the English Wikipedia holds non-free pictures
 under fair use, and the feed does not say which are free.
 
-Adding a source is a migration that inserts a row into `official_sources` (and, for a new kind of feed, a
-composer). Check the publisher's terms first and pick the narrowest `terms` that fits.
+A source with wider terms (pictures, full excerpts) is still added by a migration that inserts a row into
+`official_sources` (and, for a new kind of feed, a composer): check the publisher's terms first and pick the
+narrowest `terms` that fits.
+
+Known gaps: Dawn answers the job with 403 (it refuses requests from cloud servers), so it stays off. The World
+Health Organization's news feed is no longer updated and was removed.
 
 ## 3. The job
 
-`GET /api/cron/official` (Vercel Cron, daily at 03:10 UTC, `Authorization: Bearer $CRON_SECRET`), or
-Admin → Operator settings → Official accounts → **Post now** (`POST /api/official/run`, admins only).
+`GET /api/cron/official` (Vercel Cron, six times a day at :10 past 03, 07, 11, 15, 19 and 23 UTC,
+`Authorization: Bearer $CRON_SECRET`), or Admin → Official accounts → **Post now** for every source or for one
+(`POST /api/official/run`, admins only).
 
 1. Stop unless `KITHWALL_OFFICIAL_SEED` is set and the operator's switch `official_accounts_enabled` is on.
 2. Read every enabled source at once (9 s each); drop what was posted before and what is stale.
-3. For each account: sources take turns, each gives at most its `per_day`, the account at most 8. Open the
-   account's keys (below), sign in as the account, and for each item: claim it in `official_items`, fetch and
-   encrypt its picture if it may have one, sign the post, insert it. The first post goes out now and the rest
-   are spread over the next 20 hours with `publish_at` (the same scheduling people use), so the accounts are
-   alive all day although the job runs once.
+3. For each account: sources take turns. On a scheduled run each source gives at most what is left of its
+   posts-a-day (set per source in the Admin screen, 1 to 24, counted over the last 20 hours) and the account
+   at most 12 a day; what a run finds is spread over the 3.5 hours until the next one with `publish_at` (the
+   same scheduling people use). **Post now** is the operator asking: it takes up to two new items from every
+   source whatever was posted earlier today, and they go out at once. Then: open the account's keys (below),
+   sign in as the account, and for each item claim it in `official_items`, fetch and encrypt its picture if it
+   may have one, sign the post, insert it.
 4. A post that fails gives its claim back and removes its picture; the next run tries again. The job stops
    starting new work after 45 s; what is left is picked up next time.
 5. Housekeeping: notifications addressed to automated accounts are deleted (nobody reads them); claims older
@@ -109,17 +124,25 @@ in the place a passphrase-derived key would go (`key_bundles.bundle.amkByPasswor
 2. Set **`KITHWALL_OFFICIAL_SEED`** in Vercel (Production) to a long random value, for example the output of
    `openssl rand -base64 48`, and keep a copy offline. Until it is set, the job does nothing. `CRON_SECRET`
    must be set already (the other cron jobs use it).
-3. Admin → Operator settings → **Official accounts**: the main switch, each source's switch, when each last
-   ran, and "Post now". Review the sources that are off by default before switching them on; they are
-   publishers that offer a feed but whose terms are about personal use, so only the headline and link are
-   shown.
+3. Admin (`/mod` → Admin) → **Official accounts**:
+   - the main switch and **Post now** (the answer says how many posts were made and which sources had nothing
+     new);
+   - **Accounts**: the list, and "Add an account" (a handle `kithwall.<letters>` and a public name). An account
+     that has not posted and has no sources can be removed;
+   - **Sources**: each one's switch, what it may show, when it was last read and any error, its posts a day,
+     its own "Post now", and a bin for sources you added;
+   - **Add a source**: a feed address, a site that has a feed, or a YouTube channel link; which account posts
+     it; language; posts a day; and whether to show the feed's summary too. The server checks the address and
+     says how many items it found.
+   Review the built-in sources that are off by default before switching them on; they are publishers that
+   offer a feed but whose terms are about personal use, so only the headline and link are shown.
 4. To stop everything: switch "Official accounts" off (posts already scheduled for later today still go out;
    remove them from the account's profile as a moderator if needed), or remove the seed.
 
 ## 6. What the server now holds
 
-Three small tables, none about people: which accounts are automated (public), the list of sources and when
-each ran, and hashes of the items already posted. The "What Kithwall knows" page lists them. The posts
+Four small tables, none about people: which accounts are automated (public), the accounts the operator
+defined, the list of sources and when each ran, and hashes of the items already posted. The "What Kithwall knows" page lists them. The posts
 themselves are Public posts and are covered by `10-follow-public.md` §8.
 
 ## 7. Not in this round
@@ -128,4 +151,4 @@ themselves are Public posts and are covered by `10-follow-public.md` §8.
   server needs a video toolchain the site does not have, and suitable free-licence short vertical videos are
   rare. For now videos are YouTube embeds in Explore.
 - A picture and bio on the automated accounts' profiles (follow-enabled accounts have a public name only).
-- Running more often than daily (posts are scheduled across the day instead).
+- Running more often than six times a day on a schedule ("Post now" covers the rest).

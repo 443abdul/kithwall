@@ -44,4 +44,14 @@
 .kw .k-auto { color: var(--accent); font-weight: var(--weight-bold); }
 .kw .k-chip.k-auto { background: var(--accent-soft, var(--surface-2)); }
 .kw .k-profile-handle { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; }
-.kw .k-official-sources { list-style: none; margin: 0; padding: 0; }
+.kw .k-official-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.kw .k-official-row { display: flex; align-items: center; gap: var(--space-3); }
+.kw .k-official-row-text { display: flex; flex-direction: column; min-inline-size: 0; flex: 1; }
+.kw .k-official-source { display: flex; flex-direction: column; gap: var(--space-2); padding-block-end: var(--space-3); border-block-end: 1px solid var(--border); }
+.kw .k-official-controls { align-items: end; gap: var(--space-3); }
+.kw .k-official-rate { display: flex; flex-direction: column; gap: 2px; color: var(--text-muted); min-inline-size: 0; }
+.kw .k-official-rate select {
+  min-block-size: 40px; max-inline-size: 100%; padding-inline: var(--space-3); border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--border); background: var(--surface); color: var(--text); font: inherit;
+}
+.kw .k-official-form { padding-block-start: var(--space-3); border-block-start: 1px solid var(--border); }

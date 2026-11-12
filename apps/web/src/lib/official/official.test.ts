@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { generateIdentity, openEnvelope, sealEnvelope } from '@kithwall/crypto';
-import { clip, decodeEntities, httpsUrl, parseFeed, plain } from './feeds';
+import { clip, decodeEntities, feedLinkIn, feedTitle, httpsUrl, parseFeed, plain } from './feeds';
 import {
-  draftFromRss, draftsFromFeed, draftsFromWikipedia, freeLicence, isFresh, nasaImageUrl, pickForAccount, spread, FRESH_MS,
+  draftFromRss, draftsFromFeed, draftsFromWikipedia, freeLicence, freshOrLatest, isFresh, nasaImageUrl, pickForAccount, spread, FRESH_MS, LATEST_MS,
   type Draft, type Source,
 } from './compose';
 import { imageInfo } from './image';
@@ -128,6 +128,35 @@ describe('drafts', () => {
     expect(isFresh(d(now - FRESH_MS - 1), now)).toBe(false);
     expect(isFresh(d(now + 2 * 3600_000), now)).toBe(false);
     expect(isFresh(d(null), now)).toBe(true);
+  });
+});
+
+describe('what a source has to offer', () => {
+  const now = Date.parse('2026-11-12T00:00:00Z');
+  const d = (key: string, age: number | null): Draft => ({ key, text: key, link: { url: 'https://e.org' }, at: age === null ? null : now - age });
+  it('is everything fresh; a quiet source still offers its newest item once', () => {
+    expect(freshOrLatest([d('a', 1000), d('b', FRESH_MS + 5)], now).map((x) => x.key)).toEqual(['a']);
+    // A weekly blog: nothing in the last three days, the newest is ten days old.
+    expect(freshOrLatest([d('new', 10 * 86400_000), d('old', 20 * 86400_000)], now).map((x) => x.key)).toEqual(['new']);
+    // An abandoned feed (its newest item is years old) offers nothing.
+    expect(freshOrLatest([d('ancient', LATEST_MS + 1)], now)).toEqual([]);
+    expect(freshOrLatest([], now)).toEqual([]);
+  });
+});
+
+describe('adding a source', () => {
+  it('names a feed after itself', () => {
+    expect(feedTitle('<rss><channel><title>Global &amp; Voices</title><item><title>First</title></item></channel></rss>')).toBe('Global & Voices');
+    expect(feedTitle('<feed><title><![CDATA[Our World in Data]]></title><entry><title>x</title></entry></feed>')).toBe('Our World in Data');
+    expect(feedTitle('<rss><channel><item><title>Only an item</title></item></channel></rss>')).toBe('');
+  });
+  it('finds the feed a page points to, and only an https one', () => {
+    const page = '<html><head><link rel="stylesheet" href="/a.css"><link rel="alternate" type="application/rss+xml" title="Feed" href="/feed/"></head></html>';
+    expect(feedLinkIn(page, 'https://example.org/blog/')).toBe('https://example.org/feed/');
+    expect(feedLinkIn('<link type="application/atom+xml" rel="alternate" href="https://other.example/atom.xml">', 'https://example.org/')).toBe('https://other.example/atom.xml');
+    expect(feedLinkIn('<link rel="alternate" type="application/rss+xml" href="http://example.org/feed">', 'https://example.org/')).toBeNull();
+    expect(feedLinkIn('<link rel="alternate" hreflang="fr" href="/fr/">', 'https://example.org/')).toBeNull();
+    expect(feedLinkIn('<p>No links here</p>', 'https://example.org/')).toBeNull();
   });
 });
 

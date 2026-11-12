@@ -90,10 +90,17 @@
   position: relative; display: block; padding: 0; border: 0; background: var(--surface-2); cursor: zoom-in; overflow: hidden;
   aspect-ratio: 1; min-block-size: 0;
 }
-.kw .k-pgrid[data-layout="one"] .k-pgrid-cell { aspect-ratio: auto; max-block-size: 70vh; }
+/* One photo: its frame is exactly the photo (same proportions, at most 70% of the screen's height), centred
+   in the post. `--ar` is the photo's width / height, set by PhotoGrid; the corners are rounded on the frame
+   itself, not on a full-width box around it. */
+.kw .k-pgrid[data-layout="one"] { display: flex; justify-content: center; overflow: visible; border-radius: 0; }
+.kw .k-pgrid[data-layout="one"] .k-pgrid-cell {
+  flex: none; aspect-ratio: var(--ar, auto); inline-size: min(100%, calc(70vh * var(--ar))); max-inline-size: 100%; max-block-size: 70vh;
+  border-radius: var(--radius-md);
+}
 .kw .k-pgrid[data-layout="three"] .k-pgrid-cell { aspect-ratio: auto; min-block-size: 120px; }
 .kw .k-pgrid-cell img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
-.kw .k-pgrid[data-layout="one"] .k-pgrid-cell img { block-size: auto; max-block-size: 70vh; }
+.kw .k-pgrid[data-layout="one"] .k-pgrid-cell img { block-size: auto; max-block-size: 70vh; object-fit: contain; }
 .kw .k-pgrid-more {
   position: absolute; inset: 0; display: grid; place-items: center;
   background: var(--overlay); color: var(--accent-contrast); font-size: var(--text-2xl); font-weight: var(--weight-bold);
@@ -180,6 +187,17 @@
 .kw .k-comment-meta .k-linkbtn { color: var(--text-muted); font-weight: var(--weight-bold); text-decoration: none; }
 .kw .k-comment-meta .k-linkbtn:hover { color: var(--text); }
 .kw .k-comment-meta .k-iconbtn-sm { inline-size: 28px; block-size: 28px; }
+/* Likes and reactions on a comment: a quiet "Like" in the meta row, the six reactions on request, and (for the
+   comment's author only) how many there are. */
+.kw .k-comment-meta { flex-wrap: wrap; row-gap: 0; }
+.kw .k-comment-like { display: inline-flex; align-items: center; gap: 4px; }
+.kw .k-comment-like .k-icon { inline-size: 14px; block-size: 14px; }
+.kw .k-comment-like[data-on] { color: var(--accent-text); }
+.kw .k-comment-like[data-on] .k-icon { fill: currentColor; }
+.kw .k-comment-like .k-react-emoji { font-size: var(--text-md); }
+.kw .k-comment-tally { display: flex; align-items: center; gap: var(--space-1); margin: 0; padding-inline-start: var(--space-3); }
+.kw .k-comment-tally .k-icon { inline-size: 12px; block-size: 12px; }
+.kw .k-comment-react { padding-block: var(--space-1); padding-inline-start: var(--space-2); }
 .kw .k-comment-form { display: flex; flex-direction: column; gap: var(--space-1); }
 .kw .k-comment-replying { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding-inline: var(--space-3); color: var(--text-muted); }
 .kw .k-comment-input {

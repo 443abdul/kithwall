@@ -6,7 +6,9 @@
   inline-size: 100vw; max-inline-size: 100vw; block-size: 100dvh; max-block-size: 100dvh; margin: 0; padding: 0; border: 0;
   background: var(--bg); color: var(--text); overflow: hidden;
 }
-.kw .kg[open] { display: grid; grid-template-columns: minmax(0, 1fr); animation: k-fade var(--dur-2) var(--ease-standard); }
+/* One row exactly as tall as the screen. Without it the row grows to the media's own height: a portrait photo
+   or video was shown at the full width and its lower part ended up below the screen, out of reach. */
+.kw .kg[open] { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); animation: k-fade var(--dur-2) var(--ease-standard); }
 .kw .kg::backdrop { background: var(--bg); }
 .kw .kg-media { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-block-size: 0; min-inline-size: 0; }
 
@@ -19,10 +21,15 @@
   transition: opacity var(--dur-2) var(--ease-standard), visibility var(--dur-2);
 }
 .kw .kg-count { font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; padding-inline: var(--space-2); direction: ltr; unicode-bidi: isolate; }
-.kw .kg-main { position: relative; grid-row: 1; min-block-size: 0; min-inline-size: 0; display: grid; overflow: hidden; }
+.kw .kg-main {
+  position: relative; grid-row: 1; min-block-size: 0; min-inline-size: 0; display: grid; overflow: hidden;
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);   /* the stage is this box, never taller */
+}
 .kw .kg-main > .kv-stage, .kw .kg-main > .kg-video, .kw .kg-main > .kg-video-wait { grid-area: 1 / 1; block-size: 100%; min-block-size: 0; }
-.kw .kg .kv-stage { cursor: grab; }
-.kw .kg .kv-content { inline-size: 100%; block-size: 100%; }
+.kw .kg .kv-stage { cursor: grab; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+/* The photo's cell is the stage itself, so "at most 100%" on the photo means at most the stage in both
+   directions and the whole photo is always visible (an automatic cell would grow to the photo instead). */
+.kw .kg .kv-content { inline-size: 100%; block-size: 100%; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .kw .kg-img {
   display: block; max-inline-size: 100%; max-block-size: 100%; inline-size: auto; block-size: auto; object-fit: contain;
   -webkit-user-drag: none; pointer-events: none; user-select: none;

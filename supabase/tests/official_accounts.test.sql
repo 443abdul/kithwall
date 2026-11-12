@@ -132,11 +132,51 @@ select throws_ok($$ update public.app_settings set value = '"yes"'::jsonb where 
   '22023', null, 'the switch is true or false');
 
 -- ---------------------------------------------------------------------------
+-- The Admin screen (20261113000300_official_admin.sql): accounts and sources an admin adds
+-- ---------------------------------------------------------------------------
+select pg_temp.login('ann');
+select throws_ok($$ select public.add_official_account('kithwall.tapnews', 'Tap News') $$, '42501', null, 'a person cannot add an automated account');
+select throws_ok($$ select public.set_official_source_rate('nasa-iotd', 6) $$, '42501', null, 'nor change how often a source posts');
+select throws_ok($$ select public.remove_official_source('nasa-iotd') $$, '42501', null, 'nor remove a source');
+select pg_temp.login('adm');
+select is(public.add_official_account('@Kithwall.TapNews', '  Tap News  '), 'tapnews', 'an admin adds an account (handle tidied)');
+select results_eq($$ select handle, name, custom from public.official_account_defs where slug = 'tapnews' $$,
+  $$ values ('kithwall.tapnews', 'Tap News', true) $$, 'with its handle and name, marked as added by an admin');
+select throws_ok($$ select public.add_official_account('tapnews', 'Tap News') $$, '22023', null, 'the handle must start with kithwall.');
+select throws_ok($$ select public.add_official_account('kithwall.tap-news', 'Tap News') $$, '22023', null, 'and be letters only');
+select throws_ok($$ select public.add_official_account('kithwall.tapother', 'x') $$, '22023', null, 'the name cannot be one letter');
+select throws_ok($$ select public.add_official_account('kithwall.tapnews', 'Again') $$, '23505', null, 'the same account twice is refused');
+select lives_ok($$ select public.set_official_source_rate('nasa-iotd', 6) $$, 'an admin sets how many posts a day a source makes');
+select is((select per_day from public.official_sources where id = 'nasa-iotd'), 6, 'and it is stored');
+select throws_ok($$ select public.set_official_source_rate('nasa-iotd', 25) $$, '22023', null, 'at most 24 a day');
+select throws_ok($$ select public.set_official_source_rate('nasa-iotd', 0) $$, '22023', null, 'at least 1');
+select throws_ok($$ select public.remove_official_source('nasa-iotd') $$, 'P0002', null, 'a built-in source cannot be removed, only switched off');
+select throws_ok($$ select public.remove_official_account('learn') $$, '22023', null, 'an account that has sources or has posted cannot be removed');
+select pg_temp.su();
+select throws_ok(
+  $$ insert into public.official_sources (id, account, kind, title, url, terms, custom) values ('tap-pic', 'tapnews', 'nasa-image', 'Tap pictures', 'https://example.org/f', 'public-domain', true) $$,
+  '23514', null, 'a source an admin added never shows more than the headline or the feed''s summary');
+select throws_ok(
+  $$ insert into public.official_sources (id, account, kind, title, url, terms, custom) values ('tap-orphan', 'nosuch', 'rss', 'Tap orphan', 'https://example.org/f', 'headline', true) $$,
+  '23503', null, 'a source belongs to an account that exists');
+insert into public.official_sources (id, account, kind, title, url, terms, custom) values ('tap-custom', 'tapnews', 'rss', 'Tap feed', 'https://example.org/feed', 'headline', true);
+select pg_temp.login('adm');
+select throws_ok($$ select public.remove_official_account('tapnews') $$, '22023', null, 'an account with sources is not removed');
+select lives_ok($$ select public.remove_official_source('tap-custom') $$, 'an admin removes a source they added');
+select lives_ok($$ select public.remove_official_account('tapnews') $$, 'and then the unused account');
+select throws_ok($$ select public.remove_official_account('tapbot') $$, '22023', null, 'an account that exists as a profile is not removed here');
+
+-- An automated account may post publicly far more often than a person (the sources' own limits hold it).
+select pg_temp.su();
+select is((select prosrc like '%when kw.is_official(auth.uid()) then 300 else 20 end%' from pg_proc where proname = 'posts_guard' and pronamespace = 'kw'::regnamespace),
+  true, 'the public-post limit is 300 a day for automated accounts and 20 for people');
+
+-- ---------------------------------------------------------------------------
 -- Housekeeping
 -- ---------------------------------------------------------------------------
 select pg_temp.su();
 insert into public.official_sources (id, account, kind, title, url, terms) values
-  ('tap-source', 'tapbot', 'rss', 'Test source', 'https://example.org/feed', 'headline');
+  ('tap-source', 'learn', 'rss', 'Test source', 'https://example.org/feed', 'headline');
 insert into public.official_items (source_id, item_key, created_at) values
   ('tap-source', repeat('a', 43), now() - interval '500 days'), ('tap-source', repeat('b', 43), now());
 select public.official_housekeeping();

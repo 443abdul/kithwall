@@ -158,6 +158,11 @@ A new main destination (`/explore`, `components/explore`).
 - **Who can mention me**: same four choices (`kw.may_mention`). Accounts that never turned follow on keep
   today's rule whatever the setting says: only people they are connected to or share a circle with.
 - **The author removes comments** on their posts (existing rule, now with strangers in mind).
+- **Likes and reactions on comments** (2026-11-12, `20261113000200_comment_likes.sql`): whoever can read a post
+  can like a comment on it or pick one of the six reactions, sealed like a reaction to the post with the
+  comment's id signed in (`lib/social/engage.ts` `setCommentReaction`). As with posts there are no public
+  counts: only the comment's author sees how many, and is told in Activity ("reacted to your comment", a
+  notice the database only accepts when the like is real).
 - **Restrict** (`public.restrictions`): comments a restricted person writes on my posts are shown only to
   them and to me (RLS `kw.comment_shown`, also left out of public pages and counts). They are not told.
 - **Hidden words**: a personal list in the encrypted vault, applied on the device to posts and comments

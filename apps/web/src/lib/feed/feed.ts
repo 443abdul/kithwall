@@ -16,6 +16,16 @@ export const likesKey = (kind: 'post' | 'comment', id: string) => ['likes', kind
 export const commentsKey = (postId: string) => ['comments', postId] as const;
 /** May I comment on this post? (docs/v2/10-follow-public.md §6; the database decides) */
 export const commentGateKey = (postId: string) => ['comment-gate', postId] as const;
+export const commentLikesKey = (postId: string) => ['likes', 'comments-of', postId] as const;
+
+/** The likes and reactions on these comments (one thread), in as few queries as it takes. */
+export async function fetchCommentLikes(commentIds: string[]): Promise<LikeRow[]> {
+  const out: LikeRow[] = [];
+  for (let i = 0; i < commentIds.length; i += 100) {
+    out.push(...(must(await sb().from('likes').select('*').eq('target_kind', 'comment').in('target_id', commentIds.slice(i, i + 100))) as LikeRow[]));
+  }
+  return out;
+}
 
 const chunk = <T,>(a: T[], n: number) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 

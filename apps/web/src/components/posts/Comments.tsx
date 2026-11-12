@@ -19,19 +19,19 @@ import { IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/Toast';
 import { addComment, editComment, readComment } from '@/lib/content';
-import { commentGateKey, commentsKey, fetchCommentAuthors, fetchCommentGate, fetchComments, notifySafe, snippet, type CommentAuthor } from '@/lib/feed/feed';
+import { commentGateKey, commentLikesKey, commentsKey, fetchCommentAuthors, fetchCommentGate, fetchCommentLikes, fetchComments, notifySafe, snippet, type CommentAuthor } from '@/lib/feed/feed';
 import { sb, must } from '@/lib/supabase';
 import { useSession } from '@/lib/keys/session';
 import { people, usePeopleVersion, usePerson } from '@/lib/people';
 import { useFileUrl } from '@/lib/media';
-import type { CommentRow, PostRow } from '@/lib/types';
+import type { CommentRow, LikeRow, PostRow } from '@/lib/types';
 import { RelativeTime, RichText } from './bits';
 import { Translatable } from '@/components/translate/Translatable';
 import { threadComments } from './logic';
 import { Menu } from './Menu';
 import { ReportDialog } from './ReportDialog';
 import { deriveSubkey } from '@kithwall/crypto';
-import { notifyMentions, resolveMentions } from '@/lib/social/engage';
+import { HEART, REACTIONS, commentReactionOf, notifyMentions, resolveMentions, setCommentReaction, type Reaction } from '@/lib/social/engage';
 import { isWide } from './data';
 import { matchesHidden } from '@/lib/social/hiddenWords';
 import { useHiddenStore } from '@/lib/social/hiddenStore';
@@ -77,6 +77,18 @@ export function Comments({ post, contentKey, focusSignal }: { post: PostRow; con
     queryFn: () => fetchCommentAuthors(post.id),
   });
   const cardOf = (id: string): CommentAuthor | undefined => (wide ? authors.data?.get(id) : undefined);
+  // Likes and reactions on this thread's comments, read together (the ids are taken when the query runs).
+  const commentIds = (q.data ?? []).map((r) => r.id);
+  const likes = useQuery({
+    queryKey: commentLikesKey(post.id), enabled: count > 0, staleTime: ENGAGEMENT_STALE,
+    queryFn: async () => {
+      const rows = await fetchCommentLikes(commentIds);
+      // A reaction is opened with its author's key; strangers on Followers and Public posts are not looked up.
+      if (!wide) await people.ensure(rows.map((r) => r.user_id));
+      return rows;
+    },
+  });
+  const likesOf = (id: string): LikeRow[] => likes.data?.filter((l) => l.target_id === id) ?? NO_LIKES;
   const canComment = useCanComment(post);
   const hiddenWords = useHiddenStore().words;
   const restricted = useRestricted();
@@ -149,7 +161,7 @@ export function Comments({ post, contentKey, focusSignal }: { post: PostRow; con
     const isRestricted = postMine && !!restricted.data?.has(c.row.author_id);
     return (
       <CommentView item={c} canDelete={canDelete(c.row)} onReply={canComment ? () => reply(root) : undefined} onDelete={() => void remove(c.row)}
-        contentKey={contentKey} postId={post.id} card={cardOf(c.row.author_id)}
+        contentKey={contentKey} post={post} likes={likesOf(c.id)} card={cardOf(c.row.author_id)}
         filtered={c.row.author_id !== userId && matchesHidden(c.text, hiddenWords)}
         restricted={isRestricted}
         onRestrict={postMine && c.row.author_id !== userId ? () => void setRestricted(c.row.author_id, !isRestricted) : undefined} />
@@ -200,8 +212,12 @@ export function Comments({ post, contentKey, focusSignal }: { post: PostRow; con
   );
 }
 
-function CommentView({ item, canDelete, onReply, onDelete, contentKey, postId, card, filtered, restricted, onRestrict }: {
-  item: Item; canDelete: boolean; onReply?: () => void; onDelete: () => void; contentKey: Uint8Array | null; postId: string;
+const NO_LIKES: LikeRow[] = [];
+
+function CommentView({ item, canDelete, onReply, onDelete, contentKey, post, likes, card, filtered, restricted, onRestrict }: {
+  item: Item; canDelete: boolean; onReply?: () => void; onDelete: () => void; contentKey: Uint8Array | null; post: PostRow;
+  /** Likes and reactions on this comment (everyone may add one; only the comment's author is shown the tally). */
+  likes: LikeRow[];
   /** The author as told with the thread (Followers and Public posts); my own directory wins when it knows them. */
   card?: CommentAuthor;
   /** Contains one of my hidden words: folded until I ask to see it. */
@@ -219,6 +235,33 @@ function CommentView({ item, canDelete, onReply, onDelete, contentKey, postId, c
   const [saving, setSaving] = useState(false);
   const [reveal, setReveal] = useState(false);
   const mine = item.row.author_id === userId;
+  const postId = post.id;
+  const [picker, setPicker] = useState(false);
+  const myLike = likes.find((l) => l.user_id === userId) ?? null;
+  const myReaction: Reaction | null = myLike ? commentReactionOf(post, item.id, myLike) : null;
+  // Like a post's likes, the tally is for the author's eyes only: there are no public like counts.
+  const tally = mine && likes.length
+    ? [...likes.reduce((m, l) => { const e = commentReactionOf(post, item.id, l); return m.set(e, (m.get(e) ?? 0) + 1); }, new Map<Reaction, number>())].sort((a, b) => b[1] - a[1])
+    : [];
+  async function react(e: Reaction | null) {
+    if (!userId) return;
+    setPicker(false);
+    const key = commentLikesKey(postId);
+    const prev = qc.getQueryData<LikeRow[]>(key);
+    // Shown at once; the stored (sealed) reaction replaces it when the thread's likes are read again.
+    if (prev) {
+      const rest = prev.filter((l) => !(l.target_id === item.id && l.user_id === userId));
+      qc.setQueryData(key, e ? [...rest, { target_kind: 'comment' as const, target_id: item.id, user_id: userId, created_at: new Date().toISOString() }] : rest);
+    }
+    try {
+      await setCommentReaction(post, item.id, e);
+      await qc.invalidateQueries({ queryKey: key });
+      if (e && !myLike) await notifySafe(item.row.author_id, 'comment_like', 'post', postId);
+    } catch {
+      if (prev) qc.setQueryData(key, prev);
+      toast({ message: t('feed.failed'), tone: 'danger' });
+    }
+  }
   async function save() {
     const v = draft.trim().slice(0, 4000);
     if (!v || saving) return;
@@ -278,9 +321,32 @@ function CommentView({ item, canDelete, onReply, onDelete, contentKey, postId, c
           <RelativeTime iso={item.created_at} />
           {item.row.edited_at ? <span className="k-muted">{t('edit.edited')}</span> : null}
           {restricted ? <span className="k-muted"><Icon name="eyeOff" /> {t('restrict.note')}</span> : null}
+          {item.text !== null ? (
+            <>
+              <button type="button" className="k-linkbtn k-comment-like" aria-pressed={!!myLike} data-on={myLike ? '' : undefined}
+                onClick={() => void react(myLike ? null : HEART)}>
+                {myReaction && myReaction !== HEART ? <span className="k-react-emoji" aria-hidden>{myReaction}</span> : <Icon name="heart" />}
+                <span>{myLike ? t('feed.liked') : t('feed.like')}</span>
+              </button>
+              <IconButton icon="plus" size="sm" label={t('react.pick')} aria-expanded={picker} onClick={() => setPicker((v) => !v)} />
+            </>
+          ) : null}
           {onReply ? <button type="button" className="k-linkbtn" onClick={onReply}>{t('feed.reply')}</button> : null}
           <Menu label={t('feed.postMenu')} items={menu} />
         </div>
+        {tally.length ? (
+          <p className="k-comment-tally k-small k-muted" title={t('comments.likesPrivate')}>
+            <Icon name="lock" /> <span aria-hidden>{tally.map(([e, n]) => `${e} ${n}`).join('  ')}</span>
+            <span className="k-sr-only">{t('feed.likeCount', { count: likes.length })}</span>
+          </p>
+        ) : null}
+        {picker ? (
+          <div className="k-react-row k-comment-react" role="group" aria-label={t('react.pick')}>
+            {REACTIONS.map((e) => (
+              <button key={e} type="button" className="k-react-btn" aria-pressed={myReaction === e} onClick={() => void react(myReaction === e ? null : e)}>{e}</button>
+            ))}
+          </div>
+        ) : null}
       </div>
       <ReportDialog open={reporting} onClose={() => setReporting(false)} kind="comment" id={item.id}
         disclosure={() => ({ plaintext: item.replyTo ? { text: item.text, replyTo: item.replyTo } : { text: item.text }, contentKey: contentKey ? deriveSubkey(contentKey, 'comment', item.id) : null, keyKind: 'comment' })} />

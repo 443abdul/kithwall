@@ -1,15 +1,15 @@
 import 'server-only';
-// The job behind Kithwall's automated accounts (docs/v2/13-official-accounts.md). Once a day it reads the
-// public feeds the operator switched on, and posts what is new as ordinary PUBLIC posts: signed with the
-// account's own key, spread over the day with publish_at.
+// The job behind Kithwall's automated accounts (docs/v2/13-official-accounts.md). It reads the public feeds
+// the operator switched on and posts what is new as ordinary PUBLIC posts, signed with the account's own key.
+// It runs a few times a day on a schedule, and whenever an admin presses "Post now".
 //
 // How an automated account differs from a person's account, and how it does not:
 //  * its keys are made here and wrapped under a key derived from KITHWALL_OFFICIAL_SEED (a secret only the
 //    operator holds). Without the seed this job does nothing, and nobody can sign in to these accounts: the
 //    auth user has a random password and no passkey;
 //  * to post, the job signs in AS the account and inserts through the same database rules as everyone
-//    (rate limits, the operator's public-posts switch, reports, moderation). It never writes a post with the
-//    secret key, so an automated account can do nothing a person's account could not;
+//    (the operator's public-posts switch, reports, moderation). It never writes a post with the secret key,
+//    so an automated account can do nothing a person's account could not;
 //  * it only ever writes public posts. It reads nothing about people.
 import { createHash, hkdfSync, randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -18,26 +18,32 @@ import { admin, asUser } from '../auth/server';
 import { createAuthUser, deleteAuthUser, mintSessionToken } from '../auth/passkey-server';
 import { postHeader } from '../postHeader';
 import type { FileRef, PostPayload } from '../types';
-import { MAX_IMAGE_BYTES, draftsFromFeed, draftsFromWikipedia, isFresh, pickForAccount, spread, type Draft, type Source } from './compose';
+import { MAX_IMAGE_BYTES, draftsFromFeed, draftsFromWikipedia, freshOrLatest, pickForAccount, spread, type Draft, type Source } from './compose';
 import { parseFeed } from './feeds';
+import { publicGet } from './fetch';
 import { imageInfo } from './image';
 
-/** The accounts. A row in official_accounts is made the first time one of them has something to post. */
-export const OFFICIAL_ACCOUNTS: readonly { slug: string; handle: string; name: string }[] = [
-  { slug: 'learn', handle: 'kithwall.learn', name: 'Kithwall Learn' },
-  { slug: 'science', handle: 'kithwall.science', name: 'Kithwall Science' },
-  { slug: 'news', handle: 'kithwall.news', name: 'Kithwall News' },
-  { slug: 'urdu', handle: 'kithwall.urdu', name: 'Kithwall اردو' },
-];
+interface AccountDef { slug: string; handle: string; name: string }
 
-/** Most posts one account makes a day (the database allows 20 public posts a day per account). */
-const ACCOUNT_CAP = 8;
+/** Most posts one account makes in one scheduled day, and in one "Post now". */
+const ACCOUNT_CAP = 12;
+/** "Post now" takes this many new items from each source, whatever was posted earlier today. */
+const MANUAL_PER_SOURCE = 2;
 /** Stop starting new work after this long; what is left is picked up by the next run. */
 const BUDGET_MS = 45_000;
 const FETCH_MS = 9_000;
-/** "Today" for the daily limits. */
-const DAY_MS = 20 * 3600_000;
 const MAX_FEED_BYTES = 4 * 1024 * 1024;
+/** "Today" for the daily limits (20 hours, so yesterday's run never holds back today's). */
+const DAY_MS = 20 * 3600_000;
+/** A scheduled run spreads what it found over the time until the next one. */
+const SPREAD_HOURS = 3.5;
+
+export interface RunOptions {
+  /** An admin asked ("Post now"): post what is new at once, whatever the daily limits say. */
+  manual?: boolean;
+  /** Only this source. */
+  only?: string;
+}
 
 export interface RunResult {
   ran: boolean;
@@ -45,6 +51,8 @@ export interface RunResult {
   reason?: 'not_configured' | 'switched_off';
   posted: number;
   accounts: { handle: string; posted: number; created?: boolean }[];
+  /** Sources that were read and had nothing new. */
+  quiet: string[];
   errors: { where: string; error: string }[];
 }
 
@@ -62,41 +70,13 @@ const itemKey = (draftKey: string) => createHash('sha256').update(draftKey).dige
 
 const short = (e: unknown) => String((e as Error)?.message ?? e).split('\n')[0]!.slice(0, 280);
 
-function userAgent(): string {
-  let site = 'https://www.kithwall.com';
-  try { if (process.env.NEXT_PUBLIC_SITE_URL) site = new URL(process.env.NEXT_PUBLIC_SITE_URL).origin; } catch { /* default */ }
-  return `KithwallBot/1.0 (+${site}/help; automated public accounts)`;
-}
-
-async function readCapped(res: Response, max: number): Promise<Uint8Array> {
-  const declared = Number(res.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > max) throw new Error('too large');
-  const reader = res.body?.getReader();
-  if (!reader) return new Uint8Array(0);
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > max) { await reader.cancel().catch(() => undefined); throw new Error('too large'); }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(total);
-  let o = 0;
-  for (const c of chunks) { out.set(c, o); o += c.byteLength; }
-  return out;
-}
-
-/** A source's own feed. Its address is fixed in the database by a migration, not by anything a feed says. */
-async function fetchFeed(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: { 'user-agent': userAgent(), accept: 'application/rss+xml, application/atom+xml, application/json, application/xml;q=0.9, */*;q=0.5' },
-    signal: AbortSignal.timeout(FETCH_MS), cache: 'no-store', redirect: 'follow',
+/** A source's feed, as text. Admin-added sources are addresses a person typed: public https hosts only. */
+export async function fetchFeed(url: string): Promise<string> {
+  const got = await publicGet(url, {
+    accept: 'application/rss+xml, application/atom+xml, application/json, application/xml;q=0.9, */*;q=0.5',
+    maxBytes: MAX_FEED_BYTES, timeoutMs: FETCH_MS,
   });
-  if (!res.ok) throw new Error(`feed answered ${res.status}`);
-  if (!res.url.startsWith('https://')) throw new Error('feed left https');
-  return new TextDecoder('utf-8').decode(await readCapped(res, MAX_FEED_BYTES));
+  return new TextDecoder('utf-8').decode(got.body);
 }
 
 /** Pictures come only from the publisher's own hosts, also after a redirect. */
@@ -108,42 +88,27 @@ const IMAGE_HOSTS: Record<string, RegExp> = {
 async function fetchImage(kind: string, url: string): Promise<{ bytes: Uint8Array; mime: string; w: number; h: number } | null> {
   const allowed = IMAGE_HOSTS[kind];
   if (!allowed) return null;
-  let next = url;
-  for (let hop = 0; hop < 4; hop++) {
-    const u = new URL(next);
-    if (u.protocol !== 'https:' || !allowed.test(u.hostname)) return null;
-    const res = await fetch(u, {
-      headers: { 'user-agent': userAgent(), accept: 'image/jpeg, image/png, image/webp' },
-      signal: AbortSignal.timeout(FETCH_MS), cache: 'no-store', redirect: 'manual',
-    });
-    if (res.status >= 300 && res.status < 400) {
-      const to = res.headers.get('location');
-      if (!to) return null;
-      next = new URL(to, u).toString();
-      continue;
-    }
-    if (!res.ok) return null;
-    const bytes = await readCapped(res, MAX_IMAGE_BYTES);
-    const info = imageInfo(bytes);
-    return info ? { bytes, ...info } : null;
-  }
-  return null;
+  const got = await publicGet(url, {
+    accept: 'image/jpeg, image/png, image/webp', maxBytes: MAX_IMAGE_BYTES, timeoutMs: FETCH_MS, hostOk: (h) => allowed.test(h),
+  });
+  const bytes = new Uint8Array(got.body);
+  const info = imageInfo(bytes);
+  return info ? { bytes, ...info } : null;
 }
 
 async function draftsFor(src: Source, now: number): Promise<Draft[]> {
   if (src.kind === 'wikipedia') {
-    const d = new Date(now);
-    const day = d.toISOString().slice(0, 10);
+    const day = new Date(now).toISOString().slice(0, 10);
     const url = `${src.url.replace(/\/+$/, '')}/${day.replace(/-/g, '/')}`;
     return draftsFromWikipedia(src, JSON.parse(await fetchFeed(url)) as unknown, day);
   }
-  return draftsFromFeed(src, parseFeed(await fetchFeed(src.url))).filter((x) => isFresh(x, now));
+  return freshOrLatest(draftsFromFeed(src, parseFeed(await fetchFeed(src.url))), now);
 }
 
 interface Signer { userId: string; signPriv: Uint8Array; created: boolean }
 
 /** Opens the account's keys with the seed, creating the account the first time. */
-async function ensureAccount(def: (typeof OFFICIAL_ACCOUNTS)[number], ikm: Buffer, existing: Map<string, string>): Promise<Signer> {
+async function ensureAccount(def: AccountDef, ikm: Buffer, existing: Map<string, string>): Promise<Signer> {
   const db = admin();
   const kek = kekFor(ikm, def.slug);
   const have = existing.get(def.slug);
@@ -200,9 +165,9 @@ async function attachImage(client: SupabaseClient, userId: string, kind: string,
   return { path, key: b64u.encode(key), mime: img.mime, w: img.w, h: img.h, bytes: img.bytes.byteLength, sha: fileDigest(ciphertext) };
 }
 
-export async function runOfficial(now = Date.now()): Promise<RunResult> {
+export async function runOfficial(opts: RunOptions = {}, now = Date.now()): Promise<RunResult> {
   const started = Date.now();
-  const result: RunResult = { ran: false, posted: 0, accounts: [], errors: [] };
+  const result: RunResult = { ran: false, posted: 0, accounts: [], quiet: [], errors: [] };
   const ikm = seed();
   if (!ikm) return { ...result, reason: 'not_configured' };
   const db = admin();
@@ -210,25 +175,33 @@ export async function runOfficial(now = Date.now()): Promise<RunResult> {
   if (sw?.value !== true) return { ...result, reason: 'switched_off' };
   result.ran = true;
 
-  const { data: srcRows, error: srcErr } = await db.from('official_sources')
+  let srcQuery = db.from('official_sources')
     .select('id, account, kind, title, url, lang, terms, per_day, enabled, skip_title').eq('enabled', true).order('position');
+  if (opts.only) srcQuery = srcQuery.eq('id', opts.only);
+  const { data: srcRows, error: srcErr } = await srcQuery;
   if (srcErr) throw new Error(srcErr.message);
   const sources = (srcRows ?? []) as Source[];
+  const { data: defRows, error: defErr } = await db.from('official_account_defs').select('slug, handle, name').order('created_at');
+  if (defErr) throw new Error(defErr.message);
+  const defs = (defRows ?? []) as AccountDef[];
   const { data: accRows, error: accErr } = await db.from('official_accounts').select('user_id, slug');
   if (accErr) throw new Error(accErr.message);
   const existing = new Map((accRows ?? []).map((r) => [r.slug as string, r.user_id as string]));
 
-  // How much each source already posted today: the limits hold across runs ("Post now" after the daily run
-  // posts only what is left). 20 hours, so yesterday's run never holds back today's.
-  const { data: recent, error: recentErr } = await db.from('official_items').select('source_id')
-    .gt('created_at', new Date(Date.now() - DAY_MS).toISOString()).limit(2000);
-  if (recentErr) throw new Error(recentErr.message);
+  // How much each source already posted today. A scheduled run keeps to each source's posts-a-day; "Post now"
+  // is the operator asking, and takes a couple of new items from every source regardless.
   const postedToday = new Map<string, number>();
-  for (const r of recent ?? []) postedToday.set(r.source_id as string, (postedToday.get(r.source_id as string) ?? 0) + 1);
+  if (!opts.manual) {
+    const { data: recent, error: recentErr } = await db.from('official_items').select('source_id')
+      .gt('created_at', new Date(Date.now() - DAY_MS).toISOString()).limit(5000);
+    if (recentErr) throw new Error(recentErr.message);
+    for (const r of recent ?? []) postedToday.set(r.source_id as string, (postedToday.get(r.source_id as string) ?? 0) + 1);
+  }
+  const allowance = (s: Source) => (opts.manual ? MANUAL_PER_SOURCE : Math.max(0, s.per_day - (postedToday.get(s.id) ?? 0)));
 
   // 1. Read every feed at once; leave out what was posted before.
   const read = await Promise.all(sources.map(async (source) => {
-    const left = Math.max(0, source.per_day - (postedToday.get(source.id) ?? 0));
+    const left = allowance(source);
     if (!left) return { source, drafts: [] as Draft[] };
     try {
       const drafts = await draftsFor(source, now);
@@ -240,7 +213,10 @@ export async function runOfficial(now = Date.now()): Promise<RunResult> {
         for (const r of data ?? []) seen.add(r.item_key as string);
       }
       await db.from('official_sources').update({ last_run_at: new Date().toISOString(), last_error: null }).eq('id', source.id);
-      return { source, drafts: drafts.filter((d) => !seen.has(itemKey(d.key))).slice(0, left) };
+      const fresh = drafts.filter((d) => !seen.has(itemKey(d.key))).slice(0, left);
+      if (!fresh.length) result.quiet.push(source.id);
+      // The picker must not trim a manual run to the scheduled posts-a-day.
+      return { source: opts.manual ? { ...source, per_day: left } : source, drafts: fresh };
     } catch (e) {
       result.errors.push({ where: source.id, error: short(e) });
       await db.from('official_sources').update({ last_run_at: new Date().toISOString(), last_error: short(e) }).eq('id', source.id);
@@ -249,9 +225,9 @@ export async function runOfficial(now = Date.now()): Promise<RunResult> {
   }));
 
   // 2. Each account posts its share, as itself.
-  for (const def of OFFICIAL_ACCOUNTS) {
+  for (const def of defs) {
     if (Date.now() - started > BUDGET_MS) break;
-    const today = sources.filter((s) => s.account === def.slug).reduce((n, s) => n + (postedToday.get(s.id) ?? 0), 0);
+    const today = opts.manual ? 0 : sources.filter((s) => s.account === def.slug).reduce((n, s) => n + (postedToday.get(s.id) ?? 0), 0);
     const picks = pickForAccount(read.filter((r) => r.source.account === def.slug && r.drafts.length), Math.max(0, ACCOUNT_CAP - today));
     if (!picks.length) continue;
     let jwt: string | null = null;
@@ -261,7 +237,8 @@ export async function runOfficial(now = Date.now()): Promise<RunResult> {
       if (signer.created) entry.created = true;
       const session = await signInAs(signer.userId);
       jwt = session.jwt;
-      const times = spread(picks.length, now);
+      // "Post now" means now. A scheduled run spreads what it found until the next run.
+      const times = opts.manual ? picks.map(() => null) : spread(picks.length, now, SPREAD_HOURS);
       for (let i = 0; i < picks.length; i++) {
         if (Date.now() - started > BUDGET_MS) break;
         const { source, draft } = picks[i]!;

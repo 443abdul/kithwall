@@ -16,18 +16,19 @@ export { handlesIn, tally } from './pure';
 export type { PollVote } from './pure';
 
 // --------------------------------------------------------------------------------------- sealing helpers
-function seal<T>(row: PostRow, label: string, type: string, payload: T): Envelope {
-  const header: EnvelopeHeader = { v: 1, type, id: row.id, author: me(), wall: row.id, audience: 'self' };
+/** `target`: what the value is about (the post itself, or one of its comments); it is signed into the header. */
+function seal<T>(row: PostRow, label: string, type: string, payload: T, target: string = row.id): Envelope {
+  const header: EnvelopeHeader = { v: 1, type, id: target, author: me(), wall: row.id, audience: 'self' };
   const ck = postContentKey(row);
   if (ck) return sealWithContentKey({ header, payload, contentKey: deriveSubkey(ck, label, me()), signPriv: identity().signPriv });
   if (!row.is_public) throw new Error('The key for this post is not here yet.');
   return sealEnvelope({ header: { ...header, audience: 'public' }, payload, signPriv: identity().signPriv });
 }
 
-function open<T>(row: PostRow, label: string, type: string, author: string, env: unknown): T | null {
+function open<T>(row: PostRow, label: string, type: string, author: string, env: unknown, target: string = row.id): T | null {
   const p = people.get(author);
   if (!p || !env) return null;
-  const header: EnvelopeHeader = { v: 1, type, id: row.id, author, wall: row.id, audience: 'self' };
+  const header: EnvelopeHeader = { v: 1, type, id: target, author, wall: row.id, audience: 'self' };
   try {
     const signPub = b64u.decode(p.sign_pub);
     const ck = postContentKey(row);
@@ -66,6 +67,8 @@ export async function fetchVotes(row: PostRow, options: number): Promise<PollVot
 // --------------------------------------------------------------------------------------- reactions
 export const REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'] as const;
 export type Reaction = (typeof REACTIONS)[number];
+/** A plain like. */
+export const HEART: Reaction = REACTIONS[0];
 
 /** React to a post (replacing an earlier reaction), or take it back with null. */
 export async function setReaction(row: PostRow, emoji: Reaction | null): Promise<void> {
@@ -82,6 +85,26 @@ export function reactionOf(row: PostRow, like: LikeRow): Reaction {
   if (!like.sealed) return '❤️';
   const v = open<{ e?: unknown }>(row, 'reaction', 'reaction', like.user_id, like.sealed);
   return (REACTIONS as readonly string[]).includes(v?.e as string) ? (v!.e as Reaction) : '❤️';
+}
+
+/**
+ * React to a comment (replacing an earlier reaction), or take it back with null. The emoji is sealed under the
+ * POST's key like a reaction to the post, with the comment's id signed in, so it cannot be moved to another
+ * comment. A plain like (a heart) carries nothing.
+ */
+export async function setCommentReaction(post: PostRow, commentId: string, emoji: Reaction | null): Promise<void> {
+  const sealed = !emoji || emoji === HEART ? null : seal(post, 'reaction', 'comment-reaction', { e: emoji }, commentId);
+  must(await sb().from('likes').delete().match({ target_kind: 'comment', target_id: commentId, user_id: me() }));
+  if (!emoji) return;
+  const r = await sb().from('likes').insert({ target_kind: 'comment', target_id: commentId, user_id: me(), sealed });
+  if (r.error && r.error.code !== '23505') throw new Error(r.error.message);
+}
+
+/** The emoji behind a like on a comment (a plain like, or one that can't be opened, is a heart). */
+export function commentReactionOf(post: PostRow, commentId: string, like: LikeRow): Reaction {
+  if (!like.sealed) return HEART;
+  const v = open<{ e?: unknown }>(post, 'reaction', 'comment-reaction', like.user_id, like.sealed, commentId);
+  return (REACTIONS as readonly string[]).includes(v?.e as string) ? (v!.e as Reaction) : HEART;
 }
 
 // --------------------------------------------------------------------------------------- mentions

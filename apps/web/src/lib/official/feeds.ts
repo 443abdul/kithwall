@@ -116,6 +116,30 @@ function when(raw: string | undefined): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+/** The feed's own name (the first title before any item), for a source an admin adds without naming it. */
+export function feedTitle(xml: string): string {
+  if (typeof xml !== 'string') return '';
+  const first = xml.search(/<(item|entry)[\s>]/i);
+  const head = xml.slice(0, first >= 0 ? first : 20_000);
+  return clip(plain(tag(head, 'title')).replace(/\n/g, ' '), 80);
+}
+
+/** A page's own pointer to its feed (<link rel="alternate" type="application/rss+xml" href="…">), if it has one. */
+export function feedLinkIn(html: string, base: string): string | null {
+  if (typeof html !== 'string') return null;
+  const page = html.slice(0, 400_000);
+  const re = /<link\s([^>]*)>/gi;
+  for (let m = re.exec(page); m; m = re.exec(page)) {
+    const a = m[1] ?? '';
+    if (!/(^|\s)rel\s*=\s*["']?alternate/i.test(a) || !/(^|\s)type\s*=\s*["']application\/(rss|atom)\+xml/i.test(a)) continue;
+    const href = /(^|\s)href\s*=\s*("([^"]*)"|'([^']*)')/i.exec(a);
+    const raw = href?.[3] ?? href?.[4];
+    if (!raw) continue;
+    try { return httpsUrl(new URL(decodeEntities(raw), base).toString()); } catch { /* next */ }
+  }
+  return null;
+}
+
 const MAX_FEED = 4 * 1024 * 1024;
 const MAX_ITEMS = 60;
 

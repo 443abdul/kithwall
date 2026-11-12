@@ -213,6 +213,17 @@ export const FRESH_MS = 3 * 24 * 3600_000;
 
 export const isFresh = (d: Draft, now: number) => d.at === null || (d.at <= now + 3600_000 && now - d.at <= FRESH_MS);
 
+/** A source's newest item may be this old and still be posted, once: a weekly blog is quiet, not stale. */
+export const LATEST_MS = 30 * 24 * 3600_000;
+
+/** What a source has to offer now (drafts come newest first): everything fresh, or failing that its newest item. */
+export function freshOrLatest(drafts: Draft[], now: number): Draft[] {
+  const fresh = drafts.filter((d) => isFresh(d, now));
+  if (fresh.length) return fresh;
+  const newest = drafts[0];
+  return newest && newest.at !== null && newest.at <= now + 3600_000 && now - newest.at <= LATEST_MS ? [newest] : [];
+}
+
 /**
  * The day's posts for one account: each source gives at most `per_day`, sources take turns so one busy feed
  * does not crowd out the others, and the account posts at most `cap`.

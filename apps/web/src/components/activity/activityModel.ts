@@ -24,7 +24,7 @@ export interface ActivityGroup {
 export interface ActivityDay { day: string; at: string; groups: ActivityGroup[] }
 
 /** Types where several people doing the same thing to the same object collapse into one line. */
-const COLLAPSIBLE = new Set(['like', 'comment', 'share', 'mention', 'tag', 'wall_post', 'reaction', 'story_reaction']);
+const COLLAPSIBLE = new Set(['like', 'comment_like', 'comment', 'share', 'mention', 'tag', 'wall_post', 'reaction', 'story_reaction']);
 
 export function groupActivity(rows: ActivityRow[]): ActivityDay[] {
   const sorted = [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -78,7 +78,7 @@ export function activityHref(g: Pick<ActivityGroup, 'type' | 'objectKind' | 'obj
 /** Icon shown on the avatar for each kind of activity. */
 export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'circles' | 'calendar' | 'key' | 'image' | 'share' | 'lock' | 'clock' | 'activity' {
   switch (type) {
-    case 'like': case 'reaction': case 'story_reaction': case 'relationship': return 'heart';
+    case 'like': case 'comment_like': case 'reaction': case 'story_reaction': case 'relationship': return 'heart';
     case 'comment': case 'mention': case 'wall_post': return 'messages';
     case 'friend_request': case 'friend_accept': case 'follow': return 'users';
     case 'group_invite': case 'group_request': return 'circles';
@@ -98,7 +98,7 @@ export function activityIcon(type: string): 'heart' | 'messages' | 'users' | 'ci
 
 /** Known activity types (others fall back to a generic line). */
 export const ACTIVITY_TYPES = [
-  'friend_request', 'friend_accept', 'wall_post', 'comment', 'like', 'tag', 'group_invite', 'group_request',
+  'friend_request', 'friend_accept', 'wall_post', 'comment', 'like', 'comment_like', 'tag', 'group_invite', 'group_request',
   'event_invite', 'mention', 'share', 'relationship', 'recovery_request', 'recovery_trustee',
   'key_waiting', 'post_published', 'security_notice', 'follow',
   'legacy_contact', 'legacy_declined', 'legacy_cleared', 'legacy_reminder', 'legacy_released', 'legacy_active',

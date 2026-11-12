@@ -116,9 +116,10 @@ are replaced by a pointer to the website (App Store rules for donation links).
 
 ### Cron
 
-`apps/web/vercel.json` has four daily crons (daily works on every Vercel plan; set `CRON_SECRET` in Vercel):
-`/api/cron/stories`, `/api/cron/ephemeral`, `/api/cron/legacy` and `/api/cron/official` (the automated accounts,
-`docs/v2/13-official-accounts.md`; does nothing without `KITHWALL_OFFICIAL_SEED`). Account deletion is immediate (`/api/account/delete`,
+`apps/web/vercel.json` has daily crons (each entry runs once a day, which works on every Vercel plan; set
+`CRON_SECRET` in Vercel): `/api/cron/stories`, `/api/cron/ephemeral`, `/api/cron/legacy`, and
+`/api/cron/official` six times at different hours (the automated accounts, `docs/v2/13-official-accounts.md`;
+does nothing without `KITHWALL_OFFICIAL_SEED`). Account deletion is immediate (`/api/account/delete`,
 proof-of-key), so no cron is involved.
 
 Legacy contacts (`20261102000200_legacy_contact`, `docs/v2/03-safety.md` §12): `GET /api/cron/legacy` runs
