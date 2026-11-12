@@ -193,15 +193,47 @@ export function releaseFileUrls(paths: readonly string[], delayMs = 30_000): voi
   }
 }
 
-/** React hook: decrypted object URL for a file reference (null while loading or on failure). */
+/** A picture that failed to load is tried again after these waits, and at once when the connection returns. */
+export const FILE_RETRY_MS = [2_000, 6_000, 15_000] as const;
+
+/**
+ * Keeps asking for a file's decrypted URL until it arrives: again after each wait in `waits`, and straight
+ * away when the browser says it is back online. One failed download (a weak signal, a picture linked to its
+ * post a moment after the post appeared) must not leave a blank frame until the page is reloaded.
+ * Returns a function that stops it.
+ */
+export function loadFileUrl(ref: FileRef, onUrl: (url: string) => void, waits: readonly number[] = FILE_RETRY_MS,
+  load: (ref: FileRef) => Promise<string> = fileUrl): () => void {
+  let live = true;
+  let tries = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let busy = false;
+  const attempt = () => {
+    if (!live || busy) return;
+    busy = true;
+    load(ref).then((u) => { busy = false; if (live) { stop(); onUrl(u); } }, () => {
+      busy = false;
+      if (live && tries < waits.length) timer = setTimeout(attempt, waits[tries++]);
+    });
+  };
+  const online = () => { clearTimeout(timer); tries = 0; attempt(); };
+  const stop = () => {
+    live = false;
+    clearTimeout(timer);
+    if (typeof window !== 'undefined') window.removeEventListener('online', online);
+  };
+  if (typeof window !== 'undefined') window.addEventListener('online', online);
+  attempt();
+  return stop;
+}
+
+/** React hook: decrypted object URL for a file reference (null while loading or while it cannot be loaded). */
 export function useFileUrl(ref: FileRef | null | undefined): string | null {
   const [url, setUrl] = useState<string | null>(null);
   const path = ref?.path;
   useEffect(() => {
-    let live = true;
     setUrl(null);
-    if (ref) fileUrl(ref).then((u) => { if (live) setUrl(u); }).catch(() => undefined);
-    return () => { live = false; };
+    return ref ? loadFileUrl(ref, setUrl) : undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
   return url;

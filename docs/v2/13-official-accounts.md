@@ -1,7 +1,7 @@
 # Kithwall 2: official, automated accounts
 
 Status: implemented · 2026-11-12 · migrations `supabase/migrations/20261113000100_official_accounts.sql`,
-`20261113000300_official_admin.sql` ·
+`20261113000300_official_admin.sql`, `20261113000400_official_previews.sql` ·
 code `apps/web/src/lib/official`, `apps/web/src/app/api/cron/official` · tests
 `apps/web/src/lib/official/official.test.ts`, `supabase/tests/official_accounts.test.sql`
 
@@ -51,14 +51,34 @@ Each source has `terms`, and the composer (`lib/official/compose.ts`) shows no m
 | `public-domain` | title, summary and picture, credited | NASA |
 | `cc` | title and an excerpt with the licence named; a picture only when **that file's own licence** is public domain, CC0, CC BY or CC BY-SA, credited to its author | Wikipedia, Wikimedia Commons, Our World in Data |
 | `summary` | the headline and the short summary the publisher puts in its own feed, and the link | UN News, WHO |
-| `headline` | the headline and the link, nothing else | BBC, Dawn (off by default) |
-| `embed` | the title; the video plays in the publisher's own player after the reader presses play; no thumbnail is copied | YouTube channels |
+| `headline` | the headline and the link, no text from the article | BBC, Dawn (off by default) |
+| `embed` | the title; the video plays in the publisher's own player after the reader presses play | YouTube channels |
+
+`terms` is about how much of the item's **text and own pictures** is shown. Separately, every link and video
+post carries the link's **preview picture**, the same one a person's post gets when they paste that link
+(`app/api/link-preview`): the picture the page itself names for link previews (`og:image`), or a video's
+thumbnail from YouTube's image host. It sits on the card that leads to the original. Without it Explore was a
+column of grey boxes and bare cards and looked broken (the owner reported it as pictures "not being fetched").
+Wikipedia is the exception: no preview picture, because its lead pictures are sometimes non-free.
+
+- The job fetches it (`fetchPreview` in `lib/official/run.ts`) under the rules of every other fetch: public
+  https addresses only, also after each redirect; the first 600 KB of the page; a picture of at most 2 MB and at
+  least 200 × 100 px that is a JPEG, PNG or WebP by its own header. It is encrypted and stored like every picture.
+- UN News' feed links each story through a counter (`/feed/view/…`) that answers programs with an error after
+  eleven seconds; the story page it leads to is served normally and its `robots.txt` allows it, so the preview
+  is read from there. The post still links where the feed says.
+- **A post that went out without its picture gets it later.** The publisher's site may be slow that minute, and
+  posts made before 2026-11-13 had none. `official_items` records per post whether it has its picture and how
+  often the job tried; each run goes back over the last seven days (up to 40 posts, three tries each), and the
+  account edits its own post as a person would: it uploads the picture, links it to the post, and signs the
+  post again with it. Such a post shows "edited".
 
 Rules that hold for every source:
 
 - Feeds are untrusted text. Markup is removed and entities decoded (`lib/official/feeds.ts`); what remains is
   shown as plain text. Links must be `https`.
-- Pictures are fetched only from the publisher's own hosts (`nasa.gov`, `wikimedia.org`), also after a
+- A picture that is the content of a post (NASA's image of the day, Commons' picture of the day) is fetched
+  only from the publisher's own hosts (`nasa.gov`, `wikimedia.org`), also after a
   redirect, at most 6 MB, and only if the file itself is a JPEG, PNG or WebP of sane size
   (`lib/official/image.ts`). They are stored like every picture in Kithwall: encrypted, with the key in the
   public post.
@@ -70,7 +90,8 @@ Rules that hold for every source:
   `lib/net/publicAddress.ts`, the rules the link-preview proxy uses): https only, a public host name, never an
   address inside a network (also after DNS and after each redirect), size and time limits. Such a source can
   only be an RSS/Atom feed or a YouTube channel, and never shows more than the headline, the feed's own
-  summary if the admin says the publisher allows it, and a link; no pictures (a database constraint).
+  summary if the admin says the publisher allows it, and a link with its preview picture (a database
+  constraint on the kind and the terms).
 
 Featured-article thumbnails from Wikipedia are **not** used: the English Wikipedia holds non-free pictures
 under fair use, and the feed does not say which are free.
@@ -94,11 +115,13 @@ Health Organization's news feed is no longer updated and was removed.
    posts-a-day (set per source in the Admin screen, 1 to 24, counted over the last 20 hours) and the account
    at most 12 a day; what a run finds is spread over the 3.5 hours until the next one with `publish_at` (the
    same scheduling people use). **Post now** is the operator asking: it takes up to two new items from every
-   source whatever was posted earlier today, and they go out at once. Then: open the account's keys (below),
-   sign in as the account, and for each item claim it in `official_items`, fetch and encrypt its picture if it
-   may have one, sign the post, insert it.
+   source whatever was posted earlier today, and they go out at once. The pictures of everything about to be
+   posted are fetched side by side (eight at a time, twelve seconds for all of them). Then: open the account's
+   keys (below), sign in as the account, and for each item claim it in `official_items`, encrypt and upload its
+   picture if one arrived, sign the post, insert it.
 4. A post that fails gives its claim back and removes its picture; the next run tries again. The job stops
-   starting new work after 45 s; what is left is picked up next time.
+   starting new work after 45 s; what is left is picked up next time. Then earlier posts that are still
+   without their preview picture get it (§2), if the run is younger than 30 s.
 5. Housekeeping: notifications addressed to automated accounts are deleted (nobody reads them); claims older
    than 400 days are forgotten.
 
@@ -125,8 +148,8 @@ in the place a passphrase-derived key would go (`key_bundles.bundle.amkByPasswor
    `openssl rand -base64 48`, and keep a copy offline. Until it is set, the job does nothing. `CRON_SECRET`
    must be set already (the other cron jobs use it).
 3. Admin (`/mod` → Admin) → **Official accounts**:
-   - the main switch and **Post now** (the answer says how many posts were made and which sources had nothing
-     new);
+   - the main switch and **Post now** (the answer says how many posts were made, how many earlier posts got
+     their picture, and which sources had nothing new);
    - **Accounts**: the list, and "Add an account" (a handle `kithwall.<letters>` and a public name). An account
      that has not posted and has no sources can be removed;
    - **Sources**: each one's switch, what it may show, when it was last read and any error, its posts a day,
@@ -142,7 +165,8 @@ in the place a passphrase-derived key would go (`key_bundles.bundle.amkByPasswor
 ## 6. What the server now holds
 
 Four small tables, none about people: which accounts are automated (public), the accounts the operator
-defined, the list of sources and when each ran, and hashes of the items already posted. The "What Kithwall knows" page lists them. The posts
+defined, the list of sources and when each ran, and hashes of the items already posted (with whether the post
+has its preview picture). The "What Kithwall knows" page lists them. The posts
 themselves are Public posts and are covered by `10-follow-public.md` §8.
 
 ## 7. Not in this round

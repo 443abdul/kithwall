@@ -3325,5 +3325,6 @@
   "mod.official.added": "{title} যোগ হয়েছে: {count}টি আইটেম পাওয়া গেছে।",
   "mod.official.addFailed": "যোগ করা যায়নি: {reason}",
   "mod.official.noFeed": "এই ঠিকানায় কোনো ফিড পাওয়া যায়নি।",
-  "mod.official.quiet": "এখন এগুলো থেকে নতুন কিছু নেই: {list}।"
+  "mod.official.quiet": "এখন এগুলো থেকে নতুন কিছু নেই: {list}।",
+  "mod.official.pictures": "আগের পোস্টে যোগ করা ছবি: {count}।"
 }

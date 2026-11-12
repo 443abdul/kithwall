@@ -3325,5 +3325,6 @@
   "mod.official.added": "Añadido {title}: {count} elementos encontrados.",
   "mod.official.addFailed": "No se pudo añadir: {reason}",
   "mod.official.noFeed": "No se encontró ningún canal en esa dirección.",
-  "mod.official.quiet": "Nada nuevo por ahora de: {list}."
+  "mod.official.quiet": "Nada nuevo por ahora de: {list}.",
+  "mod.official.pictures": "Imágenes añadidas a publicaciones anteriores: {count}."
 }

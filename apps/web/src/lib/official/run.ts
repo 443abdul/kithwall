@@ -17,8 +17,12 @@ import { b64u, createKeyBundle, encryptFile, fileDigest, sealEnvelope, unlockWit
 import { admin, asUser } from '../auth/server';
 import { createAuthUser, deleteAuthUser, mintSessionToken } from '../auth/passkey-server';
 import { postHeader } from '../postHeader';
-import type { FileRef, PostPayload } from '../types';
-import { MAX_IMAGE_BYTES, draftsFromFeed, draftsFromWikipedia, freshOrLatest, pickForAccount, spread, type Draft, type Source } from './compose';
+import type { FileRef, PostPayload, PostRow } from '../types';
+import { decodeHtml, parseHtmlMeta } from '../feed/linkMeta';
+import {
+  MAX_IMAGE_BYTES, PREVIEW_MAX_BYTES, PREVIEW_MIN, draftsFromFeed, draftsFromWikipedia, freshOrLatest, pagePictureUrl, pickForAccount, previewFor,
+  spread, type Draft, type Preview, type Source, type SourceKind,
+} from './compose';
 import { parseFeed } from './feeds';
 import { publicGet } from './fetch';
 import { imageInfo } from './image';
@@ -37,6 +41,19 @@ const MAX_FEED_BYTES = 4 * 1024 * 1024;
 const DAY_MS = 20 * 3600_000;
 /** A scheduled run spreads what it found over the time until the next one. */
 const SPREAD_HOURS = 3.5;
+/** A link preview reads the head of the page: this much of it is fetched. */
+const PAGE_BYTES = 600 * 1024;
+/** One preview picture may take this long; all the pictures of a run are fetched side by side within PICTURES_MS. */
+const PREVIEW_MS = 6_000;
+const PICTURES_MS = 12_000;
+const SIDE_BY_SIDE = 8;
+/** A post made without its picture is tried again by later runs: this many times, for this many days. */
+const PICTURE_TRIES = 3;
+const LATER_DAYS = 7;
+const LATER_MAX = 40;
+/** Adding pictures to earlier posts starts only if the run is younger than this; nothing starts after HARD_STOP_MS. */
+const LATER_START_MS = 30_000;
+const HARD_STOP_MS = 50_000;
 
 export interface RunOptions {
   /** An admin asked ("Post now"): post what is new at once, whatever the daily limits say. */
@@ -50,6 +67,8 @@ export interface RunResult {
   /** Why nothing ran: no seed configured, or the operator's switch is off. */
   reason?: 'not_configured' | 'switched_off';
   posted: number;
+  /** Earlier posts that got their preview picture in this run. */
+  pictures: number;
   accounts: { handle: string; posted: number; created?: boolean }[];
   /** Sources that were read and had nothing new. */
   quiet: string[];
@@ -79,21 +98,77 @@ export async function fetchFeed(url: string): Promise<string> {
   return new TextDecoder('utf-8').decode(got.body);
 }
 
-/** Pictures come only from the publisher's own hosts, also after a redirect. */
+interface Picture { bytes: Uint8Array; mime: string; w: number; h: number }
+
+/** A JPEG, PNG or WebP, judged by the file itself. Null when it is something else. */
+async function getImage(url: string, maxBytes: number, timeoutMs: number, hostOk?: (host: string) => boolean): Promise<Picture | null> {
+  const got = await publicGet(url, { accept: 'image/jpeg, image/png, image/webp', maxBytes, timeoutMs, hostOk });
+  const bytes = new Uint8Array(got.body);
+  const info = imageInfo(bytes);
+  return info ? { bytes, ...info } : null;
+}
+
+/** A picture that is the content of a post (NASA, Commons) comes only from the publisher's own hosts, also after a redirect. */
 const IMAGE_HOSTS: Record<string, RegExp> = {
   'nasa-image': /(^|\.)nasa\.gov$/i,
   wikipedia: /(^|\.)wikimedia\.org$/i,
 };
+const YOUTUBE_IMAGES = /^i\.ytimg\.com$/i;
 
-async function fetchImage(kind: string, url: string): Promise<{ bytes: Uint8Array; mime: string; w: number; h: number } | null> {
-  const allowed = IMAGE_HOSTS[kind];
-  if (!allowed) return null;
-  const got = await publicGet(url, {
-    accept: 'image/jpeg, image/png, image/webp', maxBytes: MAX_IMAGE_BYTES, timeoutMs: FETCH_MS, hostOk: (h) => allowed.test(h),
-  });
-  const bytes = new Uint8Array(got.body);
-  const info = imageInfo(bytes);
-  return info ? { bytes, ...info } : null;
+const bigEnough = (p: Picture | null) => (p && p.w >= PREVIEW_MIN.w && p.h >= PREVIEW_MIN.h ? p : null);
+
+/**
+ * The preview picture of a link or a video: what the page names for link previews, or the video's thumbnail.
+ * Fetched like everything the job reads (public https addresses only, also after redirects), kept small, and
+ * accepted only if the file itself is a picture. Null when there is none; throws when the site did not answer.
+ */
+async function fetchPreview(p: Preview, deadline: number): Promise<Picture | null> {
+  const left = () => Math.min(PREVIEW_MS, deadline - Date.now());
+  if (p.from === 'images') {
+    let failed: unknown = null;
+    for (const url of p.urls) {
+      if (left() < 300) break;
+      try {
+        const img = bigEnough(await getImage(url, PREVIEW_MAX_BYTES, left(), (h) => YOUTUBE_IMAGES.test(h)));
+        if (img) return img;
+      } catch (e) { failed = e; }
+    }
+    if (failed) throw failed;
+    return null;
+  }
+  if (left() < 300) throw new Error('timed out');
+  const page = await publicGet(p.url, { accept: 'text/html, application/xhtml+xml;q=0.9', maxBytes: PAGE_BYTES, timeoutMs: left(), truncate: true });
+  if (page.type !== 'text/html' && page.type !== 'application/xhtml+xml') return null;
+  const url = pagePictureUrl(parseHtmlMeta(decodeHtml(page.body)).image, page.url.toString());
+  if (!url) return null;
+  if (left() < 300) throw new Error('timed out');
+  return bigEnough(await getImage(url, PREVIEW_MAX_BYTES, left()));
+}
+
+/** The picture a new post goes out with: its own (NASA, Commons) if it has one, else the link's preview. */
+async function pictureFor(kind: SourceKind, draft: Draft, deadline: number): Promise<Picture | null> {
+  const own = IMAGE_HOSTS[kind];
+  if (draft.imageUrl && own) {
+    const img = await getImage(draft.imageUrl, MAX_IMAGE_BYTES, Math.min(FETCH_MS, deadline - Date.now()), (h) => own.test(h)).catch(() => null);
+    if (img) return img;
+  }
+  const p = previewFor(kind, draft.link);
+  return p ? fetchPreview(p, deadline).catch(() => null) : null;
+}
+
+const wantsPicture = (kind: SourceKind, draft: Draft) => !!draft.imageUrl || !!previewFor(kind, draft.link);
+
+/** `fn` over the items, a few at a time. None is started after the deadline: those stay undefined. */
+async function sideBySide<T, R>(items: T[], deadline: number, fn: (item: T) => Promise<R>): Promise<(R | undefined)[]> {
+  const out = new Array<R | undefined>(items.length).fill(undefined);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(SIDE_BY_SIDE, items.length) }, async () => {
+    while (next < items.length && Date.now() < deadline) {
+      const i = next++;
+      out[i] = await fn(items[i]!);
+    }
+  }));
+  return out;
 }
 
 async function draftsFor(src: Source, now: number): Promise<Draft[]> {
@@ -106,6 +181,7 @@ async function draftsFor(src: Source, now: number): Promise<Draft[]> {
 }
 
 interface Signer { userId: string; signPriv: Uint8Array; created: boolean }
+interface Session { signer: Signer; client: SupabaseClient; jwt: string }
 
 /** Opens the account's keys with the seed, creating the account the first time. */
 async function ensureAccount(def: AccountDef, ikm: Buffer, existing: Map<string, string>): Promise<Signer> {
@@ -147,10 +223,8 @@ async function signInAs(userId: string): Promise<{ client: SupabaseClient; jwt: 
   return { client: asUser(jwt), jwt };
 }
 
-/** Fetches a picture, encrypts it like any photo, uploads it into the account's folder. */
-async function attachImage(client: SupabaseClient, userId: string, kind: string, url: string): Promise<FileRef | null> {
-  const img = await fetchImage(kind, url).catch(() => null);
-  if (!img) return null;
+/** Encrypts a picture like any photo and uploads it into the account's folder (not linked to a post yet). */
+async function storePicture(client: SupabaseClient, userId: string, img: Picture): Promise<FileRef | null> {
   const path = `${userId}/${randomUUID()}`;
   const { key, ciphertext } = encryptFile(img.bytes, path);
   const up = await client.storage.from('media').upload(path, new Blob([ciphertext as BlobPart], { type: 'application/octet-stream' }), {
@@ -165,9 +239,87 @@ async function attachImage(client: SupabaseClient, userId: string, kind: string,
   return { path, key: b64u.encode(key), mime: img.mime, w: img.w, h: img.h, bytes: img.bytes.byteLength, sha: fileDigest(ciphertext) };
 }
 
+async function dropPicture(client: SupabaseClient, path: string): Promise<void> {
+  await client.storage.from('media').remove([path]);
+  await client.from('media_objects').delete().eq('path', path);
+}
+
+type StoredPost = Pick<PostRow, 'id' | 'author_id' | 'wall_owner_id' | 'group_id' | 'event_id' | 'kind' | 'is_public' | 'audience_id' | 'epoch'> & { envelope: unknown };
+interface ItemRow { source_id: string; item_key: string; post_id: string; picture_tries: number }
+
+/**
+ * Posts that went out without their picture get it now: the publisher's site was slow that time, or the post
+ * is from before link previews. The account edits its own post, as a person would: the picture is uploaded
+ * and the post signed again with it. Each post is tried a few times over a few days, then left as it is.
+ */
+async function addPicturesLater(db: SupabaseClient, defs: AccountDef[], open: (def: AccountDef) => Promise<Session>,
+  opts: RunOptions, started: number, result: RunResult): Promise<void> {
+  if (Date.now() - started > LATER_START_MS) return;
+  let q = db.from('official_items').select('source_id, item_key, post_id, picture_tries')
+    .eq('has_picture', false).lt('picture_tries', PICTURE_TRIES).not('post_id', 'is', null)
+    .gt('created_at', new Date(Date.now() - LATER_DAYS * 86400_000).toISOString())
+    .order('created_at', { ascending: false }).limit(LATER_MAX);
+  if (opts.only) q = q.eq('source_id', opts.only);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  const items = (data ?? []) as ItemRow[];
+  if (!items.length) return;
+  const { data: srcs } = await db.from('official_sources').select('id, account, kind').in('id', [...new Set(items.map((i) => i.source_id))]);
+  const { data: posts } = await db.from('posts')
+    .select('id, author_id, wall_owner_id, group_id, event_id, kind, is_public, audience_id, epoch, envelope').in('id', items.map((i) => i.post_id));
+  const sourceOf = new Map(((srcs ?? []) as { id: string; account: string; kind: SourceKind }[]).map((r) => [r.id, r]));
+  const postOf = new Map(((posts ?? []) as StoredPost[]).map((r) => [r.id, r]));
+  const mark = (it: ItemRow, set: { has_picture?: boolean; picture_tries?: number }) =>
+    db.from('official_items').update(set).eq('source_id', it.source_id).eq('item_key', it.item_key);
+
+  const jobs: { item: ItemRow; post: StoredPost; body: PostPayload; account: string; preview: Preview }[] = [];
+  for (const item of items) {
+    const post = postOf.get(item.post_id);
+    const source = sourceOf.get(item.source_id);
+    if (!post || !source) continue;
+    const body = (post.envelope as { body?: PostPayload } | null)?.body;
+    if (body?.link?.image) { await mark(item, { has_picture: true }); continue; }
+    const preview = post.is_public && body?.link ? previewFor(source.kind, body.link) : null;
+    if (!preview || !body) { await mark(item, { picture_tries: PICTURE_TRIES }); continue; }      // nothing to fetch for this one
+    jobs.push({ item, post, body, account: source.account, preview });
+  }
+  const deadline = Date.now() + PICTURES_MS;
+  const found = await sideBySide(jobs, deadline, (j) => fetchPreview(j.preview, deadline).catch(() => null));
+  for (let i = 0; i < jobs.length; i++) {
+    const pic = found[i];
+    if (pic === undefined || Date.now() - started > HARD_STOP_MS) continue;                        // not tried: the next run does
+    const { item, post, body, account } = jobs[i]!;
+    const tried = { picture_tries: item.picture_tries + 1 };
+    if (!pic) { await mark(item, tried); continue; }
+    const def = defs.find((d) => d.slug === account);
+    let image: FileRef | null = null;
+    let session: Session | null = null;
+    try {
+      if (!def) throw new Error('the account is gone');
+      session = await open(def);
+      if (session.signer.userId !== post.author_id) throw new Error('the post belongs to another account');
+      image = await storePicture(session.client, session.signer.userId, pic);
+      if (!image) throw new Error('the picture could not be stored');
+      // The picture is readable by the post's readers before the post names it.
+      const linked = await session.client.from('media_objects').update({ post_id: post.id }).eq('path', image.path);
+      if (linked.error) throw new Error(linked.error.message);
+      const payload: PostPayload = { ...body, link: { ...body.link!, image } };
+      const envelope = sealEnvelope({ header: postHeader(post), payload, signPriv: session.signer.signPriv });
+      const up = await session.client.from('posts').update({ envelope }).eq('id', post.id).select('id');
+      if (up.error || !up.data?.length) throw new Error(up.error?.message ?? 'the post could not be changed');
+      await mark(item, { has_picture: true });
+      result.pictures++;
+    } catch (e) {
+      if (image && session) await dropPicture(session.client, image.path).catch(() => undefined);
+      await mark(item, tried);
+      result.errors.push({ where: `picture ← ${item.source_id}`, error: short(e) });
+    }
+  }
+}
+
 export async function runOfficial(opts: RunOptions = {}, now = Date.now()): Promise<RunResult> {
   const started = Date.now();
-  const result: RunResult = { ran: false, posted: 0, accounts: [], quiet: [], errors: [] };
+  const result: RunResult = { ran: false, posted: 0, pictures: 0, accounts: [], quiet: [], errors: [] };
   const ikm = seed();
   if (!ikm) return { ...result, reason: 'not_configured' };
   const db = admin();
@@ -224,64 +376,85 @@ export async function runOfficial(opts: RunOptions = {}, now = Date.now()): Prom
     }
   }));
 
-  // 2. Each account posts its share, as itself.
-  for (const def of defs) {
-    if (Date.now() - started > BUDGET_MS) break;
+  // 2. What each account posts this time, and the pictures for all of it, fetched side by side.
+  const plans = defs.map((def) => {
     const today = opts.manual ? 0 : sources.filter((s) => s.account === def.slug).reduce((n, s) => n + (postedToday.get(s.id) ?? 0), 0);
-    const picks = pickForAccount(read.filter((r) => r.source.account === def.slug && r.drafts.length), Math.max(0, ACCOUNT_CAP - today));
-    if (!picks.length) continue;
-    let jwt: string | null = null;
-    const entry = { handle: def.handle, posted: 0 } as RunResult['accounts'][number];
-    try {
-      const signer = await ensureAccount(def, ikm, existing);
-      if (signer.created) entry.created = true;
-      const session = await signInAs(signer.userId);
-      jwt = session.jwt;
-      // "Post now" means now. A scheduled run spreads what it found until the next run.
-      const times = opts.manual ? picks.map(() => null) : spread(picks.length, now, SPREAD_HOURS);
-      for (let i = 0; i < picks.length; i++) {
-        if (Date.now() - started > BUDGET_MS) break;
-        const { source, draft } = picks[i]!;
-        const key = itemKey(draft.key);
-        // Claim the item first: a second run at the same moment then leaves it alone.
-        const claim = await db.from('official_items').insert({ source_id: source.id, item_key: key });
-        if (claim.error) {
-          if (claim.error.code !== '23505') result.errors.push({ where: source.id, error: short(claim.error) });
-          continue;
-        }
-        let image: FileRef | null = null;
-        try {
-          const id = randomUUID();
-          if (draft.imageUrl) image = await attachImage(session.client, signer.userId, source.kind, draft.imageUrl);
-          const payload: PostPayload = { text: draft.text, link: { ...draft.link, ...(image ? { image } : {}) } };
-          const row = {
-            id, author_id: signer.userId, wall_owner_id: signer.userId, group_id: null, event_id: null,
-            kind: 'link' as const, is_public: true, audience_id: null, epoch: null, shared_post_id: null,
-          };
-          const envelope = sealEnvelope({ header: postHeader(row), payload, signPriv: signer.signPriv });
-          const ins = await session.client.from('posts').insert({ ...row, envelope, ...(times[i] ? { publish_at: times[i] } : {}) });
-          if (ins.error) throw new Error(ins.error.message);
-          if (image) await session.client.from('media_objects').update({ post_id: id }).eq('path', image.path);
-          await db.from('official_items').update({ post_id: id }).eq('source_id', source.id).eq('item_key', key);
-          await db.from('official_sources').update({ last_posted_at: new Date().toISOString() }).eq('id', source.id);
-          entry.posted++;
-          result.posted++;
-        } catch (e) {
-          // Not posted: give the item back so the next run can try again, and leave no orphaned picture.
-          await db.from('official_items').delete().eq('source_id', source.id).eq('item_key', key);
-          if (image) {
-            await session.client.storage.from('media').remove([image.path]);
-            await session.client.from('media_objects').delete().eq('path', image.path);
+    return { def, picks: pickForAccount(read.filter((r) => r.source.account === def.slug && r.drafts.length), Math.max(0, ACCOUNT_CAP - today)) };
+  }).filter((p) => p.picks.length);
+  const all = plans.flatMap((p) => p.picks);
+  const picturesBy = Date.now() + PICTURES_MS;
+  const fetched = await sideBySide(all, picturesBy, (p) => pictureFor(p.source.kind, p.draft, picturesBy));
+  const pictureOf = new Map(all.map((p, i) => [p, fetched[i]]));
+
+  // An account is signed in to once in a run, and signed out when the run ends.
+  const sessions = new Map<string, Session>();
+  const open = async (def: AccountDef): Promise<Session> => {
+    const have = sessions.get(def.slug);
+    if (have) return have;
+    const signer = await ensureAccount(def, ikm, existing);
+    const session: Session = { signer, ...(await signInAs(signer.userId)) };
+    sessions.set(def.slug, session);
+    return session;
+  };
+
+  try {
+    // 3. Each account posts its share, as itself.
+    for (const { def, picks } of plans) {
+      if (Date.now() - started > BUDGET_MS) break;
+      const entry = { handle: def.handle, posted: 0 } as RunResult['accounts'][number];
+      try {
+        const session = await open(def);
+        const { signer } = session;
+        if (signer.created) entry.created = true;
+        // "Post now" means now. A scheduled run spreads what it found until the next run.
+        const times = opts.manual ? picks.map(() => null) : spread(picks.length, now, SPREAD_HOURS);
+        for (let i = 0; i < picks.length; i++) {
+          if (Date.now() - started > BUDGET_MS) break;
+          const { source, draft } = picks[i]!;
+          const key = itemKey(draft.key);
+          // Claim the item first: a second run at the same moment then leaves it alone.
+          const claim = await db.from('official_items').insert({ source_id: source.id, item_key: key });
+          if (claim.error) {
+            if (claim.error.code !== '23505') result.errors.push({ where: source.id, error: short(claim.error) });
+            continue;
           }
-          result.errors.push({ where: `${def.handle} ← ${source.id}`, error: short(e) });
+          const picture = pictureOf.get(picks[i]!);
+          let image: FileRef | null = null;
+          try {
+            const id = randomUUID();
+            if (picture) image = await storePicture(session.client, signer.userId, picture);
+            const payload: PostPayload = { text: draft.text, link: { ...draft.link, ...(image ? { image } : {}) } };
+            const row = {
+              id, author_id: signer.userId, wall_owner_id: signer.userId, group_id: null, event_id: null,
+              kind: 'link' as const, is_public: true, audience_id: null, epoch: null, shared_post_id: null,
+            };
+            const envelope = sealEnvelope({ header: postHeader(row), payload, signPriv: signer.signPriv });
+            const ins = await session.client.from('posts').insert({ ...row, envelope, ...(times[i] ? { publish_at: times[i] } : {}) });
+            if (ins.error) throw new Error(ins.error.message);
+            if (image) await session.client.from('media_objects').update({ post_id: id }).eq('path', image.path);
+            // Out without its picture: a later run tries again (addPicturesLater), unless there is none to fetch.
+            const tries = image ? 0 : !wantsPicture(source.kind, draft) ? PICTURE_TRIES : picture === undefined ? 0 : 1;
+            await db.from('official_items').update({ post_id: id, has_picture: !!image, picture_tries: tries }).eq('source_id', source.id).eq('item_key', key);
+            await db.from('official_sources').update({ last_posted_at: new Date().toISOString() }).eq('id', source.id);
+            entry.posted++;
+            result.posted++;
+          } catch (e) {
+            // Not posted: give the item back so the next run can try again, and leave no orphaned picture.
+            await db.from('official_items').delete().eq('source_id', source.id).eq('item_key', key);
+            if (image) await dropPicture(session.client, image.path).catch(() => undefined);
+            result.errors.push({ where: `${def.handle} ← ${source.id}`, error: short(e) });
+          }
         }
+      } catch (e) {
+        result.errors.push({ where: def.handle, error: short(e) });
       }
-    } catch (e) {
-      result.errors.push({ where: def.handle, error: short(e) });
-    } finally {
-      if (jwt) await db.auth.admin.signOut(jwt).catch(() => undefined);
+      result.accounts.push(entry);
     }
-    result.accounts.push(entry);
+
+    // 4. Earlier posts that are still without their picture.
+    await addPicturesLater(db, defs, open, opts, started, result).catch((e) => { result.errors.push({ where: 'pictures', error: short(e) }); });
+  } finally {
+    for (const s of sessions.values()) await db.auth.admin.signOut(s.jwt).catch(() => undefined);
   }
 
   const hk = await db.rpc('official_housekeeping');

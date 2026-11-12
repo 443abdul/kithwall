@@ -3325,5 +3325,6 @@
   "mod.official.added": "أُضيف {title}: عُثر على {count} عنصرًا.",
   "mod.official.addFailed": "تعذّرت الإضافة: {reason}",
   "mod.official.noFeed": "لم يُعثر على خلاصة في هذا العنوان.",
-  "mod.official.quiet": "لا جديد الآن من: {list}."
+  "mod.official.quiet": "لا جديد الآن من: {list}.",
+  "mod.official.pictures": "صور أُضيفت إلى منشورات سابقة: {count}."
 }

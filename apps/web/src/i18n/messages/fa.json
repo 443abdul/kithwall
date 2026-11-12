@@ -3325,5 +3325,6 @@
   "mod.official.added": "{title} افزوده شد: {count} مورد پیدا شد.",
   "mod.official.addFailed": "افزوده نشد: {reason}",
   "mod.official.noFeed": "در این نشانی خوراکی پیدا نشد.",
-  "mod.official.quiet": "فعلاً چیز تازه‌ای نیست از: {list}."
+  "mod.official.quiet": "فعلاً چیز تازه‌ای نیست از: {list}.",
+  "mod.official.pictures": "تصویرهای افزوده‌شده به پست‌های قبلی: {count}."
 }

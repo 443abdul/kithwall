@@ -3325,5 +3325,6 @@
   "mod.official.added": "已添加 {title}：找到 {count} 条内容。",
   "mod.official.addFailed": "无法添加：{reason}",
   "mod.official.noFeed": "该地址没有找到订阅源。",
-  "mod.official.quiet": "以下来源暂时没有新内容：{list}。"
+  "mod.official.quiet": "以下来源暂时没有新内容：{list}。",
+  "mod.official.pictures": "已为之前的帖子补上图片：{count}。"
 }

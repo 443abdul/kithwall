@@ -3325,5 +3325,6 @@
   "mod.official.added": "{title} जोड़ा गया: {count} आइटम मिले।",
   "mod.official.addFailed": "जोड़ा नहीं जा सका: {reason}",
   "mod.official.noFeed": "इस पते पर कोई फ़ीड नहीं मिली।",
-  "mod.official.quiet": "अभी इनसे कुछ नया नहीं: {list}।"
+  "mod.official.quiet": "अभी इनसे कुछ नया नहीं: {list}।",
+  "mod.official.pictures": "पहले की पोस्ट में जोड़ी गई तस्वीरें: {count}।"
 }

@@ -117,6 +117,41 @@ select lives_ok(
   'it can be followed');
 
 -- ---------------------------------------------------------------------------
+-- Preview pictures (20261113000400_official_previews.sql): a post that went out without its picture gets it
+-- later. The account links the stored picture to its post, then edits the post to name it.
+-- ---------------------------------------------------------------------------
+select pg_temp.login('bot');
+select lives_ok(
+  $$ insert into public.posts (id, author_id, wall_owner_id, kind, is_public, envelope)
+     values ('00000000-0000-0000-0000-0000000f1001', pg_temp.uid('bot'), pg_temp.uid('bot'), 'link', true,
+             '{"v":1,"sig":"x","body":{"text":"A headline","link":{"url":"https://example.org/a"}}}') $$,
+  'the account posts a link publicly');
+select lives_ok(
+  $$ insert into public.media_objects (path, owner_id, bytes)
+     values (pg_temp.uid('bot') || '/00000000-0000-0000-0000-0000000f2001', pg_temp.uid('bot'), 1000) $$,
+  'it stores a picture in its own folder');
+select pg_temp.anon();
+select is(public.public_media_readable(pg_temp.uid('bot') || '/00000000-0000-0000-0000-0000000f2001'), false,
+  'a picture that belongs to no post is not served to visitors');
+select pg_temp.login('bot');
+select lives_ok(
+  $$ update public.media_objects set post_id = '00000000-0000-0000-0000-0000000f1001'
+      where path = pg_temp.uid('bot') || '/00000000-0000-0000-0000-0000000f2001' $$,
+  'it links the picture to the post');
+select lives_ok(
+  $$ update public.posts set envelope = '{"v":1,"sig":"y","body":{"text":"A headline","link":{"url":"https://example.org/a","image":{"path":"p"}}}}'
+      where id = '00000000-0000-0000-0000-0000000f1001' $$,
+  'and edits its own post to show it');
+select isnt((select edited_at from public.posts where id = '00000000-0000-0000-0000-0000000f1001'), null, 'the post is marked as edited');
+select pg_temp.anon();
+select is(public.public_media_readable(pg_temp.uid('bot') || '/00000000-0000-0000-0000-0000000f2001'), true,
+  'visitors can now fetch the picture of the public post');
+select pg_temp.login('ann');
+update public.posts set envelope = '{"v":1,"sig":"z","body":{}}' where id = '00000000-0000-0000-0000-0000000f1001';
+select is((select envelope->>'sig' from public.posts where id = '00000000-0000-0000-0000-0000000f1001'), 'y',
+  'nobody else can edit the account''s post');
+
+-- ---------------------------------------------------------------------------
 -- Sources: switched by admins only, never re-pointed
 -- ---------------------------------------------------------------------------
 select pg_temp.login('ann');
@@ -179,6 +214,9 @@ insert into public.official_sources (id, account, kind, title, url, terms) value
   ('tap-source', 'learn', 'rss', 'Test source', 'https://example.org/feed', 'headline');
 insert into public.official_items (source_id, item_key, created_at) values
   ('tap-source', repeat('a', 43), now() - interval '500 days'), ('tap-source', repeat('b', 43), now());
+select results_eq($$ select has_picture, picture_tries::int from public.official_items where source_id = 'tap-source' and item_key = repeat('b', 43) $$,
+  $$ values (false, 0) $$, 'a posted item starts without its picture and with no attempt made');
+select throws_ok($$ update public.official_items set picture_tries = -1 where source_id = 'tap-source' $$, '23514', null, 'attempts are counted from zero');
 select public.official_housekeeping();
 select results_eq($$ select item_key from public.official_items where source_id = 'tap-source' $$, array[repeat('b', 43)],
   'items older than 400 days are forgotten');

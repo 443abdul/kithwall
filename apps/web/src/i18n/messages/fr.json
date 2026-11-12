@@ -3325,5 +3325,6 @@
   "mod.official.added": "{title} ajouté : {count} éléments trouvés.",
   "mod.official.addFailed": "Ajout impossible : {reason}",
   "mod.official.noFeed": "Aucun flux trouvé à cette adresse.",
-  "mod.official.quiet": "Rien de nouveau pour l'instant de : {list}."
+  "mod.official.quiet": "Rien de nouveau pour l'instant de : {list}.",
+  "mod.official.pictures": "Images ajoutées à des publications précédentes : {count}."
 }

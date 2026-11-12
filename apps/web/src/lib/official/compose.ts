@@ -8,6 +8,8 @@
 //   summary        title and the publisher's own feed summary
 //   headline       title only
 //   embed          title; the video plays in the publisher's own player
+// Apart from that, a link or video card carries the link's preview picture (previewFor below), as it does on
+// a person's post of the same link.
 import { clip, httpsUrl, plain, type FeedItem } from './feeds';
 import type { LinkEmbed, PostPayload } from '../types';
 
@@ -120,6 +122,55 @@ export function draftFromYoutube(src: Source, item: FeedItem): Draft | null {
 
 /** The largest picture we fetch. Bigger ones are posted without the picture. */
 export const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+
+// ---------------------------------------------------------------------------------------
+// Preview pictures
+// ---------------------------------------------------------------------------------------
+/**
+ * Where the picture on a link or video card comes from: the same one a person gets when they paste that link
+ * into a post (app/api/link-preview). A publisher names it in the page for exactly this (og:image), and a
+ * video has its thumbnail. It is a preview that leads to the original, not the article's pictures.
+ */
+export type Preview = { from: 'images'; urls: string[] } | { from: 'page'; url: string };
+
+/** A preview picture larger than this is left out (the feed is read on phones, often on paid data). */
+export const PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+/** Smaller than this it is a logo or a placeholder, not a preview. */
+export const PREVIEW_MIN = { w: 200, h: 100 } as const;
+
+export function previewFor(kind: SourceKind, link: Draft['link']): Preview | null {
+  if (link.embed) {
+    if (link.embed.provider !== 'youtube' || !/^[A-Za-z0-9_-]{11}$/.test(link.embed.id)) return null;
+    const at = `https://i.ytimg.com/vi/${link.embed.id}`;
+    // Not every video has the large one; the last exists for all of them.
+    return { from: 'images', urls: [`${at}/maxresdefault.jpg`, `${at}/hq720.jpg`, `${at}/mqdefault.jpg`] };
+  }
+  // Wikipedia's lead pictures are sometimes non-free (fair use), and the page does not say which: none.
+  if (kind !== 'rss' && kind !== 'nasa-image') return null;
+  return httpsUrl(link.url) ? { from: 'page', url: storyPage(link.url) } : null;
+}
+
+/**
+ * The page to read for the preview. UN News' feed links each story through a counter (/feed/view/…) that
+ * answers programs with an error after a long wait; the story page it leads to is served normally, and the
+ * site's robots.txt allows it. The post still links where the feed says.
+ */
+function storyPage(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname === 'news.un.org' && u.pathname.startsWith('/feed/view/')) u.pathname = u.pathname.slice('/feed/view'.length);
+    return u.toString();
+  } catch { return url; }
+}
+
+/** The picture a page names for its link preview, as an absolute https address. Null when it has none we take. */
+export function pagePictureUrl(image: string | undefined, page: string): string | null {
+  if (!image?.trim()) return null;
+  try {
+    const u = new URL(image.trim(), page);
+    return u.protocol === 'https:' && !u.username && !u.password && u.toString().length <= 2048 ? u.toString() : null;
+  } catch { return null; }
+}
 
 // ---------------------------------------------------------------------------------------
 // Wikipedia's daily feed (api.wikimedia.org/feed/v1/wikipedia/<lang>/featured/YYYY/MM/DD)

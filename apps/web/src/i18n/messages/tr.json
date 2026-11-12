@@ -3325,5 +3325,6 @@
   "mod.official.added": "{title} eklendi: {count} öğe bulundu.",
   "mod.official.addFailed": "Eklenemedi: {reason}",
   "mod.official.noFeed": "Bu adreste bir akış bulunamadı.",
-  "mod.official.quiet": "Şu an şunlardan yeni bir şey yok: {list}."
+  "mod.official.quiet": "Şu an şunlardan yeni bir şey yok: {list}.",
+  "mod.official.pictures": "Önceki gönderilere eklenen resim: {count}."
 }

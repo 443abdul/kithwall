@@ -3325,5 +3325,6 @@
   "mod.official.added": "{title} شامل ہو گیا: {count} آئٹم ملے۔",
   "mod.official.addFailed": "شامل نہیں ہو سکا: {reason}",
   "mod.official.noFeed": "اس پتے پر کوئی فیڈ نہیں ملی۔",
-  "mod.official.quiet": "ابھی ان سے کچھ نیا نہیں: {list}۔"
+  "mod.official.quiet": "ابھی ان سے کچھ نیا نہیں: {list}۔",
+  "mod.official.pictures": "پہلے کی پوسٹس میں شامل کی گئی تصاویر: {count}۔"
 }

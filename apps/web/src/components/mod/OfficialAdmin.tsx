@@ -22,7 +22,7 @@ interface SourceRow {
   last_run_at: string | null; last_posted_at: string | null; last_error: string | null;
 }
 interface AccountRow { slug: string; handle: string; name: string; custom: boolean }
-interface RunBody { ran?: boolean; reason?: string; posted?: number; quiet?: string[]; errors?: { where: string; error: string }[] }
+interface RunBody { ran?: boolean; reason?: string; posted?: number; pictures?: number; quiet?: string[]; errors?: { where: string; error: string }[] }
 
 const TERMS: Record<string, MessageKey> = {
   'public-domain': 'mod.official.terms.public-domain', cc: 'mod.official.terms.cc', summary: 'mod.official.terms.summary',
@@ -97,7 +97,11 @@ export function OfficialAdmin({ enabled, onToggle }: { enabled: boolean; onToggl
       if (!b.ran) setNote(t(b.reason === 'switched_off' ? 'mod.official.switchedOff' : 'mod.official.notConfigured'));
       else {
         const quiet = (b.quiet ?? []).map(titleOf);
-        setNote([t('mod.official.ran', { count: b.posted ?? 0 }), quiet.length ? t('mod.official.quiet', { list: quiet.join(', ') }) : ''].filter(Boolean).join(' '));
+        setNote([
+          t('mod.official.ran', { count: b.posted ?? 0 }),
+          b.pictures ? t('mod.official.pictures', { count: b.pictures }) : '',
+          quiet.length ? t('mod.official.quiet', { list: quiet.join(', ') }) : '',
+        ].filter(Boolean).map((s) => s.replace(/[.。۔।]$/u, '')).join(' · '));
         if (b.errors?.length) setErr(b.errors.slice(0, 6).map((e) => `${titleOf(e.where)}: ${e.error}`).join(' · '));
       }
       await reload();

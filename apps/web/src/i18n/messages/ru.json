@@ -3325,5 +3325,6 @@
   "mod.official.added": "Добавлено: {title}. Найдено записей: {count}.",
   "mod.official.addFailed": "Не удалось добавить: {reason}",
   "mod.official.noFeed": "По этому адресу лента не найдена.",
-  "mod.official.quiet": "Сейчас нет нового из: {list}."
+  "mod.official.quiet": "Сейчас нет нового из: {list}.",
+  "mod.official.pictures": "Картинок добавлено к прежним записям: {count}."
 }

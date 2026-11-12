@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { generateIdentity, openEnvelope, sealEnvelope } from '@kithwall/crypto';
 import { clip, decodeEntities, feedLinkIn, feedTitle, httpsUrl, parseFeed, plain } from './feeds';
 import {
-  draftFromRss, draftsFromFeed, draftsFromWikipedia, freeLicence, freshOrLatest, isFresh, nasaImageUrl, pickForAccount, spread, FRESH_MS, LATEST_MS,
+  draftFromRss, draftsFromFeed, draftsFromWikipedia, freeLicence, freshOrLatest, isFresh, nasaImageUrl, pagePictureUrl, pickForAccount, previewFor,
+  spread, FRESH_MS, LATEST_MS,
   type Draft, type Source,
 } from './compose';
 import { imageInfo } from './image';
@@ -128,6 +129,52 @@ describe('drafts', () => {
     expect(isFresh(d(now - FRESH_MS - 1), now)).toBe(false);
     expect(isFresh(d(now + 2 * 3600_000), now)).toBe(false);
     expect(isFresh(d(null), now)).toBe(true);
+  });
+});
+
+describe('the preview picture of a post', () => {
+  it('is the video\'s own thumbnail for a YouTube post, best size first', () => {
+    const d = draftsFromFeed(src({ kind: 'youtube', terms: 'embed' }), parseFeed(ATOM))[0]!;
+    expect(previewFor('youtube', d.link)).toEqual({
+      from: 'images',
+      urls: [
+        'https://i.ytimg.com/vi/fEjvSbI_PT4/maxresdefault.jpg',
+        'https://i.ytimg.com/vi/fEjvSbI_PT4/hq720.jpg',
+        'https://i.ytimg.com/vi/fEjvSbI_PT4/mqdefault.jpg',
+      ],
+    });
+  });
+  it('is the picture the linked page names for link previews, for a news link', () => {
+    const d = draftsFromFeed(src(), parseFeed(RSS))[0]!;
+    expect(previewFor('rss', d.link)).toEqual({ from: 'page', url: 'https://news.example.org/story/1' });
+    expect(previewFor('nasa-image', d.link)).toEqual({ from: 'page', url: 'https://news.example.org/story/1' });
+  });
+  it('reads the story page itself where a feed links through a counter that refuses programs (UN News)', () => {
+    const link = { url: 'https://news.un.org/feed/view/en/story/2026/11/1168788', title: 'x', site: 'UN News' };
+    expect(previewFor('rss', link)).toEqual({ from: 'page', url: 'https://news.un.org/en/story/2026/11/1168788' });
+    expect(previewFor('rss', { ...link, url: 'https://news.un.org/feed/view/ur/story/2026/11/20601' }))
+      .toEqual({ from: 'page', url: 'https://news.un.org/ur/story/2026/11/20601' });
+    // Only that host, only that path.
+    expect(previewFor('rss', { ...link, url: 'https://example.org/feed/view/en/story/1' })).toEqual({ from: 'page', url: 'https://example.org/feed/view/en/story/1' });
+    expect(previewFor('rss', { ...link, url: 'https://news.un.org/en/story/2026/11/1168788' })).toEqual({ from: 'page', url: 'https://news.un.org/en/story/2026/11/1168788' });
+  });
+  it('is nothing for Wikipedia (its lead pictures are not always free), an unknown player or a bad video id', () => {
+    const link = { url: 'https://en.wikipedia.org/wiki/Moon', title: 'Moon', site: 'Wikipedia' };
+    expect(previewFor('wikipedia', link)).toBeNull();
+    expect(previewFor('rss', { ...link, embed: { provider: 'vimeo', id: '123', aspect: '16:9' } })).toBeNull();
+    expect(previewFor('youtube', { ...link, embed: { provider: 'youtube', id: '../../x', aspect: '16:9' } })).toBeNull();
+    expect(previewFor('rss', { ...link, url: 'http://plain.example.org/a' })).toBeNull();
+  });
+  it('takes the page\'s picture address only when it is a plain https address', () => {
+    expect(pagePictureUrl('https://cdn.example.org/a.jpg', 'https://example.org/story')).toBe('https://cdn.example.org/a.jpg');
+    expect(pagePictureUrl('/img/a.jpg?w=1200', 'https://example.org/story/1')).toBe('https://example.org/img/a.jpg?w=1200');
+    expect(pagePictureUrl('//cdn.example.org/a.jpg', 'https://example.org/story')).toBe('https://cdn.example.org/a.jpg');
+    expect(pagePictureUrl('http://example.org/a.jpg', 'https://example.org/')).toBeNull();
+    expect(pagePictureUrl('https://user:pw@example.org/a.jpg', 'https://example.org/')).toBeNull();
+    expect(pagePictureUrl('data:image/png;base64,AAAA', 'https://example.org/')).toBeNull();
+    expect(pagePictureUrl('javascript:alert(1)', 'https://example.org/')).toBeNull();
+    expect(pagePictureUrl(undefined, 'https://example.org/')).toBeNull();
+    expect(pagePictureUrl('  ', 'https://example.org/')).toBeNull();
   });
 });
 

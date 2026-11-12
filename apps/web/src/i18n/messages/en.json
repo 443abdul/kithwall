@@ -3321,5 +3321,6 @@
   "mod.official.added": "Added {title}: {count} items found.",
   "mod.official.addFailed": "Couldn't add it: {reason}",
   "mod.official.noFeed": "No feed was found at that address.",
-  "mod.official.quiet": "Nothing new right now from: {list}."
+  "mod.official.quiet": "Nothing new right now from: {list}.",
+  "mod.official.pictures": "Pictures added to earlier posts: {count}."
 }

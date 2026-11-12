@@ -17,7 +17,7 @@ export function userAgent(): string {
   return `KithwallBot/1.0 (+${site}/help; automated public accounts)`;
 }
 
-function once(u: URL, accept: string, deadline: number, maxBytes: number): Promise<{ redirect?: string; got?: Got }> {
+function once(u: URL, accept: string, deadline: number, maxBytes: number, truncate: boolean): Promise<{ redirect?: string; got?: Got }> {
   return new Promise((resolve, reject) => {
     const left = deadline - Date.now();
     if (left <= 0) return reject(new Error('timed out'));
@@ -32,7 +32,7 @@ function once(u: URL, accept: string, deadline: number, maxBytes: number): Promi
       if (status >= 300 && status < 400 && res.headers.location) { res.resume(); return done(() => resolve({ redirect: res.headers.location })); }
       if (status < 200 || status >= 300) { res.resume(); return done(() => reject(new Error(`answered ${status}`))); }
       const type = String(res.headers['content-type'] ?? '').toLowerCase().split(';')[0]!.trim();
-      if (Number(res.headers['content-length'] ?? 0) > maxBytes) { res.destroy(); return done(() => reject(new Error('too large'))); }
+      if (!truncate && Number(res.headers['content-length'] ?? 0) > maxBytes) { res.destroy(); return done(() => reject(new Error('too large'))); }
       const enc = String(res.headers['content-encoding'] ?? '').toLowerCase().trim();
       let body: NodeJS.ReadableStream = res;
       let inflater: zlib.Gunzip | zlib.BrotliDecompress | zlib.Inflate | null = null;
@@ -47,14 +47,20 @@ function once(u: URL, accept: string, deadline: number, maxBytes: number): Promi
       }
       const parts: Buffer[] = [];
       let size = 0;
+      const finish = () => done(() => resolve({ got: { url: u, type, body: Buffer.concat(parts) } }));
       body.on('data', (c: Buffer) => {
         if (settled) return;
         size += c.length;
         // The cap counts decompressed bytes, so a small compression bomb is cut off as it expands.
-        if (size > maxBytes) { stop(); done(() => reject(new Error('too large'))); } else parts.push(c);
+        if (size <= maxBytes) { parts.push(c); return; }
+        stop();
+        if (!truncate) { done(() => reject(new Error('too large'))); return; }
+        parts.push(c.subarray(0, c.length - (size - maxBytes)));
+        finish();
       });
-      body.on('end', () => done(() => resolve({ got: { url: u, type, body: Buffer.concat(parts) } })));
-      body.on('error', () => { stop(); done(() => reject(new Error('read failed'))); });
+      body.on('end', finish);
+      // The start of a page that was cut off mid-stream is still a usable start.
+      body.on('error', () => { stop(); if (truncate && size > 0) finish(); else done(() => reject(new Error('read failed'))); });
     });
     const timer = setTimeout(() => { req.destroy(); done(() => reject(new Error('timed out'))); }, left);
     req.on('error', (e) => done(() => reject(e instanceof BlockedError ? new Error('not a public address') : new Error('could not connect'))));
@@ -64,16 +70,19 @@ function once(u: URL, accept: string, deadline: number, maxBytes: number): Promi
 
 /**
  * GET over https from a public address. `hostOk` narrows which hosts are acceptable (checked on every hop):
- * pictures, for instance, only come from their publisher's own hosts.
+ * pictures, for instance, only come from their publisher's own hosts. `truncate`: a body longer than
+ * `maxBytes` is cut there instead of refused (the head of a web page is all a link preview reads).
  */
-export async function publicGet(raw: string, opts: { accept: string; maxBytes: number; timeoutMs: number; hostOk?: (host: string) => boolean }): Promise<Got> {
+export async function publicGet(raw: string, opts: {
+  accept: string; maxBytes: number; timeoutMs: number; hostOk?: (host: string) => boolean; truncate?: boolean;
+}): Promise<Got> {
   const deadline = Date.now() + opts.timeoutMs;
   let u: URL;
   try { u = checkUrl(raw); } catch { throw new Error('not a public address'); }
   for (let hop = 0; hop < 5; hop++) {
     if (u.protocol !== 'https:') throw new Error('not https');
     if (opts.hostOk && !opts.hostOk(u.hostname)) throw new Error('not an allowed host');
-    const r = await once(u, opts.accept, deadline, opts.maxBytes);
+    const r = await once(u, opts.accept, deadline, opts.maxBytes, !!opts.truncate);
     if (r.got) return r.got;
     try { u = checkUrl(r.redirect ?? '', u); } catch { throw new Error('redirected to a place that is not public'); }
   }
