@@ -21,7 +21,7 @@
     "shamir-secret-sharing": "^0.0.4"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.5"
   }
 }
