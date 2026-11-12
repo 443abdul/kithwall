@@ -398,9 +398,15 @@ longer than going to `supabase.co` directly (Vercel's proxy hop), and bodies of 
 directly, and the failover in §2.2 switches to `/sb` only when `supabase.co` stops answering. Also done: the
 first GitHub release (`v2.2.0`) carries the Play-signed universal APK from Play Console → App bundle explorer, so
 a downloaded APK and the Play Store version update each other; `NEXT_PUBLIC_APK_CERT_SHA256` is the Play App
-Signing certificate; and signed list version 1 is published in `KITHWALL_MIRROR_LIST` (primary + its `/sb`, the
-APK URL with its SHA-256, the certificate), expiring 2027-01-30, so it must be re-signed with a higher version
-before then.
+Signing certificate; and a signed list is published in `KITHWALL_MIRROR_LIST` (primary + its `/sb`, the APK
+URL with its SHA-256, the certificate). Current: **version 2** (2026-11-12, the 2.4.0 APK), expiring
+**2027-02-10**: re-sign with a higher version before then.
+
+Since 2.4.0 Play's "Automatic protection → Installer check" is switched off. With it on, the Play-signed APK
+refused to open when installed by hand ("Something went wrong. Check that Google Play is enabled…"), so the
+2.2.0 download never worked for anyone who actually needed it. The 2.4.0 file was installed by hand on an
+emulator without a Play account before it was published: it opens, shows the offline page while the network is
+down, and loads the site by itself when it is back.
 
 **Each Android release:** download the "Signed, universal APK" for the new version from App bundle explorer,
 check it (`apksigner verify --print-certs`: certificate `7E:70:27:7E:…:5A:20`), attach it to a GitHub release
