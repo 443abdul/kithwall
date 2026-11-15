@@ -249,3 +249,8 @@
   .kw .k-pub-head .k-logo-word { display: none; }
   .kw .k-lang-pill select.k-input { max-inline-size: 6.5em; }
 }
+
+/* Sign-up: the age and terms confirmation (JoinFlow step 2). */
+.kw .k-join-agree { font-size: var(--text-sm); line-height: 1.45; cursor: pointer; }
+.kw .k-join-agree input { flex: none; }
+.kw .k-join-legal a { white-space: nowrap; }

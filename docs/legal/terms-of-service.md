@@ -1,14 +1,11 @@
 # Kithwall Terms of Service
 
-> **DRAFT v0.1 (2026-10-17) — not yet reviewed by a lawyer. Do not publish until every
-> `[PLACEHOLDER]` is filled and counsel has signed off.**
+**Effective date:** 15 November 2026
+**Last updated:** 15 November 2026
 
-**Effective date:** [EFFECTIVE DATE]
-**Last updated:** [LAST UPDATED DATE]
-
-These Terms are an agreement between you and **[OPERATOR LEGAL NAME]**, [OPERATOR REGISTERED
-ADDRESS] ("Kithwall", "we", "us"). They apply when you use the Kithwall website and app at
-[SERVICE DOMAIN] (the "Service"). Our [Privacy Policy](privacy-policy.md) and
+These Terms are an agreement between you and **Abdul Rehman**, an individual based in Karachi, Pakistan
+("Kithwall", "we", "us"). They apply when you use the Kithwall website and web app at
+[www.kithwall.com](https://www.kithwall.com) and the Kithwall app for Android (the "Service"). Our [Privacy Policy](privacy-policy.md) and
 [Community Standards](community-standards.md) are part of these Terms.
 
 **Please read section 4 (your keys) carefully. If you lose your keys, we cannot get your content
@@ -33,9 +30,8 @@ Nothing in these Terms takes away rights you have under consumer law that can't 
 
 You may use Kithwall only if:
 
-- you are **at least 16 years old**, or older if the law where you live requires it (for example,
-  [India: 18, unless verifiable parental consent is in place — OWNER DECISION]; see the Privacy
-  Policy);
+- you are **at least 16 years old**, and **at least 18 if you live in India**, or older if the law
+  where you live requires it (see the Privacy Policy);
 - you are not barred from using the Service under the laws that apply to you (including sanctions
   laws);
 - we have not previously banned your account, unless we have agreed otherwise in writing.
@@ -43,8 +39,8 @@ You may use Kithwall only if:
 You may have **one personal account**. Accounts are for individuals; you may not create an account
 for someone else, sell or transfer your account, or create accounts by automated means.
 
-By creating an account you confirm you meet these requirements. [OWNER: add an age confirmation
-step to sign-up.]
+By creating an account you confirm you meet these requirements; sign-up asks you to confirm your
+age and to accept these Terms.
 
 ---
 
@@ -55,7 +51,7 @@ step to sign-up.]
 - Choose a username that doesn't impersonate anyone or break the Community Standards.
 - Keep your passphrase secret and your devices locked. You can also turn on two-factor authentication.
 - You are responsible for activity on your account unless it results from our failure to protect
-  it. Tell us promptly at [SECURITY CONTACT EMAIL] if you think your account has been compromised.
+  it. Tell us promptly at security@kithwall.com if you think your account has been compromised.
 - You can see your active sessions and log out other devices in Settings → Security.
 
 ---
@@ -87,7 +83,7 @@ You agree that:
 4. Other people (including friends who received your content, trusted friends, and anyone you give
    your recovery key to) may keep copies or act in ways we cannot control.
 
-**Export regularly.** Settings → Download Your Information builds a decrypted copy on your device.
+**Export regularly.** Settings → Your data → Download my data builds a decrypted copy on your device.
 
 ---
 
@@ -104,8 +100,7 @@ delivery), transmit and display Your Content, in encrypted or public form, solel
 Service to you and to the audiences you choose**, and to comply with the law. This includes:
 
 - storing your encrypted data and delivering it to the people you choose;
-- for content you post **Public** (when that option is available), showing it to anyone who can
-  view public content on Kithwall;
+- for content you post **Public**, showing it to anyone, with or without a Kithwall account;
 - for content that is **reported**, allowing our moderators to review it and act on it, and
   preserving or disclosing it where the law requires.
 
@@ -125,14 +120,14 @@ permission from people who appear in photos or are tagged, where the law require
 
 ---
 
-## 6. Audiences: friends-only and Public
+## 6. Audiences: private and Public
 
-- You choose who sees each item: **Only Me, Friends, Custom** (lists or specific people) and, when
-  available, **Public**.
-- **At launch, Kithwall is friends-only.** The Public audience is switched off. We may switch it on
-  later; we will tell you first and update these Terms and the Privacy Policy.
-- **Public content is not encrypted.** It is readable by us and by anyone who can view public
-  content on Kithwall. Public items are clearly marked before you post.
+- You choose who sees each item: **Only me, Connections, Close friends, a Circle**, your
+  **Followers** (if you let people follow you) or **Public**.
+- Everything except Public is end-to-end encrypted.
+- **Public content is not encrypted.** It is readable by us and by anyone on the internet, with or
+  without a Kithwall account. Public items are clearly marked before you post. To post publicly or
+  be followed you must choose a public name.
 - Friends and others you share with can see, screenshot, copy and keep what you share. Choose your
   audience with care.
 - When you remove someone from an audience, they can't decrypt anything you share afterwards and
@@ -150,8 +145,8 @@ You agree to follow the [Community Standards](community-standards.md). You also 
 2. post or send content that infringes anyone's intellectual property, privacy or other rights;
 3. access accounts, data or keys that aren't yours, or try to bypass access controls, rate limits,
    the captcha, encryption or blocking;
-4. probe, scan or test the Service's security, except under our security disclosure policy at
-   [SECURITY POLICY LINK / security contact];
+4. probe, scan or test the Service's security, except in good faith under our security policy
+   (the `SECURITY.md` file in our source repository; report findings to security@kithwall.com);
 5. upload malware or interfere with the Service, its servers or other users (including denial of
    service, overloading or spamming);
 6. scrape, crawl or harvest data from the Service, or use bots or automation, except standard
@@ -159,8 +154,8 @@ You agree to follow the [Community Standards](community-standards.md). You also 
 7. create fake accounts, impersonate others, or misrepresent who you are;
 8. buy, sell or transfer accounts, usernames, invites or recovery shares;
 9. use Kithwall for commercial advertising or bulk messaging without our written permission;
-10. reverse engineer the Service except as allowed by law or by an open-source licence that applies
-    to the code [OWNER: confirm licence of published code];
+10. use the Service's code except as allowed by its open-source licence (the GNU Affero General
+    Public License v3.0) or by law;
 11. use the reporting system to send false or malicious reports, or file false grievances;
 12. abuse trusted-friend recovery, for example by approving a recovery request without checking the
     verification phrase with the account owner.
@@ -175,7 +170,8 @@ You agree to follow the [Community Standards](community-standards.md). You also 
 - **When you report an item, your device discloses the decrypted item and its content key to our
   moderators.** For a post, that key also unlocks the post's comments and attached photos.
   Moderators check the key against what is stored, so reports can't be forged.
-- Public content (when enabled) is visible to us and can be reviewed directly.
+- Public content is visible to us and can be reviewed directly. A Public post that several
+  different people report is hidden automatically until a moderator has looked at it.
 - You can also **block** people. Blocking is enforced by our database.
 
 ### 8.2 What we may do
@@ -205,19 +201,19 @@ based on a report, and how to appeal. We will not tell you who made a report.
 ### 8.4 Appeals
 
 - You can appeal any moderation decision about your content or account **within 6 months** by
-  [APPEAL ROUTE: in-app button / email to APPEALS EMAIL].
+  writing to support@kithwall.com with "Appeal" in the subject and your @handle.
 - A different moderator from the one who made the original decision reviews the appeal where
   possible, or the owner if no other moderator is available.
-- We aim to decide appeals within **[APPEAL SLA, e.g. 7] days** and will tell you the outcome and
+- We aim to decide appeals within **14 days** and will tell you the outcome and
   reasons.
 - Reporters can also ask us to review a decision not to act on their report.
 - Depending on where you live, you may also be able to use a certified out-of-court dispute
-  settlement body (EU Digital Services Act) or go to court. [LAWYER: confirm DSA applicability.]
+  settlement body (for example under the EU Digital Services Act) or go to court.
 
 ### 8.5 Removal requests from people who aren't users
 
 Anyone can ask us to remove content that is illegal or that violates their rights (for example,
-non-consensual intimate images or copyright infringement) at [ABUSE CONTACT EMAIL]. Because we
+non-consensual intimate images or copyright infringement) at support@kithwall.com. Because we
 cannot see encrypted content, we can act only on items the request identifies and that we can
 verify, for example through a report by someone who can see the item, or a link to public content.
 
@@ -239,11 +235,11 @@ verify, for example through a report by someone who can see the item, or a link 
 
 ## 10. Our intellectual property
 
-- The Service, its software, design and the Kithwall name and logo belong to us or our licensors,
-  except for Your Content and any code released under an open-source licence (that licence then
-  applies to that code). [OWNER: confirm licence.]
-- "Kithwall" and our logos are our trademarks [OWNER: confirm registration status]. We are not
-  affiliated with, endorsed by, or sponsored by any other social network.
+- Kithwall's software is open source under the GNU Affero General Public License v3.0, published at
+  [github.com/443abdul/kithwall](https://github.com/443abdul/kithwall); that licence governs your use
+  of the code. The Kithwall name and logo belong to us and are not licensed with the code.
+- "Kithwall" and our logo are marks we use to identify the Service. We are not affiliated with,
+  endorsed by, or sponsored by any other social network.
 - We give you a personal, non-exclusive, non-transferable, revocable licence to use the Service in
   line with these Terms.
 
@@ -254,13 +250,12 @@ won't publish your name with them without your permission.
 
 ### 10.2 Copyright complaints
 
-If you believe content on Kithwall infringes your copyright, send a notice to our designated agent
-at [COPYRIGHT AGENT NAME, ADDRESS, EMAIL] including: your signature; the work; where the infringing
+If you believe content on Kithwall infringes your copyright, send a notice to Abdul Rehman,
+Karachi, Pakistan, at support@kithwall.com, including: your signature; the work; where the infringing
 material is (a link to the item, or the report made by someone who can see it); your contact
 details; a good-faith statement; and a statement, under penalty of perjury, that your notice is
 accurate and you are authorised to act. Users may send a counter-notice. We terminate the accounts
-of repeat infringers in appropriate circumstances. [LAWYER: confirm DMCA agent registration and
-equivalents in other markets.]
+of repeat infringers in appropriate circumstances.
 
 ---
 
@@ -276,7 +271,7 @@ click a link, you are dealing with that site directly and its terms and privacy 
 
 We are building Kithwall in stages, and features may be added, changed or removed. We may suspend
 the Service for maintenance or security. If we plan to shut Kithwall down entirely, we will give
-you at least **[SHUTDOWN NOTICE, e.g. 60] days' notice** so you can export your data, unless we
+you at least **60 days' notice** so you can export your data, unless we
 cannot for legal or security reasons.
 
 ---
@@ -313,7 +308,7 @@ To the fullest extent the law allows:
    damages, or for loss of profits, revenue, goodwill or data (including content lost because keys
    were lost), arising from or related to the Service or these Terms.
 2. Our total liability for all claims relating to the Service is limited to the greater of
-   **[LIABILITY CAP, e.g. USD 100]** or the amount you paid us in the 12 months before the claim
+   **USD 100** or the amount you paid us in the 12 months before the claim
    (which, for a free service, is normally zero).
 3. These limits apply whatever the legal theory, even if we were told the damage was possible.
 
@@ -322,7 +317,6 @@ fraud or fraudulent misrepresentation, gross negligence or wilful misconduct, or
 liability that cannot be limited by law. **If you are a consumer in the EU/EEA or UK**, we are
 responsible for foreseeable loss and damage caused by our breach of these Terms or our failure to
 use reasonable care and skill, and the caps above apply only as far as your local law permits.
-[LAWYER: tailor per market.]
 
 ---
 
@@ -340,44 +334,39 @@ not apply to consumers to the extent local law forbids it.
 
 ### 17.1 By you
 
-You can delete your account at any time in **Settings → Account**. Deletion is **immediate and
+You can delete your account at any time in **Settings → Your data**. Deletion is **immediate and
 permanent**: your keys are destroyed and your data is removed from our database; backup copies
 become unreadable and age out within 7 days. Export first if you want a copy. Things others received
 from you may remain with them.
 
 ### 17.2 By us
 
-We may suspend or close your account under section 8, or if we must do so by law, or if the account
-has been inactive for **[INACTIVITY PERIOD, OWNER DECISION — or delete this sentence]** after we
-notify you. Where reasonable and lawful, we will give notice and a chance to export your data before
+We may suspend or close your account under section 8, or if we must do so by law. We do not close
+accounts for being inactive. Where reasonable and lawful, we will give notice and a chance to export your data before
 closure (an export can only be made by you, on your device, because we cannot decrypt your content).
 
 ### 17.3 What survives
 
-Sections 4 (key responsibilities), 5.2 (to the limited extent stated), 9 (virtual items), 10, 14,
-15, 16, 18 and 19 survive termination.
+Sections 4 (key responsibilities), 5.2 (to the limited extent stated), 10, 14, 15, 16, 18 and 19
+survive termination.
 
 ---
 
 ## 18. Governing law and disputes
 
-- These Terms are governed by the laws of **[GOVERNING LAW / JURISDICTION]**, without regard to
-  conflict-of-law rules.
-- Disputes will be decided by the courts of **[COURTS / VENUE]**, except as below.
+- These Terms are governed by the laws of **Pakistan**, without regard to conflict-of-law rules.
+- Disputes will be decided by the courts of **Karachi, Pakistan**, except as below.
 - **Consumers** in the EU/EEA, UK and other places that give consumers this right may bring claims
   in the courts where they live, and keep the protection of their local mandatory consumer laws.
-- [OPTIONAL — LAWYER DECISION: arbitration clause and class-action waiver for US users, with
-  opt-out window. Not recommended without advice.]
-- Before starting formal proceedings, please contact us at [LEGAL CONTACT EMAIL] so we can try to
+- Before starting formal proceedings, please contact us at support@kithwall.com so we can try to
   resolve the issue informally within 30 days.
-- EU users can also use [the EU ODR platform, if still available — LAWYER: confirm].
 
 ---
 
 ## 19. General
 
-- **Changes to these Terms.** We will tell you about material changes in the app and/or by email at
-  least **[NOTICE PERIOD, e.g. 30] days** before they take effect, unless urgent for legal or
+- **Changes to these Terms.** We will tell you about material changes in the app at
+  least **30 days** before they take effect, unless urgent for legal or
   security reasons. If you continue using Kithwall after that, the new Terms apply; if you don't
   agree, you can delete your account.
 - **Entire agreement.** These Terms, the Privacy Policy and the Community Standards are the whole
@@ -394,10 +383,9 @@ Sections 4 (key responsibilities), 5.2 (to the limited extent stated), 9 (virtua
 
 ## 20. Contact
 
-- General: **[CONTACT EMAIL]**
-- Legal notices: **[LEGAL CONTACT EMAIL]**, [OPERATOR LEGAL NAME], [OPERATOR REGISTERED ADDRESS]
-- Abuse and removal requests: **[ABUSE CONTACT EMAIL]**
-- Security issues: **[SECURITY CONTACT EMAIL]**
-- Grievance Officer (India): **[GRIEVANCE OFFICER NAME, EMAIL]**
-- EU Digital Services Act single point of contact (users and authorities): **[DSA CONTACT EMAIL, if
-  applicable]**
+- General questions, legal notices, abuse and removal requests, appeals: **support@kithwall.com**
+- Operator: Abdul Rehman, Karachi, Pakistan
+- Security issues: **security@kithwall.com**
+- Grievance Officer (India): **Abdul Rehman, support@kithwall.com**
+- Single point of contact for users and authorities under the EU Digital Services Act:
+  **support@kithwall.com** (English)

@@ -1,62 +1,68 @@
 # Kithwall Privacy Policy
 
-> **DRAFT v0.1 (2026-10-17) — not yet reviewed by a lawyer. Do not publish until every
-> `[PLACEHOLDER]` is filled and counsel has signed off.**
+**Effective date:** 15 November 2026
+**Last updated:** 15 November 2026
 
-**Effective date:** [EFFECTIVE DATE]
-**Last updated:** [LAST UPDATED DATE]
+This policy explains what personal data Kithwall handles, why, who else is involved, how long data is
+kept, and the rights you have. It applies to the Kithwall website and web app at
+[www.kithwall.com](https://www.kithwall.com), the installable web app, and the Kithwall app for Android
+(`com.kithwall.app`, from Google Play or as a direct download).
 
 ---
 
 ## 1. The short version
 
-- What you share on Kithwall with friends, lists, groups and events is **end-to-end encrypted on
-  your device**. We store it, but **we cannot read it**.
-- We **can** see metadata: your @handle, who your friends are, who you message and when, how
-  big things are, which groups and events you're in, and similar facts listed in section 4.3. We are
-  honest about this because encryption cannot hide it.
-- Anything you post as **Public** is **not encrypted**. (Public posting is switched off at launch;
-  see section 3.)
-- No ads. No tracking. No third-party analytics or scripts. We never sell or share your data for
-  advertising. We never upload your address book. No facial recognition. No AI reads your content.
-- There is no email address and no password. You sign in with a **passkey** (or a passphrase, with
-  your @handle). If you lose every passkey and your passphrase **and** your 24-word recovery key **and**
-  cannot get help from your trusted friends, **your encrypted content is gone for good**. We cannot
-  recover it for you.
-- You can export everything (decrypted on your device) and delete your account at any time.
-  Deletion is immediate.
+- What you share with your connections, circles, followers and in messages and calls is **end-to-end
+  encrypted on your device**. We store it, but **we cannot read it**.
+- We **can** see metadata: your @handle, who you are connected to, who you message and when, how big
+  things are, which circles and events you are in, and the other facts listed in section 4.4. We say so
+  because encryption cannot hide it.
+- Anything you post as **Public** (including public reels) is **not encrypted**. Anyone on the internet
+  can read it, with or without a Kithwall account.
+- No ads. No tracking. No analytics. No data sales. We never read your address book. No facial
+  recognition. No AI reads your content.
+- There is no email address and no password. You sign in with a **passkey** (or a passphrase with your
+  @handle). If you lose every passkey, your passphrase **and** your 24-word recovery key, and your
+  trusted contacts cannot help, **your encrypted content is gone for good**. We cannot recover it.
+- You can see everything our servers hold about your account at any time (**Settings → Your data →
+  What Kithwall knows about you**), download your data, and delete your account. Deletion is immediate.
 
 ---
 
 ## 2. Who we are
 
-Kithwall is operated by **[OPERATOR LEGAL NAME]**, [OPERATOR LEGAL FORM, e.g. sole trader /
-company], registered at **[OPERATOR REGISTERED ADDRESS]** ("Kithwall", "we", "us").
+Kithwall is operated by **Abdul Rehman**, an individual based in **Karachi, Pakistan** ("Kithwall",
+"we", "us"). Kithwall is free, carries no advertising and is not run for profit.
 
 | Role | Who |
 |---|---|
-| Controller (GDPR / UK GDPR) / Data Fiduciary (India DPDP Act 2023) / Business (California) | [OPERATOR LEGAL NAME] |
-| Privacy contact | [PRIVACY CONTACT EMAIL] |
-| Grievance Officer (India) | [GRIEVANCE OFFICER NAME], [GRIEVANCE OFFICER EMAIL], [GRIEVANCE OFFICER ADDRESS] — see section 15 |
-| EU representative (GDPR Art. 27), if required | [EU REPRESENTATIVE NAME AND ADDRESS / "Not required because …"] |
-| UK representative (UK GDPR Art. 27), if required | [UK REPRESENTATIVE NAME AND ADDRESS / "Not required because …"] |
-| Data Protection Officer, if appointed | [DPO NAME AND EMAIL / "Not appointed"] |
-
-This policy covers the Kithwall website and web app at [SERVICE DOMAIN], including the installable
-app version (PWA). It also covers emails we send you.
+| Controller (EU/UK GDPR) · Data Fiduciary (India) · Business (California) · Controlador (Brazil) | Abdul Rehman, Karachi, Pakistan |
+| Privacy contact, for every request and complaint | **support@kithwall.com** |
+| Security reports | security@kithwall.com |
+| Grievance Officer (India) | Abdul Rehman, support@kithwall.com (section 15) |
+| Data Protection Officer | Not appointed. Kithwall is run by one person and does not meet the legal thresholds that require one. Write to the privacy contact instead |
+| EU and UK representative | Not appointed. People in the EU, the EEA and the UK can write to the privacy contact in their own language and will get the same answer, in the same time, as anyone else. We will appoint representatives if the law requires it as Kithwall grows |
 
 ---
 
-## 3. Friends-only at launch, and what changes if Public is turned on
+## 3. Private and Public
 
-| | At launch | If we later switch on the Public audience |
+Every time you share something you choose who it is for.
+
+| Audience | Encrypted? | Who can read it |
 |---|---|---|
-| Who can see your posts, photos, profile details | Only the audiences you choose: Only Me, Friends, or Custom lists/people. All encrypted. | You may also choose **Public** for individual items |
-| Public content | None, except your username and any profile picture or display name you choose to make visible (see 4.1) | Public items are stored **unencrypted**, are readable by us, and are visible to anyone signed in to Kithwall [and, if we enable it, to people who are not signed in] |
-| Pages, Open Groups, public events | Not available, or available only in encrypted form | Available; these are public by nature and **not encrypted** |
+| Only me, Connections, Close friends, a Circle, an event, a chat | **Yes**, end-to-end | Only the people you chose. Not us |
+| Followers (if you turned on "Let people follow me") | **Yes**, end-to-end | The people who follow you. Not us |
+| **Public** posts and public reels | **No** | Anyone on the internet, with or without an account, and us |
 
-Public items are always marked with a globe and "Public — not encrypted" before you post. We will
-update this policy and tell you in the app before Public is switched on.
+- Public is always your choice, per post, and is marked with a globe before you post.
+- Public posts, the comments and reactions on them, and the photos and videos attached to them are
+  readable by us and by anyone who opens them.
+- Search engines are told **not** to list your public posts unless you switch on "Let search engines show
+  my public posts" (Settings → Privacy).
+- To be followed or to post publicly you must choose a **public name**. It is shown to everyone.
+- Kithwall also runs a few clearly labelled **automated accounts** (marked "Automated") that post public
+  material from public sources. They hold no personal data about anyone.
 
 ---
 
@@ -66,298 +72,337 @@ update this policy and tell you in the app before Public is switched on.
 
 | Data | Why it is not encrypted |
 |---|---|
-| Username (@handle) | Needed to address your profile, find friends and sign in with a passphrase |
-| An internal sign-in identifier made from your account number | Our authentication provider needs one. It is not an email address and never receives mail |
-| Notice email address, **only if you add one** (Settings → Account) | To send content-free account notices (for example "someone started recovering your account"). It is verified by a link and never used to sign in |
-| Your passkeys' public keys, labels ("Chrome on Android"), signature counters and when they were added and last used | Needed to check a passkey sign-in |
-| Display name, if you set one and either turn on "discoverable" or share it with friends | Needed for people search and friend requests. [OWNER: confirm which name fields are stored unencrypted] |
-| Whether you are in the people directory ("discoverable") | Needed for search |
-| Profile picture, **only if** you mark it Public | Public by your choice |
-| Your public keys and a history of key changes | Other people's devices need them to encrypt to you and to check that a key change is genuine |
-| Authentication records: account created date, last sign-in, MFA enabled (yes/no), active sessions | Needed to run sign-in and show you your sessions |
+| Your username (@handle) | To address your profile, find people and sign in |
+| An internal sign-in identifier made from your account number | Our authentication system needs one. It is not an email address and never receives mail |
+| A **notice email address**, only if you add one (Settings → Account) | To send you account notices that contain no content (for example "someone started recovering your account"). It is verified by a link and is never used to sign in |
+| Your passkeys' public keys, labels ("Chrome on Android"), counters, and when each was added and last used | To check a passkey sign-in |
+| Your **public name**, only if you switch on the people directory ("discoverable") or "Let people follow me" | So people can find and follow you. Otherwise your name is encrypted |
+| Your privacy switches: discoverable, follow, read receipts, who may send requests, comment and mention rules, search-engine listing, notification categories | The server has to apply them |
+| Your public encryption keys, their history, and entries in the public key log (section 4.10) | Other people's devices need them to encrypt to you and to detect a swapped key |
+| Sign-in records: account created, last sign-in, whether two-step sign-in is on, and your active sessions with their IP address and browser | To run sign-in and show you your sessions |
+| Account status: active, suspended (and until when), memorialised; staff role, if you are a moderator | To run the service |
 
-**Your passkey and passphrase never reach us.** A passkey stays on your device (or in your
-platform's passkey sync): your device proves it holds it, and the passkey itself unlocks your
-encryption keys on your device. A passphrase is turned into two separate keys on your device. One
-signs you in (we store only a one-way hash of it). The other unlocks your encryption keys and never
-leaves your device.
+**Your passkey and passphrase never reach us.** A passkey stays on your device (or in your platform's
+passkey sync). A passphrase is turned into two separate keys on your device: one signs you in (we store
+only a one-way hash of it), the other unlocks your encryption keys and never leaves your device.
 
-We also store your **key bundle**: your encryption keys, each locked with a key we never see
-(made by your passkey, or derived from your passphrase or your 24-word recovery key). We cannot
+We also store your **key bundle**: your encryption keys, each locked with a key we never see. We cannot
 unlock it.
 
 ### 4.2 Encrypted content (not readable by us)
 
 Encrypted on your device before it is sent. We store only ciphertext.
 
-- Posts, status updates, wall posts, comments, shared links and their previews
-- Photos and albums (location and camera data is stripped from photos on your device before upload)
-- Photo tags, and the text and identity of who is tagged in the post or photo itself (but see the
-  tag notification row in 4.3)
-- Messages and chat
-- Profile details (Education & Work, Basic Info, Likes, Contact, Philosophy, Arts, Sports and similar)
-- Notes
-- Events and groups that are private, closed or secret: names, descriptions, details, walls
-- Names of your friend lists
-- Readable notification previews (e.g. "Kevin commented: …")
-- Your private settings
-- Optional notes attached to friend requests
+- Posts, comments, links and their previews (for every audience except Public)
+- Photos, albums, videos, reels and stories (for every audience except Public). Location and camera data
+  are stripped from photos on your device before upload
+- Messages, group chats, voice notes, reactions, poll votes, game moves
+- Voice and video calls: sound and picture travel end-to-end encrypted and are never stored
+- Your profile: name, picture, bio and details
+- The names of your circles and lists; private groups and events and what is in them
+- The text of notification previews
+- Notes on connection requests; your private settings, hidden chats and saved items
+- Safety check-in messages and any location you attach to one
+- Recovery shares held by your trusted contacts; notes for your legacy contact
 
-Because we cannot read this content, we **do not and cannot** scan it, analyse it, profile you from
-it, train AI on it, or show it to anyone. The one exception is when someone **reports** an item: see
-section 8.
+Because we cannot read this content, we **do not and cannot** scan it, analyse it, profile you from it,
+train AI on it, or show it to anyone. The one exception is when someone who can see an item **reports**
+it (section 8).
 
-### 4.3 Metadata (readable by us)
+### 4.3 Public content (readable by us and by everyone)
 
-Encryption hides *what* you say, not *that* you said something. To route your content to the right
-people, our servers can see:
+- The text, links, photos and videos of your **Public** posts and public reels
+- Comments and reactions on Public posts
+- Your @handle and public name
+
+### 4.4 Metadata (readable by us)
+
+Encryption hides *what* you say, not *that* you said something. To deliver your content to the right
+people our servers can see:
 
 | Metadata | Example |
 |---|---|
-| Your friendships and friend requests, with dates | "A and B became friends on 3 March" |
-| Who is in each conversation, when messages are sent, read receipts | "A messaged B at 21:04; B read it at 21:10" |
-| Who posted, on whose wall, to which audience, when, and roughly how big it is | "A posted a 3 KB item to B's wall for A's Friends audience" |
-| Likes on items (as rows: who liked which item), even on encrypted items | "C liked post #123" |
+| Connections, requests, follows, blocks and restrictions, with dates | "A and B connected on 3 March" |
+| Who is in each conversation, when messages are sent, edited or unsent, and read state | "A messaged B at 21:04; B read it at 21:10" |
+| Who posted, to which audience, what kind of item, when, and roughly how big it is; scheduled and disappearing timers | "A posted a 3 KB item to A's Close friends" |
+| That someone liked or reacted to an item or a comment (the emoji itself is encrypted), or voted in a poll | "C reacted to post #123" |
 | Who commented on which post, and when | |
-| Group and event membership, roles, RSVPs | "A is an admin of group #9; B was invited to event #4" |
-| Who is a member of each of your friend lists (but not the list's name) | |
-| That a person was tagged in a particular photo or post, and whether they approved | "B was tagged in photo #77 (approved)" |
-| Notification records: recipient, type, who triggered it, which item, read/unread | |
-| Your trusted friends for recovery, and recovery requests and their status | |
-| Invite links you created and how often they were used | |
-| Media file sizes and upload times | |
-| Reports you make or that concern your content (see section 8) | |
-| Online / typing status, while you're online, unless you turn it off ("Go offline") | Passes through our realtime service; not stored |
+| Circle, group and event membership, roles and RSVPs | "A is an admin of circle #9" |
+| That a person was tagged in an item | |
+| Stories: who posted one and who viewed it, and when | |
+| Notification records: recipient, type, who caused it, which item, read or unread | |
+| Calls: one record per call (who called, in which conversation, when, voice or video, answered or not). No recording, no duration | |
+| Trusted contacts for recovery, and recovery requests and their status | |
+| Safety check-ins: that one exists, its deadline, and which chats would be alerted | |
+| Legacy contact, if you set one: who it is, the waiting period, and the date you were last active (to the day) | |
+| Invite links you made and how often they were used | |
+| File sizes and upload times | |
+| Reports you make or that concern your content (section 8) | |
+| Online and typing status, while you are online, unless you "Go offline" | Passes through our realtime service; not stored |
 
-### 4.4 Technical and log data
+### 4.5 Technical and log data
 
 | Data | Who holds it | Notes |
 |---|---|---|
-| IP address, time, and request details of sign-in, sign-up and account recovery | Supabase (authentication logs) | Our app tables do not store IP addresses or user agents. For spam limits on sign-in, sign-up and account-recovery pages we keep a keyed hash of your IP address that changes every day (it can't be turned back into the address without our key), deleted within two days |
-| IP address and request details of API calls from your browser | Supabase (platform/API gateway logs) | Kept per Supabase's log retention (section 10) |
-| IP address, user agent, page address requested (which can include a username, e.g. /alice) | Vercel (hosting/CDN request logs) | Vercel Web Analytics is **off**. Kept per Vercel's log retention (section 10) |
-| Proof-of-work captcha challenge result at sign-up | Our server (self-hosted ALTCHA) | No third party, no cookies, not stored after the check |
-| Email delivery records (recipient address, time, status) | Spacemail by Spaceship | Emails contain no post or message content |
-| Crash reports, **only if you turn on "Send crash reports"** (Settings → Your data; off by default) | Our server (our own database; no third-party service) | What broke (the error's type, a scrubbed message and the code location), the app version, whether it was the website or an app, the operating system and browser with their major version, the kind of screen (for example "a chat", never which one) and the interface language. No account, session, device identifier or IP address is stored with a report, and it never contains what you wrote or who you talked to. "See what gets sent" in the same place shows the exact report. Deleted after 30 days |
+| IP address, time and request details of sign-in, sign-up, recovery and API calls | Supabase (authentication and API logs) | Kept 7 days |
+| IP address, browser type and the page address requested (which can include a username or a public post) | Vercel (hosting and request logs) | Kept only briefly, for operations. Vercel Web Analytics is **off**. If a direct connection to our database is blocked on your network, the app can send its requests through the same hosting |
+| Spam and abuse limits | Our database | For signed-in actions: your account, the kind of action and the time, kept 7 days. For sign-in, sign-up and recovery pages: a keyed hash of your IP address that changes every day and cannot be turned back into the address without our key, kept 2 days (with a recovery request, until that request is deleted) |
+| Proof-of-work check at sign-up | Our server (self-hosted ALTCHA) | No third party, no cookies. The used token is kept 1 day so it cannot be reused |
+| Email delivery records, if you added a notice email | Spacemail by Spaceship | Recipient, time, status. The emails contain no post or message content |
+| Crash reports, **only if you turn on "Send crash reports"** (off by default) | Our own database; no third-party service | What broke (error type, a scrubbed message, code location), app version, operating system and browser with major version, the kind of screen and the interface language. No account, session, device identifier or IP address is stored with it. Deleted after 30 days |
 
-### 4.5 Data stored on your device
+### 4.6 Calls
 
-See section 13 (cookies and local storage). This data stays on your device and is not sent to us,
-except where stated.
+Voice and video calls are end-to-end encrypted between the people in the call. To connect the call:
 
-**Search on your phone.** So that you can search your own chats and posts, the app keeps an index of the
-text this device has decrypted. It is stored only on the device, encrypted with a key derived from your
-account key, and is never uploaded; your search words never leave the device either. It is deleted when you
-log out, when you wipe the device from the Safety centre, or when you switch "Search on this phone" off
-(Settings → Your data).
+- signalling messages travel through our realtime service, sealed so we cannot read them; the service
+  sees which accounts joined which call and when;
+- by default calls are **relayed** through Cloudflare's relay network ("Always relay calls" is on), so
+  the other person sees a Cloudflare address instead of your IP address. Cloudflare sees the IP addresses
+  of both ends, timing and packet sizes, but cannot see or hear the call. If you turn "Always relay
+  calls" off, calls can connect directly and the other person's device can see your IP address.
 
-**Blur faces.** When you cover faces in a photo before sharing it, the faces are found on your device. The
-photo is not sent anywhere for that, nobody is identified, and only the covered picture is encrypted and
-uploaded.
+### 4.7 The Android app, and permissions
 
-### 4.6 Support and legal communications
+The Android app shows the same Kithwall service as the website. It asks for a permission only when you
+use the feature that needs it:
 
-If you email us, we receive your email address and whatever you write. **Email is not end-to-end
-encrypted.** Please don't send us sensitive content unless you need to.
+| Permission | Used for | Reaches our servers readable? |
+|---|---|---|
+| Camera | Photos, video calls, scanning a safety-number code | No |
+| Microphone | Voice notes and calls | No |
+| Location (approximate or precise) | Only when you tap "Attach my location now" on a safety check-in: one reading, sealed for the people you chose. Never in the background | No |
+| Notifications | Showing notifications, if you turn them on | See 4.9 |
+| Fingerprint or face unlock | Optional app unlock. Android does the check; we never receive biometric data | No |
+| Screenshot detection (Android 14+) | Showing you a local notice after a screenshot. Nobody else is told | No |
 
-### 4.7 What we never collect
+The app contains no advertising or analytics software and does not use the advertising ID. The Google
+Play version uses Google's push delivery (4.9), Google's passkey manager and Google's on-device
+translation; the direct-download version contains no Google software.
 
-- Your address book or contacts (we never upload it)
-- Your location, ever, except when you choose "attach my location" to a safety check-in alert: it is
-  taken once, at that moment, and sealed so only the people you chose can read it
-- Photo location/camera metadata (stripped on your device)
-- Biometric data; we do no facial recognition
-- Payment details (Kithwall is free; there is nothing to buy)
-- Data from advertising networks, data brokers, or third-party trackers
-- Phone numbers
+### 4.8 Data kept on your device
 
-### 4.8 Link previews
+This stays on your device and is not sent to us:
 
-When you add a link to a post, or tap **Add link preview** under a link in a chat, your device asks our
-**link-preview proxy** to fetch the page's title
-and image, so the linked website sees our server's address instead of yours or your friends'. To do
-this, **the link address passes through our server in readable form for a moment.** Our proxy code
-does not log or store it. [OWNER: confirm the hosting provider's request logs do not capture the URL,
-e.g. by sending it in the request body.] The finished preview is encrypted with your post or message.
-In chats nothing is fetched while you type: a link is only sent to the proxy when you tap **Add link preview**,
-and you can remove that button in Settings → Privacy.
+- your unlocked keys while the app is open, and (if you choose "Keep me logged in") a copy locked to the
+  device; on Android, keys are held in the Android Keystore;
+- an encrypted cache of content you have opened, and the offline kit (section 13);
+- **Search on this phone:** an index of text this device has decrypted, encrypted on the device. Your
+  search words never leave the device;
+- **Reels:** what kinds of reels you watch is remembered only on the device, to order your feed. It is
+  never uploaded;
+- **Blur faces** and **translation** run on your device. Downloading a translation language pack is a
+  request from your device to Google or your browser maker; the text you translate is not sent to us;
+- your app PIN, duress PIN and hidden-chat settings.
 
 ### 4.9 Push notifications (optional)
 
-If you turn on **push notifications** for a device (Settings → Account), we store, for that device:
+If you turn on notifications for a device we store, for that device, the address or token your browser
+or phone gives us for delivery, an encryption key for it, a coarse label such as "Chrome on Android" or
+"Kithwall app on Android", when it was added, when a notification last got through, and which kinds of
+activity you want.
 
-| Data | Why |
-|---|---|
-| The push **endpoint** your browser gives us (a web address at your browser maker's push service) and two encryption keys for it | To deliver notifications to that browser |
-| A coarse device label such as "Chrome on Android" (not your full browser identifier) | So you can recognise your devices |
-| When it was added and when a notification was last delivered | To clean up devices that stopped working |
-| Which kinds of activity you want pushed (messages, comments, friend requests, …) | Your choices; they apply to all your devices |
+- **What a notification says:** only *who* did *what* ("dan sent you a message"), using the person's
+  @handle or public name. It never contains the text of a message, post or comment. Hidden chats say only
+  "You have new activity".
+- **Who carries it:** your browser's push service (Google, Apple, Mozilla or Microsoft), or on the
+  Android app **Google Firebase Cloud Messaging** (Google Play version) or the UnifiedPush app you chose
+  (direct-download version). Every notification is **encrypted for your device** before it leaves our
+  server, so the carrier cannot read it. The carrier does learn that a notification was sent to your
+  device, when, and roughly how big it was.
+- **Turning it off:** Settings → Notifications removes the device's record at once.
 
-**What a push says.** Only *who* did *what*: "dan sent you a message", "jessica commented on your
-post", "dan sent a message to a group conversation". The name is the person's username (or the
-directory name they chose to publish). **A push never contains the text of a message, post or
-comment** — our servers can't read those, so they have nothing to put in it.
+### 4.10 The public key log
 
-**Who carries it.** Web browsers deliver push notifications through their maker's push service:
-**Google Firebase Cloud Messaging** (Chrome, Edge on Android, Samsung Internet, most Android
-browsers), **Apple Push Notification service** (Safari, all iPhone/iPad browsers), **Mozilla
-autopush** (Firefox) or **Microsoft Windows Push Notification Services** (Edge on Windows). Your
-browser chooses the service, not us. Every push is **encrypted for your browser** (the Web Push
-encryption standard, RFC 8291), so the push service can't read it; it does learn that *a*
-notification was sent to your browser, when, and roughly how big it is, and it sees our server's
-address.
+So that nobody (including us) can quietly swap someone's encryption key, each key change is added to a
+public, append-only log as a salted fingerprint that reveals nothing by itself. A copy of the log's daily
+summary is published on GitHub. The values that link an entry to your account are shown only to people
+who can already see your profile, and are deleted with your account; the fingerprints stay in the log.
 
-**Turning it off.** Switch it off in Settings → Account (removes the device's record immediately),
-log out on that device (the browser stops accepting our pushes and we delete the record the next time
-the push service tells us so), or block notifications for Kithwall in your browser settings.
+### 4.11 Link previews and embedded video
 
----
+- **Link previews.** When you add a link to a post or tap "Add link preview" in a chat, your device asks
+  our server to fetch the page's title and picture, so the website sees our server and not you. The link
+  passes through our server for a moment and is not logged or stored by us. The finished preview is
+  encrypted with your post or message.
+- **Embedded video** (YouTube, Vimeo, Dailymotion, Streamable, TikTok). Nothing loads from the provider
+  until you press play. When you do, the provider's player loads on your device and that provider sees
+  your IP address and applies its own privacy policy.
+- **Links you open** leave Kithwall and are governed by the site you visit.
 
-## 5. Why we use your data and our legal bases
+### 4.12 Support and legal communications
 
-| Purpose | Data used | Legal basis (GDPR / UK GDPR) | India DPDP |
-|---|---|---|---|
-| Create and run your account; sign you in; keep sessions | Account data, auth records, technical data | Contract (Art. 6(1)(b)) | Consent given at sign-up (s. 6); legitimate use where applicable (s. 7) |
-| Store and deliver your encrypted content to the audiences you choose | Encrypted content, metadata | Contract | Consent |
-| Send content-free account notices to your notice email, if you added one: security alerts, recovery-request alerts | Notice email address | Contract; legitimate interests in account security (Art. 6(1)(f)) | Consent |
-| Send content-free notification emails ("You have a new notification") | Email address, notification records | Contract — you can turn these off in settings | Consent (withdrawable) |
-| Send push notifications to devices where you turned them on ("dan sent you a message") | Push subscription, push preferences, notification and message metadata, the actor's username | Consent (Art. 6(1)(a)) — you turn it on per device and can turn it off at any time | Consent (withdrawable) |
-| People search and friend suggestions | Username, display name, discoverable setting | Contract — only if you opt into the directory | Consent |
-| Account recovery with trusted friends | Trusted-friend list, recovery requests | Contract — only if you set it up | Consent |
-| Security, preventing spam and abuse (rate limits, captcha, auth logs, MFA) | Technical data, metadata | Legitimate interests in keeping the service and its users safe | Legitimate use (s. 7) / consent |
-| Handling reports, enforcing our Terms and Community Standards, appeals | Reports (incl. disclosed content), metadata about the accounts involved | Legitimate interests in a safe service; legal obligation where law requires action (Art. 6(1)(c)) | Legitimate use (s. 7) |
-| Reporting child sexual abuse material to the authorities | Reported content and related metadata | Legal obligation; legitimate interests and vital interests where no obligation applies | Legitimate use — compliance with law (s. 7) |
-| Responding to valid legal requests and emergencies | Metadata, account data, reports | Legal obligation; vital interests (Art. 6(1)(d)) for emergencies | Legitimate use (s. 7) |
-| Answering support requests | Your email and message | Contract; legitimate interests | Consent |
-| Backups and disaster recovery | All stored data (ciphertext + metadata) | Legitimate interests in not losing your data | Legitimate use / consent |
+If you email us we receive your email address and whatever you write. **Email is not end-to-end
+encrypted.** Please do not send us sensitive content unless you need to.
 
-**Sensitive information.** You may share things that reveal health, religion, politics, sexuality
-or similar. When it is encrypted, we cannot read it. If you post it **Public**, you have chosen to
-make it public. If it is **reported**, moderators see it only to handle the report.
-[LAWYER: confirm GDPR Art. 9 condition for special-category data disclosed in reports.]
+### 4.13 What we never collect
 
-**No automated decisions with legal effects.** We use automated rate limits and a sign-up captcha to
-stop abuse. These can temporarily stop an action (e.g. sending too many friend requests in a day),
-but they do not make decisions about you that have legal or similarly significant effects.
-Suspensions and bans are decided by a person.
-
-**No profiling, no ads, no sale.** We do not use your data for advertising, profiling, or any
-purpose you would not expect from a private social network. "Top News" ranking happens on **your**
-device.
+- Your address book or contacts
+- Your location, except the single sealed reading you choose to attach to a safety check-in
+- Photo location or camera metadata (stripped on your device)
+- Biometric data; we do no facial recognition
+- Payment details (Kithwall is free; there is nothing to buy and we take no payments)
+- Advertising identifiers, or data from advertising networks, data brokers or trackers
+- Phone numbers
+- What you watch, how long you look at something, or what you search for
 
 ---
 
-## 6. What we cannot access (end-to-end encryption)
+## 5. Why we use your data, and our legal bases
+
+| Purpose | Data used | Legal basis (EU/UK GDPR) |
+|---|---|---|
+| Create and run your account; sign you in; keep sessions | Account data, sign-in records, technical data | Contract (Art. 6(1)(b)) |
+| Store your content and deliver it to the audiences you choose; calls; stories; reels | Encrypted content, public content, metadata | Contract |
+| Show Public posts to everyone, and list them in Explore | Public content, public name, @handle | Contract; it is what you ask for when you post publicly |
+| People directory and follow | @handle, public name, your switches | Contract; only if you switch them on |
+| Send content-free account notices to your notice email | Notice email address | Contract; legitimate interests in account security (Art. 6(1)(f)) |
+| Push notifications | Device push record, your choices, notification metadata | Consent (Art. 6(1)(a)); you turn it on per device and can turn it off at any time |
+| Crash reports | The report described in 4.5 | Consent; off unless you turn it on |
+| Account recovery with trusted contacts; legacy contact; safety check-ins | The records listed in 4.4 | Contract; only if you set them up |
+| Security; preventing spam and abuse | Technical data, rate limits, metadata | Legitimate interests in keeping the service and its users safe |
+| Handling reports, enforcing our Terms and Community Standards, appeals | Reports (including what the reporter disclosed), metadata about the accounts involved | Legitimate interests in a safe service; legal obligation where the law requires action (Art. 6(1)(c)) |
+| Reporting child sexual abuse material to the authorities | Reported content and related metadata | Legal obligation; otherwise legitimate interests and vital interests |
+| Responding to valid legal requests and emergencies | Account data, metadata, reports | Legal obligation; vital interests (Art. 6(1)(d)) for emergencies |
+| Answering your emails | Your email and message | Legitimate interests in answering you; contract |
+| Backups and disaster recovery | Everything stored (ciphertext and metadata) | Legitimate interests in not losing your data |
+
+Where another country's law uses different words, the same purposes apply: for example **consent** and
+**legitimate uses** under India's Digital Personal Data Protection Act 2023, and **performance of a
+contract**, **legitimate interest**, **consent** and **legal obligation** under Brazil's LGPD.
+
+**Sensitive information.** You may share things that reveal health, religion, politics, sexuality or
+similar. When it is encrypted we cannot read it and do not process it in readable form. If you post it
+as **Public**, you have chosen to make it public. If it is **reported**, moderators see it only to
+handle the report, as needed to protect users and to deal with legal claims.
+
+**Automated decisions.** We use automatic rate limits and a sign-up proof-of-work to stop abuse; these
+can briefly stop an action (for example sending too many requests in a day). A Public post that several
+different people report is **hidden automatically until a moderator has looked at it**. None of this
+makes decisions about you with legal or similarly significant effects. Warnings, suspensions and bans
+are decided by a person, and you can appeal.
+
+**No profiling, no ads, no sale.** We do not use your data for advertising or profiling. "Popular" in
+Explore is ordered only by public signals on public posts (reactions, comments, age), the same for
+everyone. Your own feed is in time order, and reels are ordered on your device.
+
+**We do not train AI on your data**, and no AI system reads your content.
+
+---
+
+## 6. What we cannot access, and the honest limits
 
 | We cannot | Because |
 |---|---|
-| Read your encrypted posts, photos, messages, profile details, tags, notes or notification previews | They are encrypted on your device with keys we never receive |
-| Reset your passphrase **and** keep your content | Your content keys are locked with your passkey, passphrase or 24-word key, which we never see |
-| Recover your content if you lose every passkey, your passphrase, your recovery key and trusted-friend access | Nobody holds a spare key. This is by design |
-| Hand your encrypted content to anyone, including the police | We don't have it in readable form |
-| Search, scan, or analyse your encrypted content | Same reason |
+| Read your encrypted posts, photos, messages, calls, profile details or notification previews | They are encrypted on your device with keys we never receive |
+| Reset your sign-in and keep your content, or recover content if you lose every key | Nobody holds a spare key. This is by design |
+| Hand your encrypted content to anyone, including the police | We do not have it in readable form |
+| Search, scan or analyse your encrypted content | Same reason |
 
-**Honest limits.** End-to-end encryption on the web has limits we want you to know about:
+Limits you should know about:
 
-- **Metadata** (section 4.3) is visible to us.
+- **Metadata** (section 4.4) is visible to us.
 - **Public** content is not encrypted.
-- **The app is delivered by our servers.** A malicious or compromised version of the app could
-  steal keys. We reduce this risk by loading no third-party scripts and by publishing the source code:
-  Kithwall is open source under the GNU Affero General Public License v3.0 (AGPL-3.0) at
+- **The app is delivered by our servers.** A malicious or compromised version of the app could steal
+  keys. We reduce this risk by loading no third-party scripts and by publishing the source code: Kithwall
+  is open source under the GNU Affero General Public License v3.0 at
   [github.com/443abdul/kithwall](https://github.com/443abdul/kithwall), and the app links to the exact
-  version it is running, so anyone can review what it does.
-- **Your device.** Malware or a browser extension with access to the page can read what you see.
-- **Your friends** can screenshot or copy what you share with them.
-- **No forward secrecy yet.** If someone later steals your main account key, they could decrypt
-  your past content. Forward-secret messaging is planned for a future release.
-- **Reports.** If someone who can see your content reports it, they disclose it to our moderators
+  version it is running.
+- **Your device.** Malware, or a browser extension with access to the page, can read what you see.
+- **The people you share with** can screenshot or copy what you share.
+- **No forward secrecy for stored content.** If someone later obtains your account key and the stored
+  ciphertext, they could decrypt your past content.
+- **Reports.** If someone who can see your content reports it, they disclose that item to our moderators
   (section 8).
 
 ---
 
 ## 7. Who we share data with
 
-We do not sell, rent or trade personal data. We share it only as follows.
+We do not sell, rent or trade personal data, and we share none of it for advertising. Data reaches
+others only as follows.
 
-### 7.1 Service providers (processors)
+### 7.1 Service providers
 
-| Provider | What they do | Data they process | Location |
+| Provider | What it does for us | Data it handles | Where |
 |---|---|---|---|
-| **Supabase** [Supabase, Inc. — CONFIRM CONTRACTING ENTITY] | Database, authentication, file storage, realtime messaging, backups | Account data, ciphertext, metadata, auth and API logs (incl. IP addresses) | Database region **ap-south-1 (Mumbai, India)**; company in the USA; support/sub-processor access per their DPA |
-| **Vercel** [Vercel Inc. — CONFIRM] | Hosting the web app, content delivery network, server routes (sign-up check, account deletion, link-preview proxy) | IP address, user agent, requested page address, link addresses passing through the preview proxy (not stored by our code) | Global edge network; company in the USA |
-| **Spacemail by Spaceship** [Spaceship, Inc. — CONFIRM ENTITY AND DATA LOCATION] | Sending transactional email | Your email address, email delivery records; email text (which contains no post or message content) | [CONFIRM — e.g. USA] |
+| **Supabase, Inc.** | Database, sign-in, file storage, realtime delivery, backups | Account data, ciphertext, public content, metadata, sign-in and API logs (with IP addresses) | Data stored in **Mumbai, India**; company in the USA |
+| **Vercel Inc.** | Hosting the website and app, server functions (sign-up check, account deletion, link previews, notifications) | IP address, browser type, page address; links passing through the preview fetcher (not stored by us) | Worldwide network; company in the USA |
+| **Cloudflare, Inc.** | Relaying calls | IP addresses of the two ends of a call, timing and size of encrypted packets | Worldwide network; company in the USA |
+| **Spaceship, Inc.** (Spacemail) | Sending account notices and receiving your emails to us | Your notice email address, delivery records, emails you send us | USA |
+| **Google LLC** (Firebase Cloud Messaging) | Delivering encrypted notifications to the Google Play app | A device token and the encrypted notification | Worldwide; company in the USA |
 
-Each provider acts on our instructions under a data processing agreement: [Supabase DPA — date
-signed], [Vercel DPA — date signed], [Spaceship DPA — date signed / CONFIRM ONE IS AVAILABLE].
-Their own sub-processors are listed at [LINKS TO SUB-PROCESSOR LISTS].
+These providers act for us, under their data-processing terms, and may use the data only to provide
+their service. Their own sub-processors are listed on their websites.
 
-**Browser push services.** If you turn on push notifications, each notification passes through the
-push service your browser uses (Google FCM, Apple APNs, Mozilla autopush or Microsoft WNS — see
-section 4.9). It is encrypted for your browser, so the service can't read it. These services are
-part of your browser, operated by its maker under their own terms; we don't send them anything else.
+### 7.2 Services your own device talks to
 
-We use **no** analytics, advertising, social-media, font, crash-reporting or captcha services from third
-parties. Crash reports, if you turn them on, go to our own server only (section 4.4).
-Our captcha (ALTCHA) runs on our own servers.
+These are chosen by your device or by you, and operate under their own terms:
 
-### 7.2 Other users
+- your browser's push service (Google, Apple, Mozilla, Microsoft), or your UnifiedPush app (4.9);
+- your passkey manager (for example Google Password Manager or iCloud Keychain), if you sync passkeys;
+- Google, when the Google Play app downloads a translation language pack;
+- a video provider, after you press play (4.11);
+- GitHub, if you download the Android app from there or use "Compare with witness" on the key log.
 
-Other users see what you share with them, and some things everyone signed in can see (your username,
-public keys, and anything you make Public). Friends can see your friend list where the app shows it.
-[OWNER: confirm whether friend lists are visible to friends at launch.]
+### 7.3 Other people
 
-### 7.3 Moderators
+Other people see what you share with them. Everyone can see your @handle, your public name if you set
+one, your public keys and anything you post as Public. Your connections can see who you follow unless
+you switch that off.
 
-Moderators see reported items and related account metadata (section 8).
+### 7.4 Moderators
 
-### 7.4 Legal requests and safety
+Moderators are specially appointed accounts. They see reported items and related account metadata
+(section 8), and nothing else.
 
-We disclose data when the law requires it, or in an emergency involving a risk of death or serious
-injury. We can only disclose what we have: mainly metadata and account data. See our
-[Law Enforcement Guidelines](law-enforcement-guidelines.md). We report child sexual abuse material
-as required by law.
+### 7.5 Legal requests and safety
 
-### 7.5 Business changes
+We disclose data when a law that applies to us requires it, or in an emergency involving a risk of death
+or serious injury. We can only disclose what we have: account data, metadata, public content and reports.
+See our [Law Enforcement Guidelines](law-enforcement-guidelines.md). We report child sexual abuse
+material as the law requires.
 
-If Kithwall is transferred to a new operator (for example in a sale or reorganisation), your data
-would transfer with it under this policy, and we would tell you in advance. Your encrypted content
-would remain unreadable to the new operator too.
+### 7.6 A change of operator
+
+If Kithwall is ever handed to a new operator, your data would move with it under this policy, and we
+would tell you beforehand. Your encrypted content would stay unreadable to the new operator too.
 
 ---
 
 ## 8. Reporting and moderation
 
-- When you report an item, **your device sends our moderators the decrypted item and its content
-  key.** Moderators use the key to confirm the report matches what is stored, so reports can't be
-  faked.
-- For a post, the content key also unlocks **comments on that post and photos attached to it**,
-  because they are derived from or included in the post. Moderators are instructed to look only at
-  what they need to decide the report (see our moderator policy).
-- The person who posted the item is not told who reported it.
-- Reports are kept for **1 year after they are resolved**, longer only where the law requires
-  (for example, child sexual abuse material is preserved for authorities as the law requires).
-- Moderators are specially appointed accounts. They cannot see any other content.
+- When you report an item, **your device sends our moderators a readable copy of that item** and the
+  proof needed to confirm it matches what is stored, so that reports cannot be faked.
+- For a post, that proof also unlocks the comments on that post and the photos attached to it.
+  Moderators are instructed to look only at what they need to decide the report.
+- A report of a message includes proof that the message really was sent by the person reported.
+- Public posts and comments are readable anyway; a report records a copy as it was when reported.
+- The person whose content is reported is not told who reported it.
+- Reports are kept for **1 year after they are resolved**, longer only where the law requires it (for
+  example, material that must be preserved for the authorities).
 
 ---
 
-## 9. International transfers
+## 9. Where your data is processed
 
-Your data is stored in **India (Mumbai)** and processed by companies based in the **USA**, with
-content delivery through Vercel's global network. [The operator is based in [OPERATOR COUNTRY].]
+Your data is stored in **India (Mumbai)**. It is also handled by the providers in section 7, which are
+based in the **United States** and run worldwide networks. Kithwall itself is run from **Pakistan**,
+where the operator handles reports, support and administration.
 
-| From | To | Safeguard |
-|---|---|---|
-| EU/EEA | India (no EU adequacy decision) | EU Standard Contractual Clauses in [Supabase DPA] [CONFIRM] |
-| EU/EEA | USA | EU–US Data Privacy Framework where the provider is certified [CONFIRM per provider]; otherwise Standard Contractual Clauses |
-| UK | India / USA | UK International Data Transfer Addendum to the SCCs, or UK–US Data Bridge where applicable [CONFIRM] |
-| Switzerland | India / USA | SCCs as adapted for Switzerland / Swiss–US DPF [CONFIRM] |
-| India | Any country | Permitted under DPDP Act s. 16 unless the Central Government restricts transfers to that country |
-| Other countries | India / USA | [LAWYER: confirm per launch market] |
+These countries may not have data-protection laws equivalent to those where you live. Safeguards:
 
-You can ask us for a copy of the safeguards at [PRIVACY CONTACT EMAIL].
+| From | Safeguard |
+|---|---|
+| EU / EEA | The European Commission's Standard Contractual Clauses in our providers' data-processing terms; the EU–US Data Privacy Framework for providers certified under it |
+| United Kingdom | The UK International Data Transfer Addendum; the UK–US Data Bridge for certified providers |
+| Switzerland | The Standard Contractual Clauses as adapted for Switzerland; the Swiss–US Data Privacy Framework for certified providers |
+| India | Transfers are permitted under the Digital Personal Data Protection Act 2023 except to countries the Central Government restricts |
+| Other countries | Your data is handled as this policy describes wherever it is processed. Where your law requires your consent to process your data abroad, you give it by creating an account, and you can withdraw it by deleting your account |
 
-Because most of what we hold is ciphertext we cannot decrypt, the transferred content itself is
-unreadable to us and our providers. Metadata and account data are readable.
+The strongest safeguard is technical: most of what we hold is ciphertext that neither we nor any
+provider can read. Account data, public content and metadata are readable. You can ask for a copy of the
+contractual safeguards at support@kithwall.com.
 
 ---
 
@@ -365,202 +410,268 @@ unreadable to us and our providers. Metadata and account data are readable.
 
 | Data | How long |
 |---|---|
-| Your content (encrypted or public) | Until you delete it. Deletion from the database is immediate; backup copies age out within **7 days** |
+| Your content (encrypted or public) | Until you delete it. Deletion from the database is immediate |
+| Stories | 24 hours |
+| Disappearing messages and posts | Until the timer you set runs out |
+| Unsent messages | The record that a message was unsent is removed after 10 minutes |
 | Account data and key bundle | Until you delete your account |
-| Metadata rows (friendships, memberships, likes, tags, etc.) | Until you or the other person removes them, or until account deletion; backups age out within 7 days |
-| Your whole account, when you delete it | Removed immediately. Your keys are destroyed, so encrypted copies left in backups can never be read. Unencrypted account data and metadata in backups age out within 7 days |
+| Connections, follows, memberships, reactions and other metadata | Until you or the other person removes them, or the account is deleted |
+| Your whole account, when you delete it | Removed at once, with every file. Your keys are destroyed, so encrypted copies in backups can never be read |
+| Backups | 7 days |
 | Notifications | 90 days |
-| Push subscriptions (per device) | Until you turn push off on that device, or the push service tells us the subscription has ended (e.g. after you log out or clear site data), or you delete your account |
-| Push preferences | Until you delete your account |
-| Recovery requests | 7 days after they close |
-| Trusted-friend recovery shares | Until you change your trusted friends or delete your account |
-| Reports and moderation decisions | 1 year after resolution (longer if legally required, e.g. child safety preservation) |
-| Supabase authentication and API logs (incl. IP addresses) | 7 days (Supabase Pro plan) |
-| Vercel request logs | 1 hour (Vercel Hobby plan runtime logs) |
+| Device push records | Until you turn notifications off on that device, the carrier reports the device gone, or you delete your account |
+| Recovery requests | 7 days after they end |
+| Trusted-contact recovery shares; legacy contact | Until you change them or delete your account |
+| Safety check-ins | Until you cancel them; 7 days after an alert was sent |
+| Reports | 1 year after they are resolved (longer only if the law requires) |
+| Moderation decisions about an account | 1 year, or until the decision stops applying if that is later |
+| Spam and abuse counters | 7 days; the daily IP hash 2 days |
+| Sign-in challenges and email-verification links | Hours to 1 day after they expire |
+| Uploads that were never attached to anything | 1 day |
+| Sign-in and API logs (with IP addresses) | 7 days |
+| Hosting request logs | Kept only briefly by the hosting provider |
 | Crash reports (only if you turned them on) | 30 days |
-| Spacemail delivery logs | [SPACEMAIL LOG RETENTION] |
-| Link-preview requests | Not stored by us |
-| Support emails | [SUPPORT EMAIL RETENTION, e.g. 2 years after the conversation ends] |
-| Legal request records | [LEGAL REQUEST RECORD RETENTION, e.g. 3 years] |
-| Ban records to stop re-registration (if used) | [OWNER DECISION: e.g. a one-way hash of the email address for N years] |
-| Data on your device | Until you log out (logging out deletes the local key and cache) or clear your browser data |
+| Public key log | Fingerprints stay permanently; the values linking them to you are deleted with your account |
+| Emails you send us | Up to 2 years after the conversation ends |
+| Records of legal requests | 3 years |
+| Data on your device | Until you log out, wipe the device from the Safety centre, or clear the app's data |
 
-**Copies on other people's devices.** People you shared with may keep copies (screenshots, their
-own data exports, their device cache until they log out). Deleting your account cannot reach those.
+We do not delete accounts for being inactive.
+
+**Copies held by other people.** People you shared with may keep copies (screenshots, their own exports,
+their device's cache until they log out). Public posts may have been copied or indexed by others while
+they were public. Deleting your account cannot reach those.
 
 ---
 
 ## 11. Your rights
 
-### 11.1 Rights you have
-
-Depending on where you live, you have some or all of these rights:
+We give **everyone** these rights, wherever they live.
 
 | Right | How it works on Kithwall |
 |---|---|
-| **Access** — get a copy of your data | **Encrypted content:** use **Settings → Download Your Information**. Your device decrypts everything and builds a ZIP (HTML + JSON + photos). We can't do this for you, because we can't decrypt it. **Account data and metadata we hold:** email [PRIVACY CONTACT EMAIL] and we will send it to you |
-| **Portability** | The export is in machine-readable JSON |
-| **Correction** | Edit your profile and content in the app. Change or remove your notice email in settings. For anything else, contact us |
-| **Deletion** | Delete items in the app, or delete your account in **Settings → Your data** (immediate; your device confirms it with your keys). If you can no longer unlock your account, first try getting back in with your recovery key or trusted friends at /recover. Accounts have no email address, so we have no other way to confirm that an account is yours. [OWNER: decide what happens to accounts nobody can unlock any more] |
-| **Restriction / objection** | Contact us. You can object to processing based on legitimate interests; we will stop unless we have compelling grounds (e.g. security) |
-| **Withdraw consent** | Turn off optional features (directory, trusted friends, email notifications, push notifications, online status) in settings, or delete your account. Withdrawal doesn't affect earlier processing |
-| **Nominate someone (India)** | You may nominate a person to exercise your rights if you die or become incapable. Email the Grievance Officer with the nominee's name and email. Note: a nominee **cannot** read your encrypted content unless you have given them your recovery key |
-| **Grievance redressal (India)** | See section 15 |
-| **Complain to a regulator** | See 11.3 |
+| **Know and access** | **Settings → Your data → What Kithwall knows about you** shows, live, every kind of record our servers hold about your account. **Download my data** builds a file of your decrypted content on your device (we cannot do this for you, because we cannot decrypt it). For anything else, write to us |
+| **Portability** | The download is in open, machine-readable formats |
+| **Correction** | Edit your profile and content in the app; change or remove your notice email in Settings. For anything else, write to us |
+| **Deletion** | See 11.1 |
+| **Restrict or object** | Write to us. You can object to anything we do on the basis of legitimate interests; we will stop unless we have compelling reasons (for example security) |
+| **Withdraw consent** | Turn off notifications, crash reports, the directory, follow or any other optional feature in Settings. This does not affect what happened before |
+| **Not be discriminated against** | We never treat you differently for using your rights |
+| **Complain** | To us first, if you will: support@kithwall.com. You can also complain to your data-protection authority (section 14) |
+
+### 11.1 Deleting your account and data
+
+- **In the app or on the web:** sign in at [www.kithwall.com](https://www.kithwall.com) or in the Android
+  app, then **Settings → Your data → Delete my account**. Deletion is immediate and permanent: your account,
+  every post, photo, message, connection and file is removed, and your keys are destroyed. Backups age
+  out within 7 days and cannot be read without your keys.
+- **You can also delete single items** (a post, a photo, a message) at any time.
+- **If you cannot sign in:** first use your recovery key or trusted contacts at
+  [www.kithwall.com/recover](https://www.kithwall.com/recover). Kithwall accounts have no email address or
+  phone number, so we normally have no other way to confirm that an account is yours. If you added a
+  **notice email** to the account, write to support@kithwall.com from that address and we will delete the
+  account after confirming the request with you. If you did not, we cannot verify you and cannot act on
+  the account; no law requires us to collect more data just to do so.
+- **What is kept after deletion:** nothing that identifies you, except records we must keep by law (for
+  example a report preserved for the authorities) and the permanent fingerprints in the public key log,
+  which no longer link to you.
 
 ### 11.2 How to make a request
 
-- Email **[PRIVACY CONTACT EMAIL]** with your @handle, or sign in and use
-  [IN-APP REQUEST LOCATION, if any].
-- We may ask you to confirm you control the account (for example, by signing in, or by replying from
-  the notice email you verified in the app). We will not ask for your passphrase or recovery key —
-  **never give these to anyone**.
-- We reply within **one month** (GDPR/UK GDPR; extendable by two months for complex requests, and we
-  will tell you why), **45 days** (California; extendable once by 45 days), and as required under
-  Indian law. Requests are free unless clearly unfounded or excessive.
-- You can use an authorised agent (California) or nominee (India); we will need proof of their
-  authority.
-
-### 11.3 Regulators
-
-- EU/EEA: your local data protection authority ([LEAD SUPERVISORY AUTHORITY, if any]).
-- UK: the Information Commissioner's Office (ico.org.uk).
-- India: the Data Protection Board of India, after using our grievance process.
-- California: the California Privacy Protection Agency.
-
-We'd appreciate the chance to fix things first at [PRIVACY CONTACT EMAIL].
+- Email **support@kithwall.com** and tell us your @handle.
+- We may ask you to show that you control the account, for example by replying from your verified notice
+  email. We will **never** ask for your passphrase or recovery key. Do not give them to anyone.
+- We answer within **30 days**. If a request is complex we may need up to 60 more days, and will tell you
+  why. Requests are free unless clearly unfounded or excessive.
+- Someone you authorise can make a request for you; we will need proof of their authority.
+- If we refuse a request we will say why, and you can ask us to look again by replying with "Appeal".
 
 ---
 
 ## 12. Children
 
-- You must be **at least 16** to use Kithwall, or older if the law where you live requires it.
-- **India:** the DPDP Act treats anyone under 18 as a child and requires verifiable parental consent.
-  [OWNER DECISION: either require users in India to be 18+, or build verifiable parental consent
-  before allowing 16–17-year-olds in India.]
-- Kithwall is **not directed at children under 13**, and we do not knowingly collect personal data
-  from them (US COPPA).
-- If we learn that an account belongs to someone under the minimum age, we will delete it. Because
-  we cannot read encrypted content, we rely on the age you confirm at sign-up and on reports. If you
-  believe a child is using Kithwall, contact [PRIVACY CONTACT EMAIL].
+- You must be **at least 16** to use Kithwall, and **at least 18 if you live in India**, or older if the
+  law where you live requires it. You confirm this when you create your account.
+- Kithwall is **not directed at children under 13** and we do not knowingly collect personal data from
+  them.
+- If we learn that an account belongs to someone under the minimum age we will delete it. Because we
+  cannot read encrypted content, we rely on what you confirm at sign-up and on reports. If you believe a
+  child is using Kithwall, write to support@kithwall.com.
+- Parents and guardians can write to the same address to ask for a child's account to be removed.
 
 ---
 
-## 13. Cookies and local storage
+## 13. Cookies and storage on your device
 
-Kithwall uses **no advertising, analytics or tracking cookies** and no third-party cookies. We use
-only storage that is **strictly necessary** to provide the service you asked for. Under EU/UK
-e-privacy rules, strictly necessary storage does not need consent, so **we show no cookie banner**.
+Kithwall uses **no advertising, analytics or tracking cookies** and nothing from third parties. It uses
+only storage that is **strictly necessary** to provide the service you asked for, which does not need
+consent under EU and UK rules, so there is no cookie banner.
 
-| Item | Where | Purpose | Lifetime |
-|---|---|---|---|
-| Sign-in session token (and refresh token) | Your browser (local storage and/or a first-party cookie) | Keeps you signed in | Until you log out; access tokens expire after 1 hour and are refreshed |
-| Wrapped account key ("Keep me logged in" only) | IndexedDB | Lets the app unlock without your passkey or passphrase. It is locked with a device key that the browser will not let be exported | Until you log out |
-| Encrypted local cache | IndexedDB | Makes the app fast; content is encrypted with a key from your account | Until you log out |
-| Service worker | Your browser | Receives push notifications (if you turn them on) and shows them. While you are signed in it also keeps the app's own public files (program code, icons and a blank offline start page, the same for everyone) so Kithwall can open without the internet. It never stores your posts, messages or any other data | The app's files: until you log out (or a newer version replaces them); otherwise until you clear site data |
-| Offline kit (Kit Drop) | IndexedDB | Lets you open Kithwall and use Kit Drop with no internet: posts you wrote offline and Kit Drop files you received (end-to-end encrypted, as on the server), your key bundle as stored on the server, and the keys and contacts' public keys this device already uses, encrypted with a key from your account | Until you log out |
-| Push settings flags | Local storage | Whether you turned push on for this device, and when you dismissed the "turn on notifications" card | Until you clear site data |
+| Item | Purpose | Lifetime |
+|---|---|---|
+| Sign-in session | Keeps you signed in | Until you log out; refreshed every hour |
+| Locked copy of your account key ("Keep me logged in" only), app PIN record | Lets the app unlock without your passkey or passphrase | Until you log out |
+| Encrypted cache and offline kit | Makes the app fast and usable with no connection; content stays encrypted with a key from your account | Until you log out |
+| Search index ("Search on this phone") | Searching your own chats and posts on the device | Until you log out or switch it off |
+| Reels preferences | Ordering your reels on the device | Until you log out |
+| Service worker and the app's own files | Receiving notifications; opening the app offline. It never stores your posts or messages | Until you log out or a new version replaces them |
+| Small settings flags (language, theme, notification and connection choices) | Remembering your choices on this device | Until you clear the app's data |
 
-The app also locks itself after 30 minutes of inactivity (you can change this), which wipes keys
-from memory.
-
-If we ever add non-essential cookies or storage, we will ask for your consent first.
+The app locks itself after a period of inactivity (30 minutes unless you change it), which wipes keys
+from memory. If we ever add storage that is not essential we will ask first.
 
 ---
 
-## 14. Do Not Sell or Share (California and other US states)
+## 14. Information for particular countries
 
-- We **do not sell** personal information and **do not share** it for cross-context behavioural
-  advertising. We have not done so in the past 12 months.
+Section 11 applies everywhere. This section adds what local law asks us to say.
+
+### 14.1 European Economic Area, United Kingdom and Switzerland
+
+- The controller is named in section 2; legal bases are in section 5; transfers in section 9.
+- You can complain to the data-protection authority where you live or work. In the UK that is the
+  Information Commissioner's Office ([ico.org.uk](https://ico.org.uk)); in Switzerland the Federal Data
+  Protection and Information Commissioner.
+- If you complain to us we will acknowledge it within 30 days and tell you the outcome without undue
+  delay.
+- You are not required by law or contract to give us any personal data, but we cannot give you an account
+  without a @handle and a way to sign in.
+
+### 14.2 United States, including California
+
+These laws apply to businesses above certain sizes, which Kithwall is not. We follow them anyway.
+
+- We **do not sell** personal information and **do not share** it for cross-context behavioural or
+  targeted advertising, and have not in the past 12 months. We do not knowingly sell or share the
+  personal information of anyone under 16.
 - We honour **Global Privacy Control** signals, though there is nothing to opt out of.
 - We do not use or disclose sensitive personal information to infer characteristics about you.
-- We will not treat you differently for exercising your privacy rights.
+- You have the rights to know, access, correct, delete and port your information, and not to be treated
+  differently for using them. You can use an authorised agent. If we decline a request you can appeal by
+  replying with "Appeal"; if the appeal fails you may contact your state's Attorney General.
 
-**California notice at collection — categories in the last 12 months:**
+Categories collected in the last 12 months (sources, purposes, recipients and retention are in sections
+4, 5, 7 and 10):
 
-| CCPA category | Collected? | Example |
+| Category | Collected? | Example |
 |---|---|---|
-| Identifiers | Yes | Username, notice email address if you add one, IP address (in provider logs) |
-| Customer records (Cal. Civ. Code 1798.80) | Only if you add a notice email | Notice email address |
-| Characteristics of protected classifications | Only if you post them; encrypted content is unreadable to us | — |
-| Commercial information | No | — |
-| Biometric information | No | — |
-| Internet or network activity | Yes, limited | Sign-in logs, request logs, in-app metadata (section 4.3) |
-| Geolocation | No precise location readable by us; approximate location may be inferable from IP address in provider logs | — |
-| Audio, electronic, visual | Encrypted photos/content; unreadable to us | — |
-| Professional / education information | Only if you post it; encrypted | — |
-| Inferences / profiles | No | — |
-| Sensitive personal information | Account login (passkey public keys, or a one-way hash of the key derived from your passphrase); content of messages is encrypted and unreadable to us | — |
+| Identifiers | Yes | @handle, public name if set, notice email if added, IP address (in logs), device push token if notifications are on |
+| Customer records | Only if you add a notice email | Notice email address |
+| Characteristics of protected classifications | Only if you post them publicly | — |
+| Commercial information; biometric information; precise geolocation; inferences | No | — |
+| Internet or network activity | Yes, limited | Sign-in logs, request logs, the metadata in section 4.4 |
+| Audio, electronic, visual | Only what you post as Public; everything else is encrypted and unreadable to us | Public photos and videos |
+| Professional or education information | Only if you post it publicly | — |
+| Sensitive personal information | Account sign-in data (passkey public keys, or a one-way hash derived from your passphrase) | — |
 
-Sources, purposes, retention and recipients are described in sections 4, 5, 7 and 10.
+### 14.3 Canada
+
+We collect, use and disclose personal information with your knowledge and consent, for the purposes in
+section 5. Your information is stored and processed outside Canada (section 9), where the authorities of
+those countries may be able to obtain it under their laws. You can ask for access or correction, and you
+can complain to the Office of the Privacy Commissioner of Canada or your provincial commissioner.
+
+### 14.4 Brazil
+
+Under the LGPD you can ask us to confirm that we process your data, give you access, correct it,
+anonymise, block or delete it, port it, tell you who we share it with, and you can withdraw consent. The
+contact for data-protection matters is the privacy contact in section 2. You can complain to the
+Autoridade Nacional de Proteção de Dados (ANPD).
+
+### 14.5 India
+
+- We process your data on the basis of the consent you give when you create your account and for the
+  legitimate uses the law allows. You can withdraw consent by turning features off or deleting your
+  account.
+- You may **nominate** a person to exercise your rights if you die or become unable to. Write to the
+  Grievance Officer with their name and email. A nominee cannot read your encrypted content unless you
+  gave them your recovery key.
+- People under 18 may not use Kithwall in India.
+- Complaints go first to the Grievance Officer (section 15), then to the Data Protection Board of India.
+
+### 14.6 Pakistan
+
+Kithwall is run from Pakistan. We handle your data with the care this policy describes and in line with
+the Prevention of Electronic Crimes Act 2016 and other laws that apply to us. You have every right in
+section 11, and we will follow Pakistan's personal data protection law as it comes into force.
+
+### 14.7 Australia and New Zealand
+
+You can ask for access to and correction of your personal information. Your information is held outside
+Australia and New Zealand (section 9). If you are not satisfied with our answer you can complain to the
+Office of the Australian Information Commissioner or the New Zealand Privacy Commissioner. People under
+16 may not use Kithwall.
+
+### 14.8 Everywhere else
+
+If your country's law gives you rights beyond section 11, you have them here too. This includes, among
+others, Japan, South Korea, Singapore, Malaysia, Indonesia, the Philippines, Thailand, Vietnam, China,
+Turkey, the United Arab Emirates, Saudi Arabia, South Africa, Nigeria, Kenya, Egypt, Mexico, Argentina,
+Chile and Colombia. Write to support@kithwall.com; you can also complain to your national
+data-protection authority.
 
 ---
 
 ## 15. Grievance Officer (India) and complaints
 
-**Grievance Officer:** [GRIEVANCE OFFICER NAME]
-**Email:** [GRIEVANCE OFFICER EMAIL]
-**Address:** [GRIEVANCE OFFICER ADDRESS]
-**Hours:** [HOURS, e.g. Mon–Fri, 10:00–18:00 IST]
+**Grievance Officer:** Abdul Rehman
+**Email:** support@kithwall.com (put "Grievance" in the subject)
+**Address:** Karachi, Pakistan
 
-We will acknowledge your complaint within **24 hours** and resolve it within **15 days**
-[LAWYER: confirm timelines under the IT Rules 2021 and DPDP Rules 2025]. If you are not satisfied,
-you may complain to the Data Protection Board of India.
+We acknowledge complaints within **24 hours** and aim to resolve them within **15 days**. If you are not
+satisfied you may complain to the Data Protection Board of India.
 
 ---
 
 ## 16. Security
 
-- End-to-end encryption with audited libraries (XChaCha20-Poly1305, X25519, Ed25519, Argon2id).
+- End-to-end encryption with well-reviewed open-source cryptography (XChaCha20-Poly1305, X25519 with
+  ML-KEM-768 for post-quantum protection, Ed25519, Argon2id).
 - Your passkeys' secrets, your passphrase and your recovery key never leave your device.
-- Every item is signed by its author, so the server can't alter or swap it without detection.
-- Database access rules deny everything by default; each user can fetch only what they're allowed to.
-- Strict browser security headers; no third-party scripts.
-- Optional two-factor authentication (authenticator app), session list with "log out other
-  sessions".
-- Sensitive actions (deleting your account, changing recovery) require proof from your own device's
-  keys, so a stolen session alone can't destroy your account.
-- Recovery requests notify you and wait 24 hours before trusted friends can help.
+- Every item is signed by its author, so the server cannot alter or swap it without detection.
+- The database denies everything by default; each account can fetch only what it is allowed to.
+- All connections use TLS. Strict browser security headers; no third-party scripts.
+- Optional two-step sign-in; a session list with "log out other sessions"; app PIN, duress PIN, and
+  "wipe this device".
+- Deleting your account or changing recovery needs proof from your own device's keys, so a stolen session
+  alone cannot destroy your account.
+- Recovery requests notify you and wait 24 hours before trusted contacts can help.
 
-No system is perfectly secure. Please use a passkey (or a strong unique passphrase), consider
-two-factor authentication, and keep your 24-word recovery key somewhere safe offline.
+No system is perfectly secure. Please use a passkey (or a strong, unique passphrase) and keep your
+24-word recovery key somewhere safe and offline. Report security problems to security@kithwall.com.
 
 ---
 
 ## 17. Data breaches
 
-If a breach affects your personal data, we will:
+If a breach affects your personal data we will:
 
-- notify the relevant data protection authority **within 72 hours** of becoming aware, where GDPR /
-  UK GDPR requires it;
-- notify the **Data Protection Board of India** and **each affected user in India** as the DPDP Act
-  and Rules require, whatever the level of risk [LAWYER: confirm timelines, incl. any CERT-In
-  reporting duty];
-- tell affected users **without undue delay** where the breach is likely to put them at high risk,
-  explaining what happened, what data was involved, and what to do;
-- meet any US state breach-notification laws that apply.
+- tell the people affected **without undue delay**, in the app and by notice email where we have one,
+  saying what happened, what data was involved and what to do;
+- notify the data-protection authorities the law requires, within the time it sets (for example within
+  **72 hours** under the EU and UK GDPR, and the Data Protection Board of India and affected users in
+  India as Indian law requires).
 
-Because content is end-to-end encrypted, a breach of our servers would expose **ciphertext,
-metadata and account data**, not the readable content of your encrypted posts and messages. We will
-say clearly which kinds of data were involved.
+Because content is end-to-end encrypted, a breach of our servers would expose **ciphertext, metadata,
+account data and public content**, not the readable content of your private posts, messages or calls.
 
 ---
 
 ## 18. Changes to this policy
 
-We will post changes here and update the date at the top. For material changes (for example,
-switching on the Public audience, adding a new provider, or a new use of data), we will tell you in
-the app and/or by email **at least [NOTICE PERIOD, e.g. 30] days** before they take effect, unless
-the change is required urgently by law or for security. Earlier versions are available at
-[POLICY ARCHIVE LINK].
+We will post changes here and update the date at the top. For changes that matter (a new provider, a new
+use of data, a new kind of data), we will tell you in the app **at least 30 days** before they take
+effect, unless the change is needed urgently by law or for security. Earlier versions are in the public
+history of this file at
+[github.com/443abdul/kithwall](https://github.com/443abdul/kithwall/commits/main/docs/legal/privacy-policy.md).
 
 ---
 
 ## 19. Contact
 
-- Privacy questions and requests: **[PRIVACY CONTACT EMAIL]**
-- Grievance Officer (India): **[GRIEVANCE OFFICER EMAIL]**
-- Post: [OPERATOR LEGAL NAME], [OPERATOR REGISTERED ADDRESS]
+- Privacy questions, requests and complaints: **support@kithwall.com**
+- Security problems: **security@kithwall.com**
+- Operator: Abdul Rehman, Karachi, Pakistan
 
 Related documents: [Terms of Service](terms-of-service.md) ·
 [Community Standards](community-standards.md) ·

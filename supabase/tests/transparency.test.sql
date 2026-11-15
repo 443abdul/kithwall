@@ -151,6 +151,26 @@ select ok((select not exists (select 1 from jsonb_array_elements(r->'tables') x 
   'service tables are not reported as data about you');
 
 -- ---------------------------------------------------------------------------------------------
+-- Retention the data map promises is enforced (20261115000100_retention.sql)
+-- ---------------------------------------------------------------------------------------------
+select pg_temp.su();
+set local session_replication_role = replica;   -- place old rows directly, past the insert rules
+insert into public.notifications (recipient_id, actor_id, type, created_at) values
+  (pg_temp.uid('bob'), pg_temp.uid('carol'), 'friend_request', now() - interval '91 days'),
+  (pg_temp.uid('bob'), pg_temp.uid('carol'), 'friend_accept', now() - interval '89 days');
+insert into public.moderation_actions (moderator_id, target_user_id, action, reason, expires_at, created_at) values
+  (pg_temp.uid('carol'), pg_temp.uid('bob'), 'warn', 'old warning', null, now() - interval '13 months'),
+  (pg_temp.uid('carol'), pg_temp.uid('bob'), 'suspend', 'long suspension still running', now() + interval '1 month', now() - interval '13 months'),
+  (pg_temp.uid('carol'), pg_temp.uid('bob'), 'warn', 'recent warning', null, now() - interval '11 months');
+set local session_replication_role = origin;
+select kw.transparency_maintenance();
+select results_eq($$ select type from public.notifications where recipient_id = pg_temp.uid('bob') and actor_id = pg_temp.uid('carol') $$,
+  array['friend_accept'], 'notifications older than 90 days are deleted, newer ones stay');
+select results_eq($$ select reason from public.moderation_actions where target_user_id = pg_temp.uid('bob') order by reason $$,
+  array['long suspension still running', 'recent warning'],
+  'moderation decisions go after a year, unless they are still in force');
+
+-- ---------------------------------------------------------------------------------------------
 -- Deleting the account leaves nothing the report counts (crypto-shredding: keys go with it)
 -- ---------------------------------------------------------------------------------------------
 select pg_temp.login('alice');

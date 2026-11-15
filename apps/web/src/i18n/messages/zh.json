@@ -98,6 +98,7 @@
   "join.nameBody": "你的名字经过加密，只对与你建立联系的人显示。",
   "join.nameLabel": "你的名字",
   "join.nameHint": "使用亲友熟悉的那个名字。",
+  "join.agree": "我已年满 16 周岁（居住在印度则须年满 18 周岁），并同意《服务条款》和《隐私政策》。",
   "join.handleLabel": "用户名",
   "join.passkeyTitle": "创建你的通行密钥",
   "join.passkeyBody": "通行密钥是你进入 Kithwall 的方式。它保存在这台设备上，通过面容、指纹或屏幕锁打开——就像你解锁手机一样。",

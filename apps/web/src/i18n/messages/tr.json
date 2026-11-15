@@ -98,6 +98,7 @@
   "join.nameBody": "Adın şifrelenir ve yalnızca bağlantı kurduğun kişilere gösterilir.",
   "join.nameLabel": "Adın",
   "join.nameHint": "Arkadaşlarının ve ailenin seni tanıdığı adı kullan.",
+  "join.agree": "16 yaşında veya daha büyüğüm (Hindistan'da yaşıyorsam 18 veya daha büyük) ve Hizmet Koşulları ile Gizlilik Politikası'nı kabul ediyorum.",
   "join.handleLabel": "Kullanıcı adı",
   "join.passkeyTitle": "Geçiş anahtarını oluştur",
   "join.passkeyBody": "Geçiş anahtarı, Kithwall'a giriş yolun. Bu cihazda durur ve yüzün, parmak izin ya da ekran kilidinle açılır — tıpkı telefonunun kilidini açtığın gibi.",

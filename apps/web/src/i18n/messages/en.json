@@ -94,6 +94,7 @@
   "join.nameBody": "Your name is encrypted and only shown to people you connect with.",
   "join.nameLabel": "Your name",
   "join.nameHint": "Use the name your friends and family know you by.",
+  "join.agree": "I am 16 or older (18 or older if I live in India), and I agree to the Terms of Service and the Privacy Policy.",
   "join.handleLabel": "Handle",
   "join.passkeyTitle": "Create your passkey",
   "join.passkeyBody": "A passkey is how you'll get into Kithwall. It lives on this device and opens with your face, your fingerprint or your screen lock — the same way you unlock your phone.",

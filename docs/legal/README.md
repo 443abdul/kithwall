@@ -1,9 +1,28 @@
-# Kithwall — Legal & Policy Drafts
+# Kithwall — Legal & Policy
 
-> **Status: DRAFT v0.1 (2026-10-17). Not legal advice. A qualified lawyer must review all documents
-> before public launch.** Written against [01-foundation](../01-foundation.md),
-> [02-scope](../02-scope.md) and [03-spec](../03-spec.md). If the product changes, these must change
-> too.
+> **Status: published 15 November 2026.** The four public documents are filled in and live at
+> `/legal/*`. They were drafted without a lawyer and are not legal advice; section 4 lists what a
+> qualified lawyer should still confirm. Written against the product as it is (`docs/v2/*`, the data map in
+> `supabase/migrations`). If the product changes, these must change too: `apps/web/src/content/legal/` is a
+> copy of this folder and must be kept identical.
+
+**Decisions taken on 2026-11-15** (owner: Abdul Rehman, an individual, Karachi, Pakistan):
+
+- One contact address for privacy, legal, abuse, appeals and law enforcement: `support@kithwall.com`;
+  security reports stay at `security@kithwall.com`. No DPO, no EU/UK representative (stated openly).
+- Minimum age 16, and 18 in India. Sign-up asks for it and for acceptance of the Terms
+  (`JoinFlow.tsx`, step 2). Google Play target age: 16-17 and 18+.
+- Governing law Pakistan, courts of Karachi, consumers keep their local rights; liability cap USD 100;
+  30 days' notice of changes; 60 days' notice of a shutdown; appeals within 14 days; strikes expire after
+  12 months; no closing of inactive accounts.
+- Retention the policy states is enforced by jobs (`20261115000100_retention.sql` added the two that were
+  missing: notifications 90 days, moderation decisions 1 year).
+- Account deletion without the app: sign in on the web; if that is impossible and the account has a
+  verified notice email, a request from that address is honoured by hand; otherwise the account cannot be
+  verified (Privacy Policy 11.1).
+
+Sections 2 and 3 below are the original drafting checklist, kept for history; every item in them that
+concerned the public documents is now decided as above.
 
 ## 1. Documents
 

@@ -3,6 +3,7 @@
 //   1 style + mode → 2 name + @handle → 3 passkey (or passphrase fallback) → 4 find your people → /home
 // Bot protection is invisible: the ALTCHA proof-of-work is fetched and solved in the background from the
 // moment the page opens, and awaited (usually already done) when the account is created.
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { accountApi, type Capabilities } from '@/lib/auth/account';
@@ -66,6 +67,8 @@ export function JoinFlow() {
   const [name, setName] = useState('');
   const [handle, setHandle] = useState('');
   const [handleState, setHandleState] = useState<HandleState>('idle');
+  // The age and terms confirmation (Terms §2, Privacy Policy §12). Nothing about it is stored: it gates the button.
+  const [agreed, setAgreed] = useState(false);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [usePhrase, setUsePhrase] = useState(false);
   const [phrase, setPhrase] = useState('');
@@ -113,7 +116,7 @@ export function JoinFlow() {
   const go = (s: Step) => { setErr(null); setStep(s); };
   const h = normalizeHandle(handle);
   const nameOk = name.trim().length >= 1 && name.trim().length <= 60;
-  const step2Ok = nameOk && handleState === 'ok';
+  const step2Ok = nameOk && handleState === 'ok' && agreed;
 
   async function create(withPhrase: boolean) {
     setBusy(true); setErr(null);
@@ -211,6 +214,17 @@ export function JoinFlow() {
                 error={handleError}
                 required
               />
+              <label className="k-check-row k-join-agree">
+                <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} required />
+                <span>
+                  {t('join.agree')}{' '}
+                  <span className="k-join-legal">
+                    <Link href="/legal/terms" target="_blank">{t('legal.terms')}</Link>
+                    {' · '}
+                    <Link href="/legal/privacy" target="_blank">{t('legal.privacy')}</Link>
+                  </span>
+                </span>
+              </label>
               {err ? <Callout tone="danger">{err}</Callout> : null}
               <div className="k-flow-actions">
                 <Button variant="ghost" icon="back" onClick={() => go(1)}>{t('common.back')}</Button>

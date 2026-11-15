@@ -98,6 +98,7 @@
   "join.nameBody": "Votre nom est chiffré et n'est visible que par les personnes avec qui vous êtes en lien.",
   "join.nameLabel": "Votre nom",
   "join.nameHint": "Utilisez le nom sous lequel vos amis et votre famille vous connaissent.",
+  "join.agree": "J'ai 16 ans ou plus (18 ans ou plus si je vis en Inde) et j'accepte les Conditions d'utilisation et la Politique de confidentialité.",
   "join.handleLabel": "Identifiant",
   "join.passkeyTitle": "Créez votre clé d'accès",
   "join.passkeyBody": "Une clé d'accès vous permet d'entrer dans Kithwall. Elle est stockée sur cet appareil et s'ouvre avec votre visage, votre empreinte ou le verrouillage de l'écran — comme pour déverrouiller votre téléphone.",

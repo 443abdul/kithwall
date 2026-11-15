@@ -1,8 +1,6 @@
 # Kithwall Community Standards
 
-> **DRAFT v0.1 (2026-10-17) — not yet reviewed by a lawyer.**
-
-**Effective date:** [EFFECTIVE DATE]
+**Effective date:** 15 November 2026
 
 Kithwall is a place for the people you actually know. These rules apply to everything on Kithwall,
 whether it's a public post, a friends-only photo, a private message or a group chat. They are part
@@ -25,8 +23,8 @@ and they can report it to us. When they do, we act on it.
 
 **What happens:** the item is removed, the account is **banned immediately and permanently**, and
 we **report it to the authorities** (in the US, the National Center for Missing & Exploited
-Children (NCMEC); elsewhere, [NATIONAL AUTHORITY / HOTLINE FOR OPERATOR COUNTRY], and in India,
-[INDIAN AUTHORITY, e.g. National Cybercrime Reporting Portal / police]). We preserve the material
+Children (NCMEC); in Pakistan, the national cybercrime authority; in India, the National Cyber
+Crime Reporting Portal; elsewhere, the competent national authority). We preserve the material
 as the law requires and never redistribute it.
 
 If you come across this material: **report it in the app, do not share it, do not screenshot or
@@ -44,7 +42,7 @@ e.g. [48 hours under the US TAKE IT DOWN Act; 24 hours under India's IT Rules �
 and an immediate ban for sharing or sextortion.
 
 If it's an image of **you**, you can ask us to remove it even if you're not a Kithwall user: email
-[ABUSE CONTACT EMAIL]. Because we can't see encrypted content, tell us where you saw it (a link, the
+support@kithwall.com. Because we can't see encrypted content, tell us where you saw it (a link, the
 account name, or ask someone who can see it to report it).
 
 ### 1.3 Harassment and bullying
@@ -86,7 +84,7 @@ We may contact emergency services or police when someone's life is at risk.
 | India | Tele-MANAS **14416** |
 | Anywhere | findahelpline.com |
 
-[OWNER: verify all numbers before launch and add numbers for launch markets.]
+Numbers change. If one does not work, use findahelpline.com or your local emergency number.
 
 If you're worried about a friend, contact them, contact someone near them, or call local emergency
 services. We can't see encrypted posts, so please don't rely on us noticing.
@@ -162,13 +160,13 @@ person may be able to guess if, for example, only two people were in a conversat
 **Reporting is private, but not anonymous to us.** We know which account made the report, so we
 can stop abuse of the reporting system.
 
-**Not a user, or can't see the content?** Email [ABUSE CONTACT EMAIL]. We can act on items we can
+**Not a user, or can't see the content?** Email support@kithwall.com. We can act on items we can
 identify and verify; for encrypted items, that usually means someone who can see the item reporting
 it in the app.
 
 **Block** anyone you don't want contact with. Our database stops blocked people reading or writing
-your posts and interacting with you. [OWNER: confirm exact block effects for messages, groups and
-events, and whether the blocked person is notified, then state them here.]
+your posts and interacting with you: they cannot see your profile or anything you share, cannot
+message you and cannot send you requests. If you were connected, blocking also removes the connection.
 
 **In danger right now?** Contact your local emergency services first.
 
@@ -187,20 +185,20 @@ We consider how serious the violation is, the harm caused, intent, and the accou
 | 4 | Permanent ban | Severe violations, or continuing after suspension |
 | — | **Immediate permanent ban + report to authorities** | Child sexual abuse material or grooming; sextortion; credible threat to life; terrorism |
 
-Warnings and strikes expire after **[STRIKE EXPIRY, e.g. 12 months]** if there are no further
+Warnings and strikes expire after **12 months** if there are no further
 violations.
 
 **Every decision includes:** what we did, which rule it relates to, whether it came from a report,
 and how to appeal (unless telling you would put someone at risk or the law forbids it).
 
 **Appeals:** you can appeal within 6 months. A different moderator (or the owner) reviews it,
-usually within [APPEAL SLA, e.g. 7] days. See section 8.4 of the Terms.
+usually within 14 days. See section 8.4 of the Terms.
 
 ---
 
 ## 4. Updates
 
-We will update these standards as Kithwall grows (for example, when Public posting, Pages and Open
-Groups are switched on). We'll tell you about significant changes in the app.
+We will update these standards as Kithwall grows. We'll tell you about significant changes in the
+app.
 
-Questions: [CONTACT EMAIL]
+Questions: support@kithwall.com

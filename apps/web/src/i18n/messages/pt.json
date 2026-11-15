@@ -98,6 +98,7 @@
   "join.nameBody": "Seu nome é criptografado e só aparece para as pessoas com quem você se conecta.",
   "join.nameLabel": "Seu nome",
   "join.nameHint": "Use o nome pelo qual seus amigos e familiares conhecem você.",
+  "join.agree": "Tenho 16 anos ou mais (18 ou mais se viver na Índia) e aceito os Termos de Serviço e a Política de Privacidade.",
   "join.handleLabel": "Nome de usuário",
   "join.passkeyTitle": "Crie sua chave de acesso",
   "join.passkeyBody": "A chave de acesso é como você vai entrar no Kithwall. Ela fica neste dispositivo e abre com seu rosto, sua digital ou o bloqueio de tela — do mesmo jeito que você desbloqueia o celular.",

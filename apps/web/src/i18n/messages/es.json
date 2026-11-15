@@ -98,6 +98,7 @@
   "join.nameBody": "Tu nombre está cifrado y solo lo ven las personas con las que te conectas.",
   "join.nameLabel": "Tu nombre",
   "join.nameHint": "Usa el nombre con el que te conocen tus amigos y tu familia.",
+  "join.agree": "Tengo 16 años o más (18 o más si vivo en la India) y acepto los Términos del servicio y la Política de privacidad.",
   "join.handleLabel": "Usuario",
   "join.passkeyTitle": "Crea tu llave de acceso",
   "join.passkeyBody": "Una llave de acceso es tu forma de entrar en Kithwall. Vive en este dispositivo y se abre con tu cara, tu huella o el bloqueo de pantalla, igual que desbloqueas tu teléfono.",

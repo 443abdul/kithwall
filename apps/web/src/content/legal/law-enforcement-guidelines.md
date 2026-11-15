@@ -1,16 +1,14 @@
 # Kithwall Law Enforcement Guidelines
 
-> **DRAFT v0.1 (2026-10-17) — not yet reviewed by a lawyer.**
-
-**Effective date:** [EFFECTIVE DATE]
+**Effective date:** 15 November 2026
 
 These guidelines are for law-enforcement agencies and government authorities seeking information
 about Kithwall users. They are informational only and do not create rights for anyone. Users can
 read them too: we want people to know exactly what we can and cannot hand over.
 
-**Operator:** [OPERATOR LEGAL NAME], [OPERATOR REGISTERED ADDRESS]
-**Requests to:** [LAW ENFORCEMENT CONTACT EMAIL] (requests are accepted only at this address or by
-post; we do not accept requests from personal or non-official email domains)
+**Operator:** Abdul Rehman, an individual based in Karachi, Pakistan
+**Requests to:** support@kithwall.com, with "Legal request" in the subject (requests are accepted only at
+this address; we do not accept requests from personal or non-official email domains)
 
 ---
 
@@ -40,8 +38,8 @@ and log data. Content a user marks **Public** (not available at launch) is unenc
 | Notification metadata | Recipient, type, triggering account, item reference, read/unread | 90 days |
 | Recovery requests | Requests to restore an account via trusted friends, their timing and status | 7 days after they close |
 | Reports | Where a user reported content to us: the reporter, the reported item/account, and the **content the reporter disclosed** | 1 year after resolution |
-| Public content | Once the Public audience is enabled | Until deleted |
-| Email delivery records | Held by our email provider (Spacemail by Spaceship) | [SPACEMAIL LOG RETENTION] |
+| Public content | Public posts and reels, with their comments and reactions | Until deleted |
+| Email delivery records | Held by our email provider (Spacemail by Spaceship), only for accounts that added a notice email | As that provider keeps them |
 
 ### 2.2 Data we cannot produce
 
@@ -66,18 +64,16 @@ already deleted.
 We disclose user data only in response to valid legal process that applies to us, or under the
 emergency procedure in section 5.
 
-| Data requested | Minimum process [LAWYER: adapt to operator's jurisdiction] |
+| Data requested | Minimum process |
 |---|---|
 | Basic subscriber information, IP logs | Subpoena / production order or equivalent valid legal process |
-| Other metadata (social graph, activity and messaging metadata, notifications, reports) | Court order or search warrant [LAWYER: e.g. US 18 U.S.C. § 2703(d) order / warrant; India CrPC/BNSS s. 94 notice or court order; EU/UK equivalents] |
+| Other metadata (social graph, activity and messaging metadata, notifications, reports) | Court order or search warrant (for example a US 18 U.S.C. § 2703(d) order or warrant, an Indian BNSS s. 94 notice or court order, or the equivalent elsewhere) |
 | Content of reports or public content | Search warrant or equivalent |
-| Prospective (real-time) metadata | Court order permitting it, where lawful [LAWYER: confirm] |
+| Prospective (real-time) metadata | Court order permitting it, where lawful |
 
-**Requests from outside [OPERATOR COUNTRY].** We may require foreign authorities to use a Mutual
+**Requests from outside Pakistan.** We may require foreign authorities to use a Mutual
 Legal Assistance Treaty (MLAT), letter rogatory, or another mechanism recognised in
-[OPERATOR COUNTRY] (e.g. the EU e-Evidence Regulation, CLOUD Act agreement), unless the law allows
-us to respond directly. [LAWYER: confirm, including India IT Rules 2021 obligations to provide
-information within 72 hours of a lawful order.]
+Pakistan, unless the law allows us to respond directly.
 
 **Every request must include:** the issuing authority and officer's name, badge/ID, official email
 and phone; the legal basis; the specific Kithwall username(s); the specific
@@ -99,10 +95,10 @@ unreadable). Because provider logs are short-lived, please send preservation req
 ## 5. Emergency requests
 
 If you believe there is an emergency involving **imminent risk of death or serious physical
-injury**, send an emergency request to [EMERGENCY CONTACT EMAIL] with "EMERGENCY" in the subject.
+injury**, send an emergency request to support@kithwall.com with "EMERGENCY" in the subject.
 Explain the nature of the emergency, why it can't wait for normal legal process, and what specific
-data would help. We review emergency requests [24/7 / within N hours — OWNER: set a realistic
-commitment] and may voluntarily disclose the **minimum metadata** needed where the law permits. We
+data would help. Kithwall is run by one person, so we cannot promise an immediate answer; we review
+emergency requests as soon as we see them, normally within 24 hours, and may voluntarily disclose the **minimum metadata** needed where the law permits. We
 cannot provide encrypted content in an emergency either.
 
 ---
@@ -123,27 +119,27 @@ include a non-disclosure order should state its legal basis and duration.
 
 ## 7. Our position on encryption
 
-We will not build, and will legally challenge to the fullest extent the law allows, any demand to
-weaken Kithwall's encryption, insert a "backdoor", or deliver a modified version of the app to a
-targeted user. [OWNER/LAWYER: confirm this statement and its legal implications in each market,
-including the UK Online Safety Act and India's IT Rules traceability provisions for significant
-social media intermediaries.]
+We will not build a way to weaken Kithwall's encryption, insert a "backdoor", or deliver a modified
+version of the app to a targeted user, and we will resist any such demand by every lawful means
+available to us.
 
 ---
 
 ## 8. Child safety
 
-We report apparent child sexual abuse material to NCMEC and/or
-[NATIONAL AUTHORITY] as required by law, and preserve it as required. Because we cannot see
+We report apparent child sexual abuse material to NCMEC and/or the competent national authority
+as required by law, and preserve it as required. Because we cannot see
 encrypted content, these reports arise from user reports, where the reporting user disclosed the
 content to us. Agencies following up on a CyberTipline or other report from us may contact
-[LAW ENFORCEMENT CONTACT EMAIL] referencing the report number.
+support@kithwall.com referencing the report number.
 
 ---
 
 ## 9. Transparency reporting
 
-We publish a transparency report every **[6 / 12] months** at [TRANSPARENCY REPORT URL], including
+We publish a transparency statement at
+[www.kithwall.com/transparency](https://www.kithwall.com/transparency) and update it at least every
+**12 months**, including
 the number of government requests by country and type, the number of accounts affected, how often
 we produced some data, emergency disclosures, preservation requests, and requests we challenged,
 to the extent the law allows.
@@ -163,5 +159,5 @@ electronically in a secure format, and can provide a records-authenticity certif
   required by law. Users can export their own data from their account.
 - **Users seeking their own data:** see the [Privacy Policy](privacy-policy.md).
 - **Content removal orders from authorities** (e.g. under the EU Digital Services Act or India's IT
-  Rules): send to [LAW ENFORCEMENT CONTACT EMAIL]; we can act only on items we can identify. For
+  Rules): send to support@kithwall.com; we can act only on items we can identify. For
   encrypted items, we cannot confirm what they contain unless they have been reported to us.
